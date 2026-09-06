@@ -45,6 +45,11 @@ Require two distinct self-review rounds, an independent reviewer that did not au
 Freeze the base and head for review, use range-diff for bounded repairs after a completed pass, and keep feedback inline.
 Agent guidance and skills make this procedure discoverable without copying private memory, credentials, or connector-specific instructions.
 
+Maintain the four workflow skills and the WHAT/WHY template in [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools).
+Track skill copies at the full upstream commit recorded in the justfile and update them through `just skills-sync` and a reviewed PR.
+Keep the installation recipe visible in `dev-tools.just`, and project-specific commands and rules in this repository's guidance.
+This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/f33d4549a3be1790ef26650ba9cc35a94a44b49f/docs/adr/0001-share-development-assets.md) without adding a submodule or a build-time network requirement.
+
 ## Consequences
 
 A parent reactor and separate adapter/examples modules are unnecessary before there is code to separate.
