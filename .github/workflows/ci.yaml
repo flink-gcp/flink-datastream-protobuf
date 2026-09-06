@@ -1,0 +1,27 @@
+name: CI
+on:
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions: {}
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yaml
+    permissions:
+      contents: read
+  lint:
+    uses: ./.github/workflows/lint.yaml
+    permissions:
+      contents: read
+  ci_passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [verify, lint]
+    if: ${{ always() }}
+    steps:
+      - name: Require every dependency to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: printf '%s' "$NEEDS" | jq -e 'all(.[]; .result == "success")'
