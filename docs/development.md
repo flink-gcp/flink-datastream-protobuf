@@ -41,6 +41,7 @@ mise x -- just --list
 | `just probe-chill` | Clean verification including the optional Chill comparison |
 | `just lint` | actionlint with the pinned shellcheck, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
+| `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
 
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
@@ -71,6 +72,18 @@ The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inhe
 
 AGENTS.md is shared guidance; CLAUDE.md imports it.
 Repository skills live under `.agents/skills`, with `.claude/skills` pointing there for Claude Code.
+The four workflow skills come from [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools), at the full commit SHA recorded as `dev_tools_revision` in `justfile`.
+Their tracked copies work offline and are present in new Git worktrees; ordinary builds do not download them.
+
+To update them, choose a reviewed commit from dev-tools main, update the pin, and run `just skills-sync` from this repository's root.
+The recipe requires Bash, Git, `gh`, tar, and just, and preserves unrelated skills.
+It refuses to overwrite differing uncommitted changes in the managed directories.
+Review and commit the pin and resulting skill changes together.
+Keep `dev-tools.just` aligned with `examples/skills.just` at the selected upstream commit when that recipe changes.
+Use the same procedure with an earlier pin to roll back.
+Project-specific instructions belong in AGENTS.md or references, outside those four directories.
+The WHAT/WHY PR template is a deliberate copy of the shared template and is reviewed separately when it changes.
+
 The optional Context7 and Serena connections are declared in `.mcp.json` and `.codex/config.toml`.
 Activate the current worktree when using Serena, and keep credentials and personal configuration outside tracked files.
 Neither MCP server is required to build or test the project.

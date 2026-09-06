@@ -12,13 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import 'dev-tools.just'
+
 set shell := ["bash", "-euo", "pipefail", "-c"]
+
+dev_tools_revision := "f33d4549a3be1790ef26650ba9cc35a94a44b49f"
 
 mvn := "./mvnw -ntp"
 
 # Show the available development commands.
 default:
     @just --list
+
+# Refresh the four shared workflow skills from the reviewed upstream commit.
+skills-sync: (install-skills dev_tools_revision)
 
 # Run Maven verification; arguments precede the final lifecycle phase.
 [positional-arguments]
