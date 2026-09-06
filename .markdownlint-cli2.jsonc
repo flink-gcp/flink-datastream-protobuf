@@ -1,0 +1,8 @@
+{
+  "config": {
+    "MD013": false,
+    "MD052": { "shortcut_syntax": true },
+    "MD060": false
+  },
+  "globs": ["README.md", "CONTRIBUTING.md", "docs/**/*.md"]
+}

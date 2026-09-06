@@ -1,0 +1,12 @@
+[tools]
+java = "temurin-17"
+maven = "latest"
+just = "1"
+shellcheck = "0.11.0"
+actionlint = "1.7.12"
+node = "24"
+# Match the reviewed exception in the reference repository's toolchain.
+"npm:markdownlint-cli2" = { version = "0.23.2", trust_policy_excludes = ["fastq@1.20.2"] }
+pinact = "4"
+# Optional Serena integration in .mcp.json and .codex/config.toml.
+uv = "0.12.1"

@@ -1,0 +1,13 @@
+target/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.DS_Store
+*.log
+.env
+mise.local.toml
+.serena/project.local.yml
+.serena/cache/
+.serena/memories/

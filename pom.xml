@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright 2026 The flink-gcp authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-connector-parent</artifactId>
+        <version>2.0.0</version>
+        <relativePath/>
+    </parent>
+    <groupId>io.github.flink-gcp</groupId>
+    <artifactId>flink-datastream-protobuf</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>Flink DataStream Protobuf</name>
+    <description>Native Protocol Buffers type integration for Apache Flink DataStream. Under development; no production serializer is implemented yet.</description>
+    <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>
+    <inceptionYear>2026</inceptionYear>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <organization>
+        <name>The flink-gcp authors</name>
+        <url>https://github.com/flink-gcp</url>
+    </organization>
+    <developers>
+        <developer><name>The flink-gcp authors</name><url>https://github.com/flink-gcp</url></developer>
+    </developers>
+    <scm>
+        <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>
+        <connection>scm:git:https://github.com/flink-gcp/flink-datastream-protobuf.git</connection>
+        <developerConnection>scm:git:git@github.com:flink-gcp/flink-datastream-protobuf.git</developerConnection>
+    </scm>
+    <properties>
+        <flink.version>2.3.0</flink.version>
+        <flink.parent.artifactId>flink-datastream-protobuf</flink.parent.artifactId>
+        <protobuf.version>3.25.8</protobuf.version>
+        <protoc.version>${protobuf.version}</protoc.version>
+        <protobuf-maven-plugin.version>5.1.8</protobuf-maven-plugin.version>
+        <junit5.version>5.14.4</junit5.version>
+        <assertj.version>3.27.7</assertj.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
+        <test.excluded.groups>chill</test.excluded.groups>
+        <flink.forkCountUnitTest>1</flink.forkCountUnitTest>
+        <flink.forkCountITCase>1</flink.forkCountITCase>
+        <!-- No module-opening flags: the native probe must work without Kryo reflection. -->
+        <flink.surefire.baseArgLine>-Xms128m -XX:+UseG1GC</flink.surefire.baseArgLine>
+        <flink.XmxITCase>1024m</flink.XmxITCase>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency><groupId>org.junit</groupId><artifactId>junit-bom</artifactId><version>${junit5.version}</version><type>pom</type><scope>import</scope></dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-core</artifactId><version>${flink.version}</version><scope>provided</scope></dependency>
+        <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>${protobuf.version}</version><scope>provided</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-streaming-java</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-clients</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>1.7.36</version><scope>test</scope></dependency>
+    </dependencies>
+    <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource><directory>${project.basedir}</directory><targetPath>META-INF</targetPath><includes><include>LICENSE</include><include>NOTICE</include></includes></resource>
+        </resources>
+        <plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId></plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId>
+                <!-- Keep formatting active on both JDKs despite the parent's java21 profile. -->
+                <configuration><skip>false</skip></configuration>
+            </plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId></plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId></plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${test.excluded.groups}</excludedGroups>
+                    <!-- Factory registrations are process-global; controls need fresh JVMs. -->
+                    <reuseForks>false</reuseForks>
+                    <failIfNoTests>true</failIfNoTests>
+                    <systemPropertyVariables><org.slf4j.simpleLogger.defaultLogLevel>error</org.slf4j.simpleLogger.defaultLogLevel></systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution><id>integration-tests</id><configuration><includes combine.self="override"><include>**/*ITCase.java</include></includes></configuration></execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><version>${protobuf-maven-plugin.version}</version>
+                <configuration><protoc>${protoc.version}</protoc></configuration>
+                <executions><execution><id>generate-test-protobuf</id><goals><goal>generate-test</goal></goals></execution></executions>
+            </plugin>
+            <!-- Use this project's complete notices rather than an ASF resource bundle. -->
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-remote-resources-plugin</artifactId><configuration><skip>true</skip></configuration></plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId></plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId><artifactId>apache-rat-plugin</artifactId>
+                <configuration>
+                    <numUnapprovedLicenses>0</numUnapprovedLicenses>
+                    <addDefaultLicenseMatchers>false</addDefaultLicenseMatchers>
+                    <licenses><license implementation="org.apache.rat.analysis.license.SimplePatternBasedLicense">
+                        <licenseFamilyCategory>AL2</licenseFamilyCategory><licenseFamilyName>Apache License 2.0</licenseFamilyName>
+                        <patterns><pattern>Licensed under the Apache License, Version 2.0</pattern><pattern>Licensed to the Apache Software Foundation (ASF) under one</pattern></patterns>
+                    </license></licenses>
+                    <licenseFamilies><licenseFamily implementation="org.apache.rat.license.SimpleLicenseFamily"><familyName>Apache License 2.0</familyName></licenseFamily></licenseFamilies>
+                    <excludes>
+                        <exclude>**/.*</exclude><exclude>**/.*/**</exclude><exclude>**/target/**</exclude>
+                        <exclude>LICENSE</exclude><exclude>NOTICE</exclude><exclude>mvnw</exclude><exclude>mvnw.cmd</exclude>
+                        <exclude>mise.toml</exclude><exclude>mise.local.toml</exclude><exclude>**/*.log</exclude>
+                        <exclude>README.md</exclude><exclude>AGENTS.md</exclude><exclude>CLAUDE.md</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile><id>protobuf3</id></profile>
+        <profile><id>protobuf4</id><properties><protobuf.version>4.33.6</protobuf.version></properties></profile>
+        <profile><id>chill</id><dependencies>
+            <dependency><groupId>com.twitter</groupId><artifactId>chill-protobuf</artifactId><version>0.7.6</version><scope>test</scope></dependency>
+        </dependencies></profile>
+    </profiles>
+</project>
