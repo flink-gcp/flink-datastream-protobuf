@@ -34,14 +34,15 @@ Verify both Protobuf profiles for compatibility-sensitive changes; CI covers JDK
 ## GitHub workflow
 
 - The four workflow skills are tracked copies from `flink-gcp/flink-gcp-dev-tools`; `just skills-sync` installs the commit pinned in `justfile`.
-- Keep project-specific rules here and in references, outside the managed skill directories. Read `docs/development.md` before updating the pin or installation recipe.
+- The shared skills retain the original connector procedures, decision conditions, examples and exceptions. Keep project-specific command and compatibility bindings here and in the development guide, outside managed skill directories. Read `docs/development.md` before updating the pin or installation recipe.
 - Use `gh`; one worktree per PR under `/tmp/worktrees/flink-datastream-protobuf/`. Never switch branches in the main checkout.
 - After the initial empty commit, every change goes through a Draft PR using `.github/PULL_REQUEST_TEMPLATE.md` with filled WHAT and WHY.
 - Use `$push-pr-branch` before every branch push. Commit local work, fetch, rebase before squashing, and inspect the explicit deletion list.
+- Apply the verification and closing-reference bindings in `docs/development.md` when running the shared skills, including the case with no assigned issue.
 - After Draft creation, use `$self-review`, then `$self-review-round-two`, then `$independent-review`. Their instructions define the distinct passes and bounded repairs.
 - Record feedback inline on changed lines using the GitHub review API comments array. Do not post standalone review summaries.
 - Route out-of-scope findings with the user; do not create issues without a routing decision. Existing authorization persists across the workflow.
-- Wait for current aggregate `CI passed` and completed reviews before Ready. The user merges; clean up only the verified target when requested.
+- Wait for current aggregate `CI passed` and the required review flow before Ready. The restored shared skill retains the original recorded unavailable-reviewer exception; running or uncollected reviews are incomplete. The user merges; clean up only the verified target when requested.
 
 ## Optional tools
 

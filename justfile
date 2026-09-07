@@ -16,7 +16,7 @@ import 'dev-tools.just'
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-dev_tools_revision := "f33d4549a3be1790ef26650ba9cc35a94a44b49f"
+dev_tools_revision := "c3784bce1f95dc75848b1fc2de0f370e5c0a09ea"
 
 mvn := "./mvnw -ntp"
 
