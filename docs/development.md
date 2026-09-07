@@ -46,6 +46,8 @@ mise x -- just --list
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
 CI runs `just verify-protobuf 3` and `just verify-protobuf 4` on each supported JDK; it uses the versions in the Maven profiles.
+The required checks above do not include a mutation-testing batch.
+Apply the shared review safeguards to any batch that is performed.
 To reproduce the JDK 21 lane locally, use `mise x java@temurin-21 just -- just verify-protobuf 4`.
 The default tool set includes JDK 17; mise may install JDK 21 for that command.
 
@@ -81,7 +83,12 @@ It refuses to overwrite differing uncommitted changes in the managed directories
 Review and commit the pin and resulting skill changes together.
 Keep `dev-tools.just` aligned with `examples/skills.just` at the selected upstream commit when that recipe changes.
 Use the same procedure with an earlier pin to roll back.
-Project-specific instructions belong in AGENTS.md or references, outside those four directories.
+The shared skills preserve the original connector workflow, including its detailed checks, examples and recorded unavailable-reviewer exception.
+Their historical connector examples do not require connector-specific tools here: use the single-module verification commands and Protobuf/JDK compatibility requirements above.
+The original one-commit push procedure and matching WHAT/WHY commit/PR description apply.
+Apply the closing-reference check to an issue actually assigned to the PR.
+When no closing issue has been assigned, verify that the PR closes none; creating or routing an issue requires the maintainer's decision.
+Project-specific commands and compatibility bindings belong in AGENTS.md or this guide, outside those four directories.
 The WHAT/WHY PR template is a deliberate copy of the shared template and is reviewed separately when it changes.
 
 The optional Context7 and Serena connections are declared in `.mcp.json` and `.codex/config.toml`.

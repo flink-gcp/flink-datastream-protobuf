@@ -42,12 +42,15 @@ Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java
 
 All changes after the initial empty main commit use a dedicated worktree and a Draft PR with the WHAT/WHY template.
 Require two distinct self-review rounds, an independent reviewer that did not author the change, and current aggregate CI before Ready.
+The restored original workflow permits a recorded exception when the independent reviewer cannot run; a running or uncollected review is incomplete and does not qualify.
 Freeze the base and head for review, use range-diff for bounded repairs after a completed pass, and keep feedback inline.
-Agent guidance and skills make this procedure discoverable without copying private memory, credentials, or connector-specific instructions.
+Agent guidance and skills make this procedure discoverable while keeping private memory and credentials outside the repository.
 
 Maintain the four workflow skills and the WHAT/WHY template in [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools).
 Track skill copies at the full upstream commit recorded in the justfile and update them through `just skills-sync` and a reviewed PR.
 Keep the installation recipe visible in `dev-tools.just`, and project-specific commands and rules in this repository's guidance.
+The shared procedures are restored from connector commit `02c4bd594d2b774cc24b0c0194c1834dd5032120`; preserve their detailed instructions, exceptions, concrete examples and historical evidence.
+Bind this library's single-module checks and supported profiles through its existing guidance rather than maintaining a second workflow.
 This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/f33d4549a3be1790ef26650ba9cc35a94a44b49f/docs/adr/0001-share-development-assets.md) without adding a submodule or a build-time network requirement.
 
 ## Consequences

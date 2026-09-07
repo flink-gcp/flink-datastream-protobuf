@@ -33,7 +33,8 @@ Use [Development](docs/development.md) to prepare the toolchain.
 Keep review rounds distinct: the first checks implementation against the stated behavior; the second verifies the claims in the documentation, tests, and description.
 The independent reviewer must not have authored the change or its repairs and reviews the diff without the PR description or private agent memories.
 The detailed procedures are in the repository's [agent skills](.agents/skills/).
-If independent review cannot run, report the reason and retain Draft status until the maintainer chooses a substitute.
+If independent review cannot run, record the reason under the shared skill's original unavailable-reviewer exception; the PR may become Ready once its other requirements are complete.
+A running or uncollected review is incomplete and does not qualify for that exception.
 
 Write commit messages, PR text, documentation, code comments, and Javadoc in English.
 Preserve third-party license headers and update NOTICE when adapting third-party material.
