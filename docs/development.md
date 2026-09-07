@@ -97,11 +97,45 @@ Neither MCP server is required to build or test the project.
 
 ## Next implementation steps
 
-1. Add the production TypeInformation and TypeInfoFactory with explicit and superclass-registration entry points, generated-class validation, and the key policy.
-2. Add the immutable-message serializer with a transient parser and tested framing, copy, Java-serialization, and failure behavior.
-3. Add descriptor snapshots and a separate compatibility evaluator with descriptor-pair tests for the accepted and rejected changes in ADR-0001.
-4. Exercise operator transfer, checkpoint/savepoint restore, and isolated user-code classloaders. Establish versioned savepoint fixtures once the snapshot format exists.
-5. Add compiled usage examples, complete API documentation, and release preparation after the implementation is usable.
+The [ADR-0001 release contract](adr/0001-native-protobuf-type-integration.md) defines the initial public entry points, settings/defaults, framing, snapshot format, and descriptor normalization.
+The 0.x policy permits documented breaking changes while the design matures; 1.0.0 is the stabilization point.
+Implement the releases in this order:
+
+1. For 0.1.0, implement the immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8), including generated-class validation, transient parser reconstruction, limits, framing, copy, and failure behavior.
+2. Add TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9), and complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
+3. Verify production transport, checkpoint/savepoint recovery, and isolated user-code classloading in [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); cover Google Well-Known Types and OpenTelemetry generated composite messages in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
+4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
+5. Prepare publication and packaged-artifact validation in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13). Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after 0.1.0 is published, a consumer verifies it, and snapshot/savepoint fixtures from that published artifact are preserved with provenance.
+6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from published 0.1.0 state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add release-to-release API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
+7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential upgrade outcomes before release.
+
+After 0.3.0, assess remaining issues, missing implementation and validation gaps before adding another milestone.
+Define further 0.x work when needed; prepare 1.0.0 only when the design and compatibility contract are ready to stabilize.
+There is no scheduled 1.0.0 milestone in the current roadmap.
+
+Implementation PRs update documentation for behavior they actually deliver.
+Until they land, API examples in the ADR are contract declarations, not runnable library usage, and the README retains the unimplemented status.
+The optional Chill probe is not a production fallback or a release acceptance substitute.
+
+### Contract acceptance scenarios
+
+The following scenarios are obligations for the linked implementation issues, not tests already passed by this documentation change.
+
+| Area | Required scenarios | Owner |
+|---|---|---|
+| Construction and identity | Supported generated hierarchies; invalid classes and extension-dependent graphs; isKeyType remains false with all settings; no message-key opt-in; immutable builder results; default and nondefault settings in equality/hashCode/canEqual | #8, #9 |
+| Framing and limits | Empty and adjacent frames; negative, excessive, overflow-prone, and truncated lengths; malformed/uninitialized payloads; size/depth boundaries on write and read; nested/map/unknown-group recursion; no read-ahead into the next frame; exact stream copy | #8 |
+| Native selection | Generic types disabled; explicit and AbstractMessage registration; fresh-JVM missing-registration and Message-interface controls; top-level/POJO/tuple transport; explicitly typed Row/List paths | #9, #11 |
+| Snapshot and normalization | Version-1 round trips; unsupported/corrupt data and flags; missing/conflicting imports; recursive message graphs; deterministic dependency ordering; SourceCodeInfo ignored but options/declaration order/unknown content retained; same fingerprint with differing descriptor content cannot establish compatibility | #10 |
+| Unchanged-schema restore | Changed fields, names, imported descriptors and framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11 |
+| Runtime values and types | Continued processing and restored values in scalar-keyed and operator state, including MapState values with scalar user keys; unknown fields; nested WKT/OTel values; Any payload bytes kept opaque; negative controls show both inferred and explicitly typed keyBy bypass the non-key declaration and equal message bytes can hash into different groups across isolated classloaders | #9, #11, #18 |
+| Published release baseline | Attributable message/snapshot bytes and complete savepoints from the published artifact, expected values, settings, schemas/imports, job/state identity, generation commands, and exact source/artifact/toolchain provenance; retain fixtures without overwriting them with newer writers | #10, #11, #13 |
+| 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported released 0.1.0 fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
+| 0.3.0 upgrade decisions | Source/API checks; already-compiled consumers for unchanged APIs and compiled replacements for intentional breaks; direct and sequential upgrade outcomes, including newly emitted state after 0.2.0 evolution; retain published fixtures and test supported restore/migration or explicit rejection; document each break and required procedure | #20, #21, #22, #23 |
+
+Run production acceptance on JDK 17/21 and the pinned Protobuf 3.25.x/4.x profiles with matching application gencode/runtime pairs, including a packaged-library consumer.
+Compatibility across changed built-in descriptors is not implied by supporting both runtime profiles.
+Single-JVM MiniCluster success does not prove cross-process key hashing; the supported keyed scenarios extract scalar keys and do not use generated messages as keys.
 
 The current matrix proves that these feasibility probes compile and run in each combination.
 It does not yet prove binary compatibility of a production library jar across Protobuf majors or compatibility of saved state.
