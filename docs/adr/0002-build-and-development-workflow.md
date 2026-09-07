@@ -18,6 +18,7 @@ limitations under the License.
 
 - Status: Accepted
 - Date: 2026-09-06
+- Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -56,5 +57,14 @@ This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp
 ## Consequences
 
 A parent reactor and separate adapter/examples modules are unnecessary before there is code to separate.
-Hugo, deployment infrastructure, release automation, and a published-API binary-compatibility gate can be added when those artifacts exist.
+The original deferral of Hugo and publication infrastructure applies only to bootstrap.
+The [staged release contract](0001-native-protobuf-type-integration.md#release-stages) requires GitHub Pages documentation and verified Maven Central publication in 0.1.0.
+[Issue #19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) owns the site implementation using the shared flink-gcp-dev-tools Hugo design, project-specific URLs, release/development documentation, and CI/deployment validation.
+That implementation must amend this ADR and the development instructions with the actual Hugo and publishing workflow; this release-contract amendment does not create or deploy the site.
+[Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns publication preparation and candidate verification, with actual publication and consumer verification required by the 0.1.0 release tracker.
+Release-to-release API checks are added for 0.2.0 against the published 0.1.0 baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
+Retain those checks in 0.3.0 and extend them to the published 0.2.0 baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
+Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.
+Undocumented regressions and failures of claimed supported paths block publication.
+The public API and supported forward-restore contract stabilize at 1.0.0; DynamicMessage implementation structure is selected by its design issue rather than fixed here.
 This bootstrap creates neither a Maven Central release nor a stable public API.
