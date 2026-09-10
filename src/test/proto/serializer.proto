@@ -1,0 +1,67 @@
+// Copyright 2026 The flink-gcp authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
+syntax = "proto3";
+package flink.protobuf.serializer;
+option java_package = "io.github.flink.gcp.protobuf.generated";
+option java_multiple_files = true;
+
+message ScalarMessage {
+  double double_value = 1;
+  float float_value = 2;
+  int64 int64_value = 3;
+  uint64 uint64_value = 4;
+  int32 int32_value = 5;
+  fixed64 fixed64_value = 6;
+  fixed32 fixed32_value = 7;
+  bool bool_value = 8;
+  string string_value = 9;
+  bytes bytes_value = 10;
+  uint32 uint32_value = 11;
+  sfixed32 sfixed32_value = 12;
+  sfixed64 sfixed64_value = 13;
+  sint32 sint32_value = 14;
+  sint64 sint64_value = 15;
+  enum Choice { UNSPECIFIED = 0; POSITIVE = 1; NEGATIVE = -1; }
+  Choice choice = 16;
+  repeated int32 packed_values = 17;
+  repeated int64 unpacked_values = 18 [packed = false];
+  repeated string strings = 19;
+  repeated bytes blobs = 20;
+  repeated double packed_double = 30;
+  repeated float packed_float = 31;
+  repeated int64 packed_int64 = 32;
+  repeated uint64 packed_uint64 = 33;
+  repeated int32 packed_int32 = 34;
+  repeated fixed64 packed_fixed64 = 35;
+  repeated fixed32 packed_fixed32 = 36;
+  repeated bool packed_bool = 37;
+  repeated uint32 packed_uint32 = 38;
+  repeated sfixed32 packed_sfixed32 = 39;
+  repeated sfixed64 packed_sfixed64 = 40;
+  repeated sint32 packed_sint32 = 41;
+  repeated sint64 packed_sint64 = 42;
+  repeated Choice packed_choice = 43;
+  oneof selection { string selected_string = 21; ScalarMessage selected_message = 22; }
+}
+
+message RecursiveMessage {
+  RecursiveMessage child = 1;
+  repeated RecursiveMessage children = 2;
+  map<string, RecursiveMessage> nodes = 3;
+  map<string, int32> counts = 4;
+  bytes payload = 5;
+  repeated bytes chunks = 6;
+}

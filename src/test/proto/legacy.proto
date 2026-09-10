@@ -1,0 +1,54 @@
+// Copyright 2026 The flink-gcp authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
+syntax = "proto2";
+package flink.protobuf.serializer;
+option java_package = "io.github.flink.gcp.protobuf.generated";
+option java_multiple_files = true;
+
+message LegacyMessage {
+  optional string text = 1;
+  repeated string texts = 2;
+  optional string serialized_size = 3;
+  optional string item_2_name = 4;
+  repeated string item = 5;
+  optional string item_count = 6;
+  optional group GroupValue = 7 {
+    optional LegacyMessage child = 8;
+    optional int32 number = 9;
+  }
+}
+message RequiredMessage {
+  required string value = 1;
+  optional RequiredMessage child = 2;
+}
+message AmbiguousStringNames {
+  optional string serialized_size = 3;
+  optional string serialized_size_ = 4;
+  optional string serialized_size3 = 5;
+}
+message LazyMessage {
+  optional RequiredMessage child = 1 [lazy = true];
+  optional RequiredMessage unchecked = 2 [unverified_lazy = true];
+}
+message ExtensionTarget { extensions 100 to max; }
+message ExtensionHolder { optional ExtensionTarget child = 1; }
+message ExtensionDeclaration {
+  extend ExtensionTarget { optional string nested_extension = 100; }
+}
+message MessageSetRoot {
+  option message_set_wire_format = true;
+  extensions 4 to max;
+}

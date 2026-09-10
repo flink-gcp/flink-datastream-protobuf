@@ -57,10 +57,41 @@ Each class gets a fresh JVM because Flink's TypeInfoFactory registry is process-
 Native probes disable generic types and run without `--add-opens`.
 The optional `chill` profile adds Chill only in test scope, and its tagged comparison runs only when the recipe clears the default tag exclusion.
 
-The committed `.proto` file is generated into `target/generated-test-sources/protobuf`.
+The committed `.proto` files are generated into `target/generated-test-sources/protobuf`.
 Clean when switching profiles so generated code and runtime stay paired.
 Neither generated messages nor any test instrumentation belongs in the library jar.
 The native transport probe deliberately has no serializer snapshot implementation; its results do not establish state compatibility.
+
+### Native serializer implementation
+
+The production `ProtobufTypeSerializer` is internal machinery with package-private construction.
+The serializer tests construct it directly; application-facing TypeInformation and factory construction belong to issue #9.
+The native transport probes still exercise their separate test serializer.
+
+The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without materializing the serialized message in a payload array.
+Before writing the prefix, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget.
+It uses a traversal stack and per-call identity-based summaries for shared child values.
+Ordinary values are encoded once; ambiguous proto2 strings additionally count generated root output to preserve retained invalid UTF-8 bytes without guessing Java getter names.
+The whole graph is validated before this single counting pass, including when several nested strings are ambiguous; its cost is measured separately.
+Sizing allocates traversal metadata for each distinct message or unknown-field set visited.
+The output wrapper rejects writes beyond the calculated length and checks the actual byte count after flushing.
+Tests compare the calculated lengths with actual Protobuf output for scalar and packed encodings, Unicode and retained proto2 string bytes, and unknown fields.
+A separate shared-data test verifies rejection before encoding when the logical size exceeds 4 GiB and the runtime's integer size calculation overflows.
+The limits constrain accepted inputs; they do not promise a bound on total heap usage or sufficient stack capacity for arbitrarily high configured recursion limits.
+
+Reading validates the prefix before allocating from its value and bounds underlying reads to the current frame.
+Object copy returns the immutable input instance; stream copy preserves frame bytes and checks length and truncation without parsing payload semantics or nesting.
+Stream copy lazily allocates and reuses a private 4 KiB buffer so Flink memory output views can grow as needed.
+Malformed input and I/O failures may leave partial input consumption or output; no resynchronization or transactional output is promised.
+The tests also cover parser reconstruction after Java serialization with an isolated generated-message classloader.
+Validated defaults, parsers, and normalized schemas are reused through `ClassValue`, keyed by the exact application class rather than its name.
+Protobuf's generated accessor tables already retain reflective field methods; the library adds no per-record method lookup or duplicate field-method cache.
+Serializer-local copy buffers remain independent, and record size/depth summaries live for one sizing call only.
+The [local performance comparison](validation/serializer-performance.md) measures warm construction and representative serialization paths before and after these changes, including the raw-string counting path.
+These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
+
+`snapshotConfiguration()` explicitly rejects managed-state use until issue #10 supplies the versioned snapshot implementation.
+The library cannot publish 0.1.0 with this intermediate failure in place.
 
 ## Dependencies and packaging
 
@@ -99,9 +130,9 @@ Neither MCP server is required to build or test the project.
 
 The [ADR-0001 release contract](adr/0001-native-protobuf-type-integration.md) defines the initial public entry points, settings/defaults, framing, snapshot format, and descriptor normalization.
 The 0.x policy permits documented breaking changes while the design matures; 1.0.0 is the stabilization point.
-Implement the releases in this order:
+The release sequence and current implementation status are:
 
-1. For 0.1.0, implement the immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8), including generated-class validation, transient parser reconstruction, limits, framing, copy, and failure behavior.
+1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
 2. Add TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9), and complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Verify production transport, checkpoint/savepoint recovery, and isolated user-code classloading in [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); cover Google Well-Known Types and OpenTelemetry generated composite messages in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
