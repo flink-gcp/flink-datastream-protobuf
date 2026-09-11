@@ -19,7 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Pending; only feasibility probes exist
+- Implementation: Serializer implemented; type integration and snapshots pending
 - Evidence: [Spike 0](../validation/spike-0.md)
 
 ## Context
@@ -39,7 +39,7 @@ Consequently, failure of that configuration is not a premise of this design.
 
 The maintainer selected an incremental first release on 2026-09-06.
 The descriptor-based design remains the target, with its compatibility evaluator delivered after the first usable library.
-These are release requirements; production integration and state compatibility remain unimplemented.
+These are release requirements; the serializer is implemented, while application-facing integration and state compatibility remain unimplemented.
 
 | Release | Required outcome |
 |---|---|
@@ -141,11 +141,28 @@ No resynchronization after malformed input is promised.
 The byte and recursion limits are input constraints, not guarantees about total heap usage or stack capacity.
 
 Generated messages are immutable: object copy returns the same instance and `isImmutableType()` returns true.
-Resolve the parser once per serializer instance and retain it in a transient field; the serializer must survive Java serialization to a TaskManager.
+Resolve validated defaults, parsers, and normalized descriptors through a `ClassValue` cache keyed by the exact generated class; the serializer must survive Java serialization to a TaskManager.
+This avoids repeated reflective lookup and schema normalization without a global map that retains application classloaders.
+Concurrent first lookups can compute redundant metadata before the cache publishes one result; validation must not depend on running exactly once.
 Reconstruct transient runtime objects under the application classloading context without serializing a parser or classloader in the job graph.
 Stream copy preserves the complete frame bytes without parsing and reserializing the payload; it checks length and truncation but does not validate payload semantics or nesting.
 The current probe uses a simple byte-array implementation solely to exercise Flink's routing and transport.
 It is not the production serializer or a stable wire format.
+
+The serializer implementation checks message size with a dedicated field-wise calculation using `long` arithmetic before emitting the prefix.
+It uses an explicit traversal stack for nested messages and unknown groups, retaining per-call size and depth summaries for shared child instances.
+This avoids trusting `MessageLite.getSerializedSize()`, whose documented result can overflow for messages larger than `Integer.MAX_VALUE`, including wrapping to a small positive value.
+Scalar sizing follows the wire encoding, including packed fields, map entries, UTF-8 strings, and retained proto2 string bytes.
+Ordinary values need one output encoding pass.
+For a proto2 string without UTF-8 validation, a decoded replacement character can hide retained invalid bytes, so the reflected String does not establish the wire length.
+The implementation computes a lower size bound and validates the entire graph, then counts the root's generated wire output through a bounded sink before writing the actual frame.
+This uses public runtime APIs and avoids reproducing protoc's Java getter naming rules or accessing private raw-field methods.
+The counting sink retains no payload bytes and uses one additional fixed-size encoder buffer; it counts the root once even when multiple nested strings are ambiguous.
+Generated field accessors already cache their reflective methods in Protobuf's accessor table; the library does not maintain a second method cache.
+The dedicated calculation requires differential tests against both supported runtimes; performance measurements must distinguish ordinary values from the counting path.
+
+`snapshotConfiguration()` currently fails explicitly with an `UnsupportedOperationException` identifying issue #10.
+This is an intermediate implementation boundary, not a release contract: 0.1.0 cannot be published until the versioned snapshot implementation replaces that failure and the state acceptance tests pass.
 
 ### Complete descriptor normalization version 1
 

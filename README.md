@@ -3,8 +3,9 @@
 Native Protocol Buffers type integration for the Apache Flink DataStream API.
 
 This project is under development.
-The repository currently contains the build, development workflow, design records, and executable feasibility probes.
-It does not yet provide a production TypeInformation, serializer, or snapshot implementation, and no release is available.
+The repository contains the native serializer implementation, development workflow, design records, and executable feasibility probes.
+The application-facing TypeInformation, factory, and managed-state snapshot implementation remain unimplemented, and no release is available.
+The serializer is internal machinery; it is not yet a usable DataStream integration or a supported state serializer.
 
 The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
 The initial target is Flink 2.3, full-runtime generated Protobuf messages, and JDK 17 and 21.
@@ -13,7 +14,8 @@ The probes run with protobuf-java 3.25.8 and 4.33.6.
 ## Planned releases
 
 The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates the first usable release from schema evolution.
-None of these production capabilities is implemented yet.
+The serializer implements generated-class validation, bounded framing, immutable copying, and configurable size, depth, and deterministic-writing behavior.
+The remaining integration and restore requirements below are planned capabilities.
 
 | Release | Planned capability |
 |---|---|

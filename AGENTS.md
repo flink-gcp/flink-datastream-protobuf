@@ -3,7 +3,8 @@
 ## Project and commands
 
 This single-module library targets native Protobuf integration with Flink DataStream.
-Production serializers are not implemented yet; the executable probes are test instruments.
+The native serializer is implemented; application-facing type integration and managed-state snapshots remain pending.
+The executable probes are separate test instruments.
 Read the matching ADR before changing behavior, public API, dependencies, packaging, or workflow.
 Current design lives in `docs/adr/`; measured feasibility lives in `docs/validation/spike-0.md`.
 

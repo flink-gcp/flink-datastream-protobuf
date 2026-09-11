@@ -14,5 +14,12 @@
  * limitations under the License.
  */
 
-/** Native Protocol Buffers type integration for Flink DataStream, currently under development. */
+/**
+ * Native Protocol Buffers serialization for Flink DataStream generated full-runtime messages.
+ *
+ * <p>The current serializer is internal machinery with package-private construction. Public type
+ * information, factory registration, and managed-state snapshots are separate implementation steps;
+ * the current package is not a complete release API. Connector boundary serialization schemas and
+ * Table/SQL formats are outside this package's scope.
+ */
 package io.github.flink.gcp.protobuf;
