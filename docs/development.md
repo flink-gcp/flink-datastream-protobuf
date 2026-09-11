@@ -39,7 +39,7 @@ mise x -- just --list
 | `just format` | Spotless with Flink's AOSP Java formatting and import order |
 | `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.8 |
 | `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.33.6 |
-| `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` test adapter and Protobuf 3 |
+| `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
@@ -60,7 +60,7 @@ The default tool set includes JDK 17; mise may install JDK 21 for that command.
 Tests named `*Test` run in Maven's test phase.
 Tests named `*ITCase` run through the connector parent's Surefire integration-test execution.
 Each class gets a fresh JVM because Flink's TypeInfoFactory registry is process-global.
-Native probes disable generic types and run without `--add-opens`.
+Native integration tests and probes disable generic types and run without `--add-opens`.
 The optional `chill` profile adds Chill only in test scope, and its tagged comparison runs only when the recipe clears the default tag exclusion.
 
 The committed `.proto` files are generated into `target/generated-test-sources/protobuf`.
@@ -76,8 +76,9 @@ The `flink1` Maven profile activates with `-Dflink.compat=flink1` and supplies t
 `just verify-flink` selects the matching adapter and cleans before compilation; use it when changing Flink versions.
 For example, `just verify-protobuf 4 -Dflink.compat=flink1` tests the POM's LTS default with Protobuf 4.
 Maven rejects mismatched Flink majors and adapter selections during validation.
-The alternate `src/test/java-flink1` and `src/test/java-flink2` roots bridge the probe's legacy `createSerializer(ExecutionConfig)` method; production code currently needs no adapter.
-Both roots are formatted and linted, but only the selected one is compiled.
+The alternate `src/main/java-flink1` and `src/main/java-flink2` roots bridge the production type information's legacy `createSerializer(ExecutionConfig)` method.
+The matching test roots retain separate probe adapters and test the legacy production entry point on 1.20.
+Both runtime variants are formatted and linted, but only the selected production and test roots are compiled.
 
 `just verify-flink` and `just binary-compat` delegate to `scripts/verify-flink.sh` and `scripts/binary-compat.py` respectively.
 Run them through just so the scripts execute from the repository root with the recipe arguments.
@@ -88,15 +89,21 @@ The recipe compares every test's class/name, rejects missing or unsuccessful inv
 It clears the generated reports before rerunning so stale reports cannot hide omitted tests.
 Each Protobuf profile has its own floor build; this is not a claim that a jar built against one Protobuf major has been tested on the other.
 
-The transport probe uses explicit list element information on all runtimes and additionally checks inferred lists: Flink 2.x infers the registered element type, while 1.20 falls back to a generic type that cannot create a serializer with generic types disabled.
+The production integration and transport probe use explicit list element information on all runtimes and additionally check inferred lists: Flink 2.x infers the registered element type, while 1.20 falls back to a generic type that cannot create a serializer with generic types disabled.
 Top-level, POJO, tuple, Row, and explicit List transport remain required on every runtime.
-These checks do not establish production TypeInformation integration, managed-state recovery, or a published consumer's classpath; issues #9, #10, #11, and #13 retain those acceptance requirements for both version lines.
+Production integration tests independently verify the native type information and serializer on those transport paths.
+These checks do not establish managed-state recovery or a published consumer's classpath; issues #10, #11, and #13 retain those acceptance requirements for both version lines.
 
 ### Native serializer implementation
 
 The production `ProtobufTypeSerializer` is internal machinery with package-private construction.
-The serializer tests construct it directly; application-facing TypeInformation and factory construction belong to issue #9.
-The native transport probes still exercise their separate test serializer.
+Serializer unit tests construct it directly; application-facing construction uses `ProtobufTypeInformation.of` or its builder.
+`ProtobufTypeInfoFactory` selects the same implementation with the default settings.
+The native transport probes still exercise their separate test serializer; `ProtobufRegistrationITCase` and `ProtobufExplicitITCase` exercise production classes.
+The production registration suite covers superclass lookup under both generated hierarchies through the paired Protobuf profiles, with fresh-JVM unregistered and Message-interface controls.
+The key restriction tests retain both inferred and explicit keyBy bypass controls and show that identical message bytes can select different key groups across isolated generated-class loaders.
+Those controls document unsupported message-key use; they are not a promise that the library rejects every such use.
+See the [construction and configuration examples](../README.md#native-type-information) for registration timing, defaults, and explicit type settings.
 
 The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without materializing the serialized message in a payload array.
 Before writing the prefix, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget.
@@ -163,7 +170,7 @@ The 0.x policy permits documented breaking changes while the design matures; 1.0
 The release sequence and current implementation status are:
 
 1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
-2. Add TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9), and complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
+2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration. Complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Verify production transport, checkpoint/savepoint recovery, and isolated user-code classloading in [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); cover Google Well-Known Types and OpenTelemetry generated composite messages in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
 5. Prepare publication and packaged-artifact validation for both `0.1.0` and `0.1.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
@@ -175,7 +182,8 @@ Define further 0.x work when needed; prepare 1.0.0 only when the design and comp
 There is no scheduled 1.0.0 milestone in the current roadmap.
 
 Implementation PRs update documentation for behavior they actually deliver.
-Until they land, API examples in the ADR are contract declarations, not runnable library usage, and the README retains the unimplemented status.
+Construction and registration examples describe implemented APIs; snapshot and restore contracts remain planned until their owning issues land.
+The README distinguishes current transport support from the remaining release requirements.
 The optional Chill probe is not a production fallback or a release acceptance substitute.
 
 ### Contract acceptance scenarios
@@ -198,5 +206,5 @@ Run production acceptance across the ADR-0003 matrix: JDK 17/21 for both support
 Compatibility across changed built-in descriptors is not implied by supporting both runtime profiles.
 Single-JVM MiniCluster success does not prove cross-process key hashing; the supported keyed scenarios extract scalar keys and do not use generated messages as keys.
 
-The current matrix proves that these feasibility probes compile and run in each combination.
+The current matrix covers the production serializer and type integration as well as separate feasibility probes in each combination.
 It does not yet prove binary compatibility of a production library jar across Protobuf majors or compatibility of saved state.

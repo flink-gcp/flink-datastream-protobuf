@@ -17,9 +17,12 @@
 /**
  * Native Protocol Buffers serialization for Flink DataStream generated full-runtime messages.
  *
- * <p>The current serializer is internal machinery with package-private construction. Public type
- * information, factory registration, and managed-state snapshots are separate implementation steps;
- * the current package is not a complete release API. Connector boundary serialization schemas and
- * Table/SQL formats are outside this package's scope.
+ * <p>Use {@link io.github.flink.gcp.protobuf.ProtobufTypeInformation} for explicit construction and
+ * per-type settings, or register {@link io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
+ * against AbstractMessage before type extraction. The factory registry is process-global. Disable
+ * generic types to reject accidental fallback and extract stable scalar keys instead of message
+ * keys. Managed-state snapshots remain a separate implementation step; this is not a complete
+ * release API. Connector boundary serialization schemas and Table/SQL formats are outside this
+ * package.
  */
 package io.github.flink.gcp.protobuf;
