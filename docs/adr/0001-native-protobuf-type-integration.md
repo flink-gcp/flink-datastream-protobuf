@@ -21,6 +21,7 @@ limitations under the License.
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Implementation: Serializer implemented; type integration and snapshots pending
 - Evidence: [Spike 0](../validation/spike-0.md)
+- Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
 ## Context
 
@@ -75,7 +76,9 @@ Flink can still choose its own generic serializer when this integration is not s
 Set `pipeline.generic-types: false` to reject that path, including in native examples and acceptance tests.
 The optional test-only Chill comparison remains separate from production dependencies and behavior.
 
-The initial target is Flink 2.3 with full-runtime generated messages, protobuf-java 3.25.x and 4.x, and JDK 17 and 21.
+The target is full-runtime generated messages with protobuf-java 3.25.x and 4.x.
+[ADR-0003](0003-flink-version-compatibility.md) replaces the initial Flink 2.3-only scope with current/previous Flink 2.x minor support and a separate Flink 1.20 LTS build.
+It defines the JDK matrix, artifact version lines, and runtime-specific release acceptance requirements.
 Flink core and protobuf-java remain provided and unrelocated so the application owns its runtime.
 DynamicMessage is deferred to 0.3.0; lite runtime, extension-registry support, Table formats, and DataStream API V2 remain outside these release contracts.
 
@@ -338,4 +341,4 @@ It is outside this library's staged release scope.
 Exact full-descriptor equality deliberately rejects all schema changes in 0.1.0; using it as the permanent value-state policy would unnecessarily reject the compatible changes planned for 0.2.0.
 Fingerprint equality alone is insufficient in either release.
 
-Flink 2.2 and 1.20 support, cross-minor savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.
+Cross-Flink-version savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.

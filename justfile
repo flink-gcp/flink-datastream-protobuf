@@ -38,6 +38,16 @@ verify-protobuf major *args:
     test "{{ major }}" = 3 || test "{{ major }}" = 4
     {{ mvn }} clean -Pprotobuf{{ major }} "${@:2}" verify
 
+# Select the matching source adapter and clean the paired Protobuf build.
+[positional-arguments]
+verify-flink version major="3":
+    bash scripts/verify-flink.sh "$1" "$2"
+
+# Run the unchanged floor jar and compiled test inventory on a newer 2.x runtime.
+[positional-arguments]
+binary-compat ceiling major="3":
+    python3 scripts/binary-compat.py "$1" "$2"
+
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups= verify
@@ -46,9 +56,10 @@ probe-chill:
 format:
     {{ mvn }} spotless:apply
 
-# Lint workflows and Markdown with the same tool versions as CI.
+# Lint workflows, shell scripts, and Markdown with the same tool versions as CI.
 lint:
     mise x actionlint shellcheck -- actionlint
+    mise x shellcheck -- shellcheck scripts/*.sh
     mise x npm:markdownlint-cli2 -- markdownlint-cli2
 
 # Pin new or updated GitHub Actions to commit SHAs.

@@ -8,8 +8,23 @@ The application-facing TypeInformation, factory, and managed-state snapshot impl
 The serializer is internal machinery; it is not yet a usable DataStream integration or a supported state serializer.
 
 The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
-The initial target is Flink 2.3, full-runtime generated Protobuf messages, and JDK 17 and 21.
-The probes run with protobuf-java 3.25.8 and 4.33.6.
+It targets full-runtime generated Protobuf messages with protobuf-java 3.25.8 and 4.33.6.
+
+## Supported Flink versions
+
+The [compatibility policy](docs/adr/0003-flink-version-compatibility.md) follows flink-connector-gcp: the current and previous Flink 2.x minors share one artifact, and Flink 1.20 LTS uses a separate build from the same source tree.
+The current matrix verifies the internal serializer and native transport probes; application-facing integration and state recovery remain release requirements.
+
+| Flink runtime | Tested patch | Java | Planned release version |
+|---|---|---|---|
+| 2.2 | 2.2.1 (compile floor) | 17, 21 | `X.Y.Z` |
+| 2.3 | 2.3.0 (runtime ceiling) | 17, 21 | The same `X.Y.Z` jar |
+| 1.20 LTS | 1.20.4 | 17 | `X.Y.Z-1.20`, compiled for 1.20 |
+
+Both version lines use `io.github.flink-gcp:flink-datastream-protobuf`.
+There is no binary compatibility promise between Flink 1.x and 2.x or support for Java 11.
+Source and binary compatibility do not establish savepoint compatibility across Flink versions.
+On Flink 1.20, supply explicit `ListTypeInfo` for lists of messages; `TypeHint<List<MessageType>>` falls back to a generic type in the probe.
 
 ## Planned releases
 

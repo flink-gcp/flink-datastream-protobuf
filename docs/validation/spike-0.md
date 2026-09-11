@@ -55,6 +55,8 @@ Five bounded sources feed a local MiniCluster at parallelism two with operator c
 The results distinguish top-level, POJO, tuple, Row, and List paths.
 Row uses an explicitly supplied RowTypeInfo; this does not establish automatic Row field inference.
 List element information is inferred from `TypeHint<List<ProbeMessage>>` and then supplied to the source; this does not establish inference from an erased runtime List instance.
+That observation describes the original Flink 2.3 probe.
+The [ADR-0003 compatibility matrix](../adr/0003-flink-version-compatibility.md) extends verification to Flink 2.2 and 1.20: the current probe transports an explicit `ListTypeInfo` on every runtime and separately asserts the inference result, which falls back to a generic type on 1.20.
 
 An initial exploratory assertion expected List TypeHint extraction to fall back to generic serialization.
 It did not: Flink 2.3.0 produced ListTypeInfo with the registered element type.
@@ -87,15 +89,15 @@ The library's rationale is native type integration and an explicit state compati
 
 ## Reproduction
 
-From a trusted checkout with the development toolchain installed:
+From a trusted checkout with the development toolchain installed, select the original Flink 2.3.0 baseline explicitly:
 
 ```sh
-mise x java@temurin-17 just -- just verify-protobuf 3
-mise x java@temurin-17 just -- just verify-protobuf 4
-mise x java@temurin-21 just -- just verify-protobuf 3
-mise x java@temurin-21 just -- just verify-protobuf 4
-mise x java@temurin-17 just -- just probe-chill
-./mvnw -ntp -Pchill dependency:tree
+mise x java@temurin-17 just -- just verify-flink 2.3.0 3
+mise x java@temurin-17 just -- just verify-flink 2.3.0 4
+mise x java@temurin-21 just -- just verify-flink 2.3.0 3
+mise x java@temurin-21 just -- just verify-flink 2.3.0 4
+mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill -Dflink.version=2.3.0 -Dtest.excluded.groups= verify
+./mvnw -ntp -Pchill -Dflink.version=2.3.0 dependency:tree
 ```
 
 Exact JDK patches may differ from the dated initial observation because the development commands select a maintained major version.
@@ -107,4 +109,4 @@ The optional comparison test prints the loaded artifact locations and checks the
 The test-only serializer deliberately rejects snapshot creation.
 These probes establish factory selection and transport, not checkpoint/savepoint restore, a stable serialization format, schema evolution, isolated user-code classloaders, or production performance.
 Those are acceptance tests for the implementation steps in [Development](../development.md).
-No Flink 2.2 or 1.20 support was measured.
+The original observation did not measure Flink 2.2 or 1.20; the current compatibility checks and their limits are described in [Development](../development.md#flink-compatibility-checks).
