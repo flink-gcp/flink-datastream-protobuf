@@ -42,7 +42,8 @@ public class ProbeTypeInfoFactory extends TypeInfoFactory<Message> {
         return new ProbeTypeInformation<>(((Class<?>) type).asSubclass(Message.class));
     }
 
-    public static final class ProbeTypeInformation<T extends Message> extends TypeInformation<T> {
+    public static final class ProbeTypeInformation<T extends Message>
+            extends CrossVersionProbeTypeInformation<T> {
         private final Class<T> type;
 
         public ProbeTypeInformation(Class<T> type) {

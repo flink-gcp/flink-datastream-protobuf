@@ -20,7 +20,8 @@ limitations under the License.
 |---|---|---|
 | [ADR-0001](0001-native-protobuf-type-integration.md) | Native Protobuf type integration for DataStream | Accepted |
 | [ADR-0002](0002-build-and-development-workflow.md) | A single Maven module with a shared local and CI workflow | Accepted |
+| [ADR-0003](0003-flink-version-compatibility.md) | Current/previous Flink 2.x minors and a separate 1.20 LTS build | Accepted; replaces ADR-0001's runtime scope |
 
 These records distinguish accepted design from implemented behavior.
-The initial library implementation is pending.
+The internal serializer is implemented; application-facing type integration and state snapshots are pending.
 A refinement updates its existing record; a reversal adds a new record and marks the old one as superseded.

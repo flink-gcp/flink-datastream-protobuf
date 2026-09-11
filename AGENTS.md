@@ -11,14 +11,17 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just format`: format Java before committing.
 - `just verify`: build and run unit/integration tests and license checks.
 - `just verify-protobuf 3` / `just verify-protobuf 4`: clean verification for each runtime/gencode pair.
+- `just verify-flink <version> <protobuf-major>`: clean verification with the matching Flink adapter.
+- `just binary-compat <ceiling> <protobuf-major>`: run the unchanged 2.x floor jar and tests at the ceiling.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
-- `just lint`: workflow and Markdown checks.
+- `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 
 Use `mise x -- just <recipe>` outside a mise-activated shell.
 See `docs/development.md` for tool installation, JDK 21, and the test boundary.
 Run targeted tests while iterating and full verification before pushing Java/build changes in this single-module project.
-Verify both Protobuf profiles for compatibility-sensitive changes; CI covers JDK 17 and 21.
+Verify both Protobuf profiles for compatibility-sensitive changes across the ADR-0003 Flink matrix, including the binary recipe when changing APIs, dependencies, or build configuration.
+CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on Flink 1.20 LTS.
 
 ## Implementation and documentation
 

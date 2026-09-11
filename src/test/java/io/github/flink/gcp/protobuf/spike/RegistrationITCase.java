@@ -20,6 +20,7 @@ import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.typeutils.ListTypeInfo;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
@@ -36,11 +37,16 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RegistrationITCase {
     @Test
     @Timeout(120)
-    void registersGeneratedMessagesAndTransportsAllThreeShapes() throws Exception {
+    void registersGeneratedMessagesAndTransportsAllFiveShapes() throws Exception {
+        String flinkVersion = System.getProperty("protobuf.test.flink.version");
+        assertThat(flinkVersion)
+                .as("protobuf.test.flink.version (set by the Maven verification recipes)")
+                .isNotBlank();
         Configuration config = new Configuration();
         config.set(PipelineOptions.GENERIC_TYPES, false);
         config.set(
@@ -70,11 +76,19 @@ class RegistrationITCase {
             assertThat(((TupleTypeInfo<?>) tuple.getType()).getTypeAt(1)).isEqualTo(messageInfo);
             TypeInformation<List<ProbeMessage>> inferredList =
                     TypeInformation.of(new TypeHint<List<ProbeMessage>>() {});
-            assertThat(inferredList).isInstanceOf(ListTypeInfo.class);
-            assertThat(((ListTypeInfo<?>) inferredList).getElementTypeInfo())
-                    .isEqualTo(messageInfo);
+            ListTypeInfo<ProbeMessage> listInfo = new ListTypeInfo<>(messageInfo);
+            if (flinkVersion.startsWith("1.20.")) {
+                // Flink 1.20 needs explicit list element information with generic types disabled.
+                assertThat(inferredList).isInstanceOf(GenericTypeInfo.class);
+                assertThatThrownBy(() -> inferredList.createSerializer(serializerConfig))
+                        .isInstanceOf(UnsupportedOperationException.class);
+            } else {
+                assertThat(inferredList).isInstanceOf(ListTypeInfo.class);
+                assertThat(((ListTypeInfo<?>) inferredList).getElementTypeInfo())
+                        .isEqualTo(messageInfo);
+            }
             DataStream<Row> row = env.fromData(Types.ROW(messageInfo), Row.of(message));
-            DataStream<List<ProbeMessage>> list = env.fromData(inferredList, List.of(message));
+            DataStream<List<ProbeMessage>> list = env.fromData(listInfo, List.of(message));
             var results =
                     top.rebalance()
                             .map(v -> "top:" + v.getId() + ":" + v.getText())

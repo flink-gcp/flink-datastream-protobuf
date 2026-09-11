@@ -23,6 +23,7 @@ The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, and uv for optional Serena integration.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
+The binary compatibility recipe also needs Python 3.9 or newer, using only its standard library.
 
 ```sh
 mise trust
@@ -38,14 +39,19 @@ mise x -- just --list
 | `just format` | Spotless with Flink's AOSP Java formatting and import order |
 | `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.8 |
 | `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.33.6 |
+| `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` test adapter and Protobuf 3 |
+| `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
+| `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
-| `just lint` | actionlint with the pinned shellcheck, and markdownlint-cli2 |
+| `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
 
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
-CI runs `just verify-protobuf 3` and `just verify-protobuf 4` on each supported JDK; it uses the versions in the Maven profiles.
+CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.4 with JDK 17.
+It also runs the binary compatibility recipe for each Protobuf profile on JDK 17.
+These lanes run for each PR, main push, manual verification, and weekly schedule.
 The required checks above do not include a mutation-testing batch.
 Apply the shared review safeguards to any batch that is performed.
 To reproduce the JDK 21 lane locally, use `mise x java@temurin-21 just -- just verify-protobuf 4`.
@@ -61,6 +67,30 @@ The committed `.proto` files are generated into `target/generated-test-sources/p
 Clean when switching profiles so generated code and runtime stay paired.
 Neither generated messages nor any test instrumentation belongs in the library jar.
 The native transport probe deliberately has no serializer snapshot implementation; its results do not establish state compatibility.
+
+### Flink compatibility checks
+
+The [compatibility decision](adr/0003-flink-version-compatibility.md) defines the supported range and publication requirements.
+The default `flink.version` in `pom.xml` is the 2.x compile floor; `FLINK_CEILING` in `verify.yaml` selects the other supported minor.
+The `flink1` Maven profile activates with `-Dflink.compat=flink1` and supplies the pinned LTS version.
+`just verify-flink` selects the matching adapter and cleans before compilation; use it when changing Flink versions.
+For example, `just verify-protobuf 4 -Dflink.compat=flink1` tests the POM's LTS default with Protobuf 4.
+Maven rejects mismatched Flink majors and adapter selections during validation.
+The alternate `src/test/java-flink1` and `src/test/java-flink2` roots bridge the probe's legacy `createSerializer(ExecutionConfig)` method; production code currently needs no adapter.
+Both roots are formatted and linted, but only the selected one is compiled.
+
+`just verify-flink` and `just binary-compat` delegate to `scripts/verify-flink.sh` and `scripts/binary-compat.py` respectively.
+Run them through just so the scripts execute from the repository root with the recipe arguments.
+The binary recipe first runs a clean full verification at the floor.
+It then invokes only the two Surefire goals at the ceiling, loading production code from the packaged jar and retaining the floor's compiled tests.
+Runtime assertions verify the actual Flink core jar version and production code location.
+The recipe compares every test's class/name, rejects missing or unsuccessful inventories, and checks hashes of the jar and all compiled classes before and after the rerun.
+It clears the generated reports before rerunning so stale reports cannot hide omitted tests.
+Each Protobuf profile has its own floor build; this is not a claim that a jar built against one Protobuf major has been tested on the other.
+
+The transport probe uses explicit list element information on all runtimes and additionally checks inferred lists: Flink 2.x infers the registered element type, while 1.20 falls back to a generic type that cannot create a serializer with generic types disabled.
+Top-level, POJO, tuple, Row, and explicit List transport remain required on every runtime.
+These checks do not establish production TypeInformation integration, managed-state recovery, or a published consumer's classpath; issues #9, #10, #11, and #13 retain those acceptance requirements for both version lines.
 
 ### Native serializer implementation
 
@@ -136,7 +166,7 @@ The release sequence and current implementation status are:
 2. Add TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9), and complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Verify production transport, checkpoint/savepoint recovery, and isolated user-code classloading in [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); cover Google Well-Known Types and OpenTelemetry generated composite messages in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
-5. Prepare publication and packaged-artifact validation in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13). Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after 0.1.0 is published, a consumer verifies it, and snapshot/savepoint fixtures from that published artifact are preserved with provenance.
+5. Prepare publication and packaged-artifact validation for both `0.1.0` and `0.1.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from published 0.1.0 state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add release-to-release API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential upgrade outcomes before release.
 
@@ -164,7 +194,7 @@ The following scenarios are obligations for the linked implementation issues, no
 | 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported released 0.1.0 fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
 | 0.3.0 upgrade decisions | Source/API checks; already-compiled consumers for unchanged APIs and compiled replacements for intentional breaks; direct and sequential upgrade outcomes, including newly emitted state after 0.2.0 evolution; retain published fixtures and test supported restore/migration or explicit rejection; document each break and required procedure | #20, #21, #22, #23 |
 
-Run production acceptance on JDK 17/21 and the pinned Protobuf 3.25.x/4.x profiles with matching application gencode/runtime pairs, including a packaged-library consumer.
+Run production acceptance across the ADR-0003 matrix: JDK 17/21 for both supported Flink 2.x minors and JDK 17 for Flink 1.20, with the pinned Protobuf 3.25.x/4.x profiles and matching application gencode/runtime pairs, including a packaged-library consumer for each artifact line.
 Compatibility across changed built-in descriptors is not implied by supporting both runtime profiles.
 Single-JVM MiniCluster success does not prove cross-process key hashing; the supported keyed scenarios extract scalar keys and do not use generated messages as keys.
 

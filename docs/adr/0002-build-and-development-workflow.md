@@ -29,7 +29,8 @@ Reuse that project's Apache-2.0 licensing, collective copyright identity, Maven 
 The project metadata and packaged notices identify The flink-gcp authors rather than inheriting ASF ownership.
 Keep third-party attribution on the Apache-derived Checkstyle files.
 
-Compile for Java 17 and verify on JDK 17 and 21.
+Compile for Java 17 and verify on JDK 17 and 21 for Flink 2.x, and JDK 17 for Flink 1.20 LTS, as amended by [ADR-0003](0003-flink-version-compatibility.md).
+Keep the shared implementation in this module, with alternate source roots only where Flink APIs differ.
 Resolve protobuf-java and protoc together from a Maven profile for each tested major.
 Generate test messages under target and keep test instruments out of the jar.
 Run each test class in a fresh JVM to isolate Flink's static factory registry.
