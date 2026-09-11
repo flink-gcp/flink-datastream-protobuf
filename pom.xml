@@ -29,7 +29,7 @@ limitations under the License.
     <artifactId>flink-datastream-protobuf</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>Flink DataStream Protobuf</name>
-    <description>Native Protocol Buffers type integration for Apache Flink DataStream. Native serialization, public type information, and factory registration are implemented; managed-state snapshots remain under development.</description>
+    <description>Native Protocol Buffers type integration for Apache Flink DataStream, with explicit type information, factory registration, and versioned descriptor snapshots for unchanged-schema serializer restoration.</description>
     <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>
     <inceptionYear>2026</inceptionYear>
     <licenses>

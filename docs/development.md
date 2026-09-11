@@ -92,7 +92,7 @@ Each Protobuf profile has its own floor build; this is not a claim that a jar bu
 The production integration and transport probe use explicit list element information on all runtimes and additionally check inferred lists: Flink 2.x infers the registered element type, while 1.20 falls back to a generic type that cannot create a serializer with generic types disabled.
 Top-level, POJO, tuple, Row, and explicit List transport remain required on every runtime.
 Production integration tests independently verify the native type information and serializer on those transport paths.
-These checks do not establish managed-state recovery or a published consumer's classpath; issues #10, #11, and #13 retain those acceptance requirements for both version lines.
+These checks do not establish managed-state recovery or a published consumer's classpath; issues #11 and #13 retain those acceptance requirements for both version lines.
 
 ### Native serializer implementation
 
@@ -127,8 +127,21 @@ Serializer-local copy buffers remain independent, and record size/depth summarie
 The [local performance comparison](validation/serializer-performance.md) measures warm construction and representative serialization paths before and after these changes, including the raw-string counting path.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
-`snapshotConfiguration()` explicitly rejects managed-state use until issue #10 supplies the versioned snapshot implementation.
-The library cannot publish 0.1.0 with this intermediate failure in place.
+`snapshotConfiguration()` returns an internal version-1 `ProtobufTypeSerializerSnapshot`.
+It stores both names, framing/normalization versions, all three settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
+The snapshot class/version envelope is written by Flink; the payload follows ADR-0001 exactly, including the independent 64 MiB descriptor limit.
+Reading validates metadata without resolving the saved generated class.
+Restoration resolves the class through the supplied user-code classloader and checks the complete schema before constructing a serializer with the recorded settings.
+
+Compatibility compares decoded normalized descriptor content, never just bytes or fingerprints.
+An unchanged schema permits equal or increased size/depth limits and either deterministic-mode transition; any decreased limit is incompatible.
+New snapshots record the new settings, so a later decrease remains incompatible after an earlier successful increase.
+No migration or reconfigured serializer result is provided.
+Unsupported formats, corrupt data, and invalid descriptors fail during reading; missing, unsupported, or changed generated classes fail explicitly during restoration.
+
+The [format fixtures](../src/test/resources/snapshots/v1/README.md) retain fixed development snapshot/message bytes and writer provenance.
+Tests verify the Flink envelope, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
+These serializer-level checks do not establish job recovery: issue #11 owns checkpoint/savepoint execution, and #13/#6 own published-artifact fixture provenance and release completion.
 
 ## Dependencies and packaging
 
@@ -170,7 +183,8 @@ The 0.x policy permits documented breaking changes while the design matures; 1.0
 The release sequence and current implementation status are:
 
 1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
-2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration. Complete versioned descriptor snapshots with unchanged-schema restore in [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
+2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration.
+   Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Verify production transport, checkpoint/savepoint recovery, and isolated user-code classloading in [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); cover Google Well-Known Types and OpenTelemetry generated composite messages in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
 5. Prepare publication and packaged-artifact validation for both `0.1.0` and `0.1.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
@@ -182,7 +196,7 @@ Define further 0.x work when needed; prepare 1.0.0 only when the design and comp
 There is no scheduled 1.0.0 milestone in the current roadmap.
 
 Implementation PRs update documentation for behavior they actually deliver.
-Construction and registration examples describe implemented APIs; snapshot and restore contracts remain planned until their owning issues land.
+Construction and registration examples describe implemented APIs; runtime checkpoint/savepoint recovery remains a separate acceptance requirement in #11.
 The README distinguishes current transport support from the remaining release requirements.
 The optional Chill probe is not a production fallback or a release acceptance substitute.
 

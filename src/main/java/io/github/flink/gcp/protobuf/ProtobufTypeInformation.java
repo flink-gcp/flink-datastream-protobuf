@@ -40,8 +40,8 @@ import java.util.Objects;
  * inferred and explicitly typed {@code keyBy} can bypass it. Deterministic serialization does not
  * make message hashes stable across classloaders or provide canonical bytes across builds.
  *
- * <p>Managed-state snapshots require the separate snapshot implementation in issue #10. This
- * intermediate type integration alone does not establish checkpoint/savepoint support.
+ * <p>Versioned snapshots support serializer restoration for unchanged schemas. Runtime
+ * checkpoint/savepoint recovery remains a separate acceptance requirement.
  *
  * <p>The class and {@code of(Class)} have an unbounded type parameter to match Flink's inherited
  * static {@code TypeInformation.of(Class)} signature. Construction still requires a supported

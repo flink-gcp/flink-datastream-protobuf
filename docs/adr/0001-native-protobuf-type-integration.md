@@ -19,7 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Serializer and type integration implemented; snapshots pending
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; runtime state recovery pending
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -40,7 +40,7 @@ Consequently, failure of that configuration is not a premise of this design.
 
 The maintainer selected an incremental first release on 2026-09-06.
 The descriptor-based design remains the target, with its compatibility evaluator delivered after the first usable library.
-These are release requirements; the serializer and application-facing type integration are implemented, while state compatibility remains unimplemented.
+These are release requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, while runtime checkpoint/savepoint recovery remains pending.
 
 | Release | Required outcome |
 |---|---|
@@ -171,8 +171,9 @@ The counting sink retains no payload bytes and uses one additional fixed-size en
 Generated field accessors already cache their reflective methods in Protobuf's accessor table; the library does not maintain a second method cache.
 The dedicated calculation requires differential tests against both supported runtimes; performance measurements must distinguish ordinary values from the counting path.
 
-`snapshotConfiguration()` currently fails explicitly with an `UnsupportedOperationException` identifying issue #10.
-This is an intermediate implementation boundary, not a release contract: 0.1.0 cannot be published until the versioned snapshot implementation replaces that failure and the state acceptance tests pass.
+`snapshotConfiguration()` captures the versioned descriptors and settings defined below.
+Unit tests verify metadata round trips, compatibility decisions, and serializer restoration with isolated user-code classloaders.
+Runtime checkpoint/savepoint acceptance remains in issue #11 and must pass before 0.1.0 publication.
 
 ### Complete descriptor normalization version 1
 

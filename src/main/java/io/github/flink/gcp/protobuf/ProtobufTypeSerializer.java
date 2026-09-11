@@ -52,9 +52,8 @@ import java.util.Objects;
  * stream-copy buffers. Generated defaults, parsers, and descriptor metadata are shared by exact
  * message class through a ClassValue cache, including after Java deserialization.
  *
- * <p>Construction is internal to native type integration. Managed-state snapshots remain
- * unsupported until issue #10 is implemented; this intermediate implementation must not be
- * published as 0.1.0.
+ * <p>Construction is internal to native type integration. Versioned snapshots support
+ * unchanged-schema restoration with nondecreasing reader limits.
  *
  * @param <T> concrete generated message type
  */
@@ -328,16 +327,13 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Rejects snapshot creation until the versioned snapshot implementation in issue #10 is
-     * available.
+     * Captures versioned descriptors and settings for unchanged-schema restoration.
      *
-     * @return never returns normally
-     * @throws UnsupportedOperationException because managed-state snapshots are not implemented yet
+     * @return an independent snapshot of this serializer's immutable configuration
      */
     @Override
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
-        throw new UnsupportedOperationException(
-                "Protobuf managed-state snapshots require issue #10; unavailable before that implementation");
+        return new ProtobufTypeSerializerSnapshot<>(messageClass, settings);
     }
 
     /** Reads and validates a frame prefix before allocating payload-dependent storage. */
