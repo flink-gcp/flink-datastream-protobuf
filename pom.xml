@@ -29,7 +29,7 @@ limitations under the License.
     <artifactId>flink-datastream-protobuf</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>Flink DataStream Protobuf</name>
-    <description>Native Protocol Buffers type integration for Apache Flink DataStream. An internal serializer is implemented; public type integration and managed-state snapshots remain under development.</description>
+    <description>Native Protocol Buffers type integration for Apache Flink DataStream. Native serialization, public type information, and factory registration are implemented; managed-state snapshots remain under development.</description>
     <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>
     <inceptionYear>2026</inceptionYear>
     <licenses>
@@ -69,7 +69,7 @@ limitations under the License.
         <test.excluded.groups>chill</test.excluded.groups>
         <flink.forkCountUnitTest>1</flink.forkCountUnitTest>
         <flink.forkCountITCase>1</flink.forkCountITCase>
-        <!-- No module-opening flags: the native probe must work without Kryo reflection. -->
+        <!-- No module-opening flags: native integration and probes must work without Kryo reflection. -->
         <flink.surefire.baseArgLine>-Xms128m -XX:+UseG1GC</flink.surefire.baseArgLine>
         <flink.XmxITCase>1024m</flink.XmxITCase>
     </properties>
@@ -102,6 +102,7 @@ limitations under the License.
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId>
                 <configuration><sourceDirectories combine.self="override">
                     <sourceDirectory>src/main/java</sourceDirectory><sourceDirectory>src/test/java</sourceDirectory>
+                    <sourceDirectory>src/main/java-flink1</sourceDirectory><sourceDirectory>src/main/java-flink2</sourceDirectory>
                     <sourceDirectory>src/test/java-flink1</sourceDirectory><sourceDirectory>src/test/java-flink2</sourceDirectory>
                 </sourceDirectories></configuration>
             </plugin>
@@ -114,7 +115,9 @@ limitations under the License.
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version>
-                <executions><execution><id>add-flink-compat-tests</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals>
+                <executions><execution><id>add-flink-compat-sources</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals>
+                    <configuration><sources><source>src/main/java-${flink.compat}</source></sources></configuration>
+                </execution><execution><id>add-flink-compat-tests</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals>
                     <configuration><sources><source>src/test/java-${flink.compat}</source></sources></configuration>
                 </execution></executions>
             </plugin>

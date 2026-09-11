@@ -19,7 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Serializer implemented; type integration and snapshots pending
+- Implementation: Serializer and type integration implemented; snapshots pending
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -40,7 +40,7 @@ Consequently, failure of that configuration is not a premise of this design.
 
 The maintainer selected an incremental first release on 2026-09-06.
 The descriptor-based design remains the target, with its compatibility evaluator delivered after the first usable library.
-These are release requirements; the serializer is implemented, while application-facing integration and state compatibility remain unimplemented.
+These are release requirements; the serializer and application-facing type integration are implemented, while state compatibility remains unimplemented.
 
 | Release | Required outcome |
 |---|---|
@@ -54,13 +54,20 @@ Implement `ProtobufTypeInformation`, `ProtobufTypeInfoFactory`, `ProtobufTypeSer
 The application-facing construction API for 0.1.0 is:
 
 ```java
-public static <T extends Message> ProtobufTypeInformation<T> of(Class<T> messageClass);
+public static <T> ProtobufTypeInformation<T> of(Class<T> messageClass);
 public static <T extends Message> Builder<T> newBuilder(Class<T> messageClass);
 ```
 
 The public static nested `Builder<T extends Message>` provides `deterministicSerialization(boolean)`, `maxMessageSize(int)`, and `recursionLimit(int)`, each returning the same builder, and `build()` returning a new immutable `ProtobufTypeInformation<T>`.
-`of(messageClass)` is equivalent to `newBuilder(messageClass).build()` with the defaults below.
-The snippets define the planned API; they are not currently available usage examples.
+For supported message classes, `of(messageClass)` is equivalent to `newBuilder(messageClass).build()` with the defaults below.
+The construction API is implemented; managed-state use still requires the snapshot implementation and state acceptance tests.
+
+During issue #9 implementation, compilation showed that the originally declared `<T extends Message> of(Class<T>)` clashes by erasure with Flink's inherited `<T> TypeInformation<T> of(Class<T>)`.
+The implemented `ProtobufTypeInformation<T>` and `of` therefore use an unbounded type parameter, preserving the documented method name and concrete return type.
+`of(String.class)` compiles but fails with `IllegalArgumentException`; successful construction still requires the supported generated Message class.
+The builder retains its `T extends Message` bound.
+Renaming the factory would preserve a compile-time bound at that entry point but change the documented construction syntax; the unbounded signature keeps `of` consistent with Flink.
+
 Use explicit TypeInformation for `.returns(...)`, state descriptors, and per-type settings.
 Annotate the application-facing type information, builder, and factory APIs `@PublicEvolving`; serializer and snapshot implementations are `@Internal` integration machinery, not additional application construction APIs.
 Their persisted identities still carry the state compatibility obligations below.

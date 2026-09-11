@@ -44,14 +44,16 @@ class RuntimeCompatibilityTest {
     void loadsProductionCodeFromTheConfiguredDirectoryOrJar() throws Exception {
         Path expected =
                 Path.of(System.getProperty("protobuf.test.production.classes")).toRealPath();
-        Path actual =
-                Path.of(
-                                ProtobufTypeSerializer.class
-                                        .getProtectionDomain()
-                                        .getCodeSource()
-                                        .getLocation()
-                                        .toURI())
-                        .toRealPath();
-        assertThat(actual).isEqualTo(expected);
+        for (Class<?> type :
+                new Class<?>[] {
+                    ProtobufTypeSerializer.class,
+                    ProtobufTypeInformation.class,
+                    ProtobufTypeInfoFactory.class
+                }) {
+            Path actual =
+                    Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI())
+                            .toRealPath();
+            assertThat(actual).as(type.getName()).isEqualTo(expected);
+        }
     }
 }

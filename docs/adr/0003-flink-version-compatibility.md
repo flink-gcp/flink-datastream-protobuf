@@ -47,7 +47,8 @@ The 0.1.0, 0.2.0, and 0.3.0 capability milestones and 0.x breaking-change policy
 
 Keep one Maven module and shared sources.
 Use `flink.compat=flink2` by default and select alternate roots only for actual API differences.
-The current adapters are test-only; future production TypeInformation work must preserve both builds rather than importing the probe as public API.
+Production TypeInformation uses a package-private adapter for the legacy 1.20 serializer entry point.
+The probe retains its own test-only adapters and is not part of the public API.
 Clean when switching Flink or Protobuf profiles.
 Validate that the selected Flink version belongs to the adapter's major, with the 1.x adapter restricted to 1.20.
 
@@ -66,8 +67,8 @@ Before moving the supported window, explicitly review the new release, advance t
 Dependabot must not independently advance Flink minor or major versions; patch updates remain reviewable.
 Support for a newly released minor starts with that reviewed range update, not merely its upstream publication.
 
-The present tests cover the internal production serializer and a separate test-only factory/transport serializer.
-They do not establish production TypeInformation integration or checkpoint/savepoint recovery.
+The tests cover the production serializer, TypeInformation and factory selection, and native transport, alongside a separate test-only factory/transport serializer.
+They do not establish checkpoint/savepoint recovery.
 All supported runtimes must retain native top-level, POJO, tuple, Row, and explicit List transport with generic types disabled.
 The inferred List control must retain its version-specific result: native element information on 2.x, generic fallback and serializer rejection on 1.20.
 Users on 1.20 must supply explicit list element TypeInformation.
