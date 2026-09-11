@@ -86,7 +86,8 @@ These are requirements for #13, not implemented publication automation.
 Source and binary compatibility do not imply saved-state compatibility across Flink versions.
 Library-only upgrade fixtures keep the Flink version fixed and use the matching artifact line.
 Cross-Flink-minor or cross-major savepoint upgrades require a separately declared path and fixtures proving restored values and continued processing; no such path is claimed here.
-The existing intermediate `snapshotConfiguration()` failure must be replaced and all claimed restore paths verified before 0.1.0 publication.
+Versioned descriptor snapshots replace the intermediate `snapshotConfiguration()` failure.
+All claimed runtime restore paths must still be verified before 0.1.0 publication.
 
 ## Source basis and alternatives
 

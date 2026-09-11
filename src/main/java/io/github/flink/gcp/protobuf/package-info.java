@@ -21,8 +21,8 @@
  * per-type settings, or register {@link io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
  * against AbstractMessage before type extraction. The factory registry is process-global. Disable
  * generic types to reject accidental fallback and extract stable scalar keys instead of message
- * keys. Managed-state snapshots remain a separate implementation step; this is not a complete
- * release API. Connector boundary serialization schemas and Table/SQL formats are outside this
- * package.
+ * keys. Versioned snapshots restore serializers for unchanged schemas; runtime checkpoint/savepoint
+ * recovery remains a separate acceptance requirement. This is not a complete release API. Connector
+ * boundary serialization schemas and Table/SQL formats are outside this package.
  */
 package io.github.flink.gcp.protobuf;

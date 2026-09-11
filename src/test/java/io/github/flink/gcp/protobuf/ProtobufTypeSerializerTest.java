@@ -516,9 +516,7 @@ class ProtobufTypeSerializerTest {
                         .setBytesValue(ByteString.copyFrom(new byte[129]))
                         .build(),
                 "maxMessageSize");
-        assertThatThrownBy(serializer::snapshotConfiguration)
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("#10");
+        assertThat(serializer.snapshotConfiguration().restoreSerializer()).isEqualTo(serializer);
     }
 
     @Test
