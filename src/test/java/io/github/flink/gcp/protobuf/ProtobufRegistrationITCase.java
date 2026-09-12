@@ -16,9 +16,11 @@
 
 package io.github.flink.gcp.protobuf;
 
+import org.apache.flink.api.common.serialization.SerializerConfig;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.api.java.typeutils.ListTypeInfo;
@@ -26,6 +28,7 @@ import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.PipelineOptions;
+import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.types.Row;
@@ -34,6 +37,7 @@ import io.github.flink.gcp.protobuf.spike.generated.ProbeMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,6 +98,15 @@ class ProtobufRegistrationITCase {
             }
             DataStream<Row> row = env.fromData(Types.ROW(messageInfo), Row.of(message));
             DataStream<List<ProbeMessage>> list = env.fromData(listInfo, List.of(message));
+            for (var type :
+                    List.of(
+                            top.getType(),
+                            pojo.getType(),
+                            tuple.getType(),
+                            row.getType(),
+                            list.getType())) {
+                assertNativeSnapshot(type, serializerConfig);
+            }
             var results =
                     top.rebalance()
                             .map(v -> "top:" + v.getId() + ":" + v.getText())
@@ -129,6 +142,16 @@ class ProtobufRegistrationITCase {
                             "row:7",
                             "list:7");
         }
+    }
+
+    private static void assertNativeSnapshot(TypeInformation<?> type, SerializerConfig config)
+            throws Exception {
+        var bytes = new DataOutputSerializer(128);
+        TypeSerializerSnapshot.writeVersionedSnapshot(
+                bytes, type.createSerializer(config).snapshotConfiguration());
+        assertThat(new String(bytes.getCopyOfBuffer(), StandardCharsets.ISO_8859_1))
+                .as("Native message snapshot nested in %s", type)
+                .contains(ProtobufTypeSerializerSnapshot.class.getName());
     }
 
     public static class Envelope {

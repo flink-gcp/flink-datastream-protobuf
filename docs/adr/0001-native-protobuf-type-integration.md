@@ -19,7 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Serializer, type integration, and descriptor snapshots implemented; runtime state recovery pending
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -40,7 +40,7 @@ Consequently, failure of that configuration is not a premise of this design.
 
 The maintainer selected an incremental first release on 2026-09-06.
 The descriptor-based design remains the target, with its compatibility evaluator delivered after the first usable library.
-These are release requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, while runtime checkpoint/savepoint recovery remains pending.
+These are release requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, and MiniCluster tests cover unchanged-schema runtime checkpoint/savepoint recovery.
 
 | Release | Required outcome |
 |---|---|
@@ -60,7 +60,7 @@ public static <T extends Message> Builder<T> newBuilder(Class<T> messageClass);
 
 The public static nested `Builder<T extends Message>` provides `deterministicSerialization(boolean)`, `maxMessageSize(int)`, and `recursionLimit(int)`, each returning the same builder, and `build()` returning a new immutable `ProtobufTypeInformation<T>`.
 For supported message classes, `of(messageClass)` is equivalent to `newBuilder(messageClass).build()` with the defaults below.
-The construction API is implemented; managed-state use still requires the snapshot implementation and state acceptance tests.
+The construction API, descriptor snapshots, and unchanged-schema managed-state acceptance tests are implemented.
 
 During issue #9 implementation, compilation showed that the originally declared `<T extends Message> of(Class<T>)` clashes by erasure with Flink's inherited `<T> TypeInformation<T> of(Class<T>)`.
 The implemented `ProtobufTypeInformation<T>` and `of` therefore use an unbounded type parameter, preserving the documented method name and concrete return type.
@@ -173,7 +173,8 @@ The dedicated calculation requires differential tests against both supported run
 
 `snapshotConfiguration()` captures the versioned descriptors and settings defined below.
 Unit tests verify metadata round trips, compatibility decisions, and serializer restoration with isolated user-code classloaders.
-Runtime checkpoint/savepoint acceptance remains in issue #11 and must pass before 0.1.0 publication.
+The runtime acceptance suite verifies checkpoint recovery and separate-job canonical savepoint restoration with HashMap and RocksDB backends.
+See the [runtime evidence](../validation/runtime-recovery.md) for scenarios and limits.
 
 ### Complete descriptor normalization version 1
 
@@ -321,7 +322,8 @@ Record the Maven artifact coordinates/checksum, source tag/commit, snapshot clas
 Preserve both deterministic modes, scalar-keyed and operator value state, representative resource settings, and representative nested/unknown-field and supported generated-type cases.
 Test the current setting contract: unchanged settings, each monotonic limit increase, both deterministic-mode transitions, and rejected decreases, including decreases after an earlier increase and new snapshot emission.
 Do not regenerate or overwrite released fixtures using a newer writer and call them evidence from the original release.
-Issues [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10), [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11), and [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) own format fixtures, runtime savepoints, and published-artifact provenance respectively.
+Issues [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10), [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11), and [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) own format fixtures, development runtime savepoints and capture/restore tooling, and published-artifact provenance respectively.
+Actual capture and consumer verification using both published 0.1.0 artifact lines are completion gates of #6, prepared by #13; they are not required to close the development runtime work in #11.
 Retain the original 0.1.0 fixtures and add independently attributable 0.2.0 and later fixture sets, including fixtures for formats that a later release explicitly stops supporting.
 Supported generated-message restore tests use the new application with old generated classes absent.
 Current aggregate CI, successful tests of every claimed supported path, explicit rejection of unsupported paths, and complete breaking-change documentation are release gates.

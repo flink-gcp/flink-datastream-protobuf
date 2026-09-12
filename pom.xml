@@ -83,6 +83,7 @@ limitations under the License.
         <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>${protobuf.version}</version><scope>provided</scope></dependency>
         <dependency><groupId>org.apache.flink</groupId><artifactId>flink-streaming-java</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.apache.flink</groupId><artifactId>flink-clients</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-statebackend-rocksdb</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>1.7.36</version><scope>test</scope></dependency>
@@ -93,7 +94,18 @@ limitations under the License.
             <resource><directory>${project.basedir}</directory><targetPath>META-INF</targetPath><includes><include>LICENSE</include><include>NOTICE</include></includes></resource>
         </resources>
         <plugins>
-            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId></plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution><id>compile-runtime-original</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/original/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/original/classes</outputDirectory>
+                    </configuration></execution>
+                    <execution><id>compile-runtime-changed</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/changed/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/changed/classes</outputDirectory>
+                    </configuration></execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId>
                 <!-- Keep formatting active on both JDKs despite the parent's java21 profile. -->
@@ -102,6 +114,7 @@ limitations under the License.
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId>
                 <configuration><sourceDirectories combine.self="override">
                     <sourceDirectory>src/main/java</sourceDirectory><sourceDirectory>src/test/java</sourceDirectory>
+                    <sourceDirectory>src/test/runtime-app/java</sourceDirectory>
                     <sourceDirectory>src/main/java-flink1</sourceDirectory><sourceDirectory>src/main/java-flink2</sourceDirectory>
                     <sourceDirectory>src/test/java-flink1</sourceDirectory><sourceDirectory>src/test/java-flink2</sourceDirectory>
                 </sourceDirectories></configuration>
@@ -132,6 +145,10 @@ limitations under the License.
                     <systemPropertyVariables>
                         <org.slf4j.simpleLogger.defaultLogLevel>error</org.slf4j.simpleLogger.defaultLogLevel>
                         <protobuf.test.flink.version>${flink.version}</protobuf.test.flink.version>
+                        <protobuf.test.protobuf.version>${protobuf.version}</protobuf.test.protobuf.version>
+                        <protobuf.test.protoc.version>${protoc.version}</protobuf.test.protoc.version>
+                        <protobuf.test.library.version>${project.version}</protobuf.test.library.version>
+                        <protobuf.test.runtime.apps>${project.build.directory}/runtime-app</protobuf.test.runtime.apps>
                         <protobuf.test.production.classes>${test.production.classes}</protobuf.test.production.classes>
                     </systemPropertyVariables>
                 </configuration>
@@ -142,11 +159,30 @@ limitations under the License.
             <plugin>
                 <groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><version>${protobuf-maven-plugin.version}</version>
                 <configuration><protoc>${protoc.version}</protoc></configuration>
-                <executions><execution><id>generate-test-protobuf</id><goals><goal>generate-test</goal></goals></execution></executions>
+                <executions><execution><id>generate-test-protobuf</id><goals><goal>generate-test</goal></goals></execution>
+                    <execution><id>generate-runtime-original</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/original</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/original/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/original/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution>
+                    <execution><id>generate-runtime-changed</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/changed</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/changed/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/changed/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution></executions>
             </plugin>
             <!-- Use this project's complete notices rather than an ASF resource bundle. -->
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-remote-resources-plugin</artifactId><configuration><skip>true</skip></configuration></plugin>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId></plugin>
+            <!-- These application jars are test inputs, never attached publication artifacts. -->
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version>
+                <executions><execution><id>package-runtime-applications</id><phase>process-test-classes</phase><goals><goal>run</goal></goals><configuration><skip>${maven.test.skip}</skip><target>
+                    <jar destfile="${project.build.directory}/runtime-app/application-original.jar" basedir="${project.build.directory}/runtime-app/original/classes"/>
+                    <jar destfile="${project.build.directory}/runtime-app/application-changed.jar" basedir="${project.build.directory}/runtime-app/changed/classes"/>
+                </target></configuration></execution></executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId><artifactId>apache-rat-plugin</artifactId>
                 <configuration>

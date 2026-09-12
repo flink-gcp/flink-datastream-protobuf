@@ -23,5 +23,6 @@ limitations under the License.
 | [ADR-0003](0003-flink-version-compatibility.md) | Current/previous Flink 2.x minors and a separate 1.20 LTS build | Accepted; replaces ADR-0001's runtime scope |
 
 These records distinguish accepted design from implemented behavior.
-The native serializer, application-facing type integration, and versioned descriptor snapshots are implemented; runtime state recovery is pending.
+The native serializer, application-facing type integration, and versioned descriptor snapshots are implemented.
+MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
 A refinement updates its existing record; a reversal adds a new record and marks the old one as superseded.
