@@ -5,7 +5,8 @@ Native Protocol Buffers type integration for the Apache Flink DataStream API.
 This project is under development.
 The repository implements native serialization, explicit TypeInformation, and superclass factory registration for generated messages.
 Versioned descriptor snapshots support serializer restoration for unchanged schemas.
-Runtime checkpoint/savepoint recovery remains unverified, and no release is available.
+MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
+No release is available.
 
 The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
 It targets full-runtime generated Protobuf messages with protobuf-java 3.25.8 and 4.33.6.
@@ -13,8 +14,8 @@ It targets full-runtime generated Protobuf messages with protobuf-java 3.25.8 an
 ## Supported Flink versions
 
 The [compatibility policy](docs/adr/0003-flink-version-compatibility.md) follows flink-connector-gcp: the current and previous Flink 2.x minors share one artifact, and Flink 1.20 LTS uses a separate build from the same source tree.
-The matrix covers the production serializer, type information, registration, and native transport alongside separate feasibility probes.
-State recovery remains a release requirement.
+The matrix covers the production serializer, type information, registration, native transport, and unchanged-schema checkpoint/savepoint recovery alongside separate feasibility probes.
+Published-artifact capture and consumer verification remain release requirements.
 
 | Flink runtime | Tested patch | Java | Planned release version |
 |---|---|---|---|
@@ -77,7 +78,7 @@ This does not promise inference from an erased runtime List instance.
 
 The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates the first usable release from schema evolution.
 The serializer implements generated-class validation, bounded framing, immutable copying, configurable size, depth, and deterministic-writing behavior, and versioned descriptor snapshots.
-The release table includes implemented transport and serializer restoration, plus the remaining runtime state, value-type acceptance, documentation, and publication requirements.
+The release table includes implemented transport and serializer restoration, plus the remaining value-type acceptance, documentation, and publication requirements.
 
 | Release | Planned capability |
 |---|---|
@@ -86,6 +87,7 @@ The release table includes implemented transport and serializer restoration, plu
 | [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage support, with documented API/state upgrade behavior |
 
 The 0.1.0 contract rejects changed schemas while allowing unchanged-schema value-state restore with increased reader limits or a deterministic-mode change.
+This includes otherwise wire-safe field additions; see [Protobuf updates and state compatibility](docs/compatibility.md) for schema examples, Java runtime version guarantees, and the current versus planned restore behavior.
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
@@ -118,7 +120,7 @@ See [Development](docs/development.md) for the version matrix and the separate C
 - [Architecture decisions](docs/adr/README.md) describe the chosen design and development process.
 - [Contributing](CONTRIBUTING.md) describes the pull request workflow.
 
-This library concerns Flink's internal DataStream serialization, including the planned integration with managed state.
+This library concerns Flink's internal DataStream serialization, including managed value state with stable scalar keys.
 For external Table/SQL Protobuf bytes, Apache Flink provides the separate [`flink-sql-protobuf` format](https://nightlies.apache.org/flink/flink-docs-release-2.3/docs/connectors/table/formats/protobuf/).
 
 ## License and provenance

@@ -47,11 +47,18 @@ def fingerprint(reports):
 def bytecode(jar):
     """Hash the packaged jar and compiled production and test classes."""
     files = [jar]
-    for root in ("target/classes", "target/test-classes"):
+    for root in ("target/classes", "target/test-classes",
+                 "target/runtime-app/original/classes", "target/runtime-app/changed/classes"):
         classes = sorted(Path(root).rglob("*.class"))
         if not classes:
             sys.exit(f"Missing compiled classes in {root}")
         files.extend(classes)
+    for variant in ("original", "changed"):
+        application = Path(f"target/runtime-app/application-{variant}.jar")
+        if not application.is_file():
+            sys.exit(f"Missing isolated application jar: {application}")
+        files.append(application)
+        files.append(Path(f"target/runtime-app/{variant}/schema.pb"))
     return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 
 
