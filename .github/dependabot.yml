@@ -5,9 +5,17 @@ updates:
     schedule:
       interval: weekly
     ignore:
+      # Review runtime window changes (ADR-0003) and connector-parent upgrades explicitly.
       - dependency-name: org.apache.flink:*
         update-types: [version-update:semver-major, version-update:semver-minor]
+      # Preserve the independently tested Protobuf major profiles.
       - dependency-name: com.google.protobuf:*
+        update-types: [version-update:semver-major]
+      # Adopt JUnit 6 when the supported Flink floor adopts it.
+      - dependency-name: org.junit:junit-bom
+        update-types: [version-update:semver-major]
+      # Match the SLF4J API major supplied by the supported Flink runtimes.
+      - dependency-name: org.slf4j:slf4j-simple
         update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
