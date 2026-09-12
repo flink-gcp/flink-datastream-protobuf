@@ -52,7 +52,10 @@ The capture mode removes the original savepoint and the writer's checkpoint stor
 Fixture manifests record the exact writer jar hash, base revision and source hashes, application jar hash, schema and descriptor hashes, settings, runtime versions, state identity, and expected values.
 They are development evidence, not state written by a published release.
 
-The suites run in the existing Flink 2.2.1/2.3.0 JDK 17/21 and Flink 1.20.4 JDK 17 matrix, with paired Protobuf 3.25.8 and 4.33.6 generated code and runtime.
+The suites run in the existing Flink 2.2.1/2.3.0 JDK 17/21 and Flink 1.20.4 JDK 17 matrix, with paired Protobuf 3.25.9 and 4.33.6 generated code and runtime.
+The Protobuf 3.25.9 update replaces the 12 superseded 3.25.8 development savepoints with fixtures for the current matrix.
+Savepoint selection uses the exact runtime version, so this update does not establish restoration of 3.25.8 savepoints on 3.25.9.
+The snapshot-format fixtures written with 3.25.8 remain unchanged and are read by the current profiles.
 The unchanged-jar lane retains the floor's application jars, descriptors, and compiled application classes and verifies their hashes after execution at the ceiling.
 Application jars are built before tests and never recompiled by the tests or attached as publication artifacts.
 

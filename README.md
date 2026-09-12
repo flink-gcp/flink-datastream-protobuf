@@ -9,7 +9,7 @@ MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint rest
 No release is available.
 
 The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
-It targets full-runtime generated Protobuf messages with protobuf-java 3.25.8 and 4.33.6.
+It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 and 4.33.6.
 
 ## Supported Flink versions
 

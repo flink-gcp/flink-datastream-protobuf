@@ -85,7 +85,7 @@ Version numbers here refer to Java Protobuf releases, independently of `proto2`/
 
 Security fixes can require updating generated code and runtime together, overriding the usual compatibility window.
 See the [upstream runtime guarantee](https://protobuf.dev/support/cross-version-runtime-guarantee/).
-This project's regular CI pairs 3.25.8 generated code with runtime 3.25.8, and 4.33.6 generated code with runtime 4.33.6.
+This project's regular CI pairs 3.25.9 generated code with runtime 3.25.9, and 4.33.6 generated code with runtime 4.33.6.
 Mixed pairs, including 3.x generated code with a 4.x runtime, are outside that CI matrix even when upstream supports them.
 This table does not establish Flink savepoint compatibility.
 Updating only `protobuf-java` and updating protoc plus regenerating application classes are different changes; check the resulting descriptors and the selected generated-code/runtime pair in either case.

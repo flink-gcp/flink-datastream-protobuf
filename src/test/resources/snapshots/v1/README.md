@@ -46,7 +46,7 @@ Copy the Java listing below to `/tmp/SnapshotFixtureWriter.java`; keep the gener
 Use a clean build for each runtime/gencode pair, retaining both outputs in the same temporary directory:
 
 ```sh
-mise x -- ./mvnw -ntp clean -Pprotobuf3 test-compile dependency:build-classpath \
+mise x -- ./mvnw -ntp clean -Pprotobuf3 -Dprotobuf.version=3.25.8 test-compile dependency:build-classpath \
   -Dmdep.includeScope=test -Dmdep.outputFile=/tmp/snapshot-fixture-classpath.txt
 mkdir -p /tmp/snapshot-fixture-writer
 mise x -- javac -cp "target/classes:target/test-classes:$(cat /tmp/snapshot-fixture-classpath.txt)" \

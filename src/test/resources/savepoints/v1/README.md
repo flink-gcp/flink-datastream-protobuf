@@ -31,6 +31,12 @@ The source cursor, UIDs, state names, parallelism, and max parallelism are part 
 
 ## Capture
 
+The current Protobuf profiles select savepoints written with 3.25.9 and 4.33.6.
+The current Flink/Protobuf matrix selects all 24 development fixtures.
+Remove superseded development savepoints when no supported test selects them; their history remains in Git.
+This rule does not remove snapshot-format baselines or published-release compatibility fixtures.
+Ordinary verification selects an exact version and does not establish cross-Protobuf-version savepoint restoration.
+
 See [Test resources and version updates](../../../../../docs/development.md#test-resources-and-version-updates) for the build/test call flow, exact-version fixture selection, and the Protobuf/Flink update checklist.
 This section supplies the capture commands and the fixture-specific provenance requirements.
 
@@ -47,7 +53,7 @@ mise x -- ./mvnw -ntp -Pprotobuf3 -Dflink.version=2.2.1 \
   -Dtest=ProtobufSavepointFixtureITCase \
   -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.1.0-SNAPSHOT.jar" \
   -Dprotobuf.fixture.capture=/tmp/protobuf-savepoint-capture \
-  -Dprotobuf.fixture.revision="$(git rev-parse HEAD)" \
+  -Dprotobuf.fixture.revision="$(git merge-base HEAD origin/main)" \
   surefire:test@integration-tests
 ```
 
@@ -57,6 +63,7 @@ Clean before changing a runtime or generated-code profile.
 The capture test exercises both backends and both settings, deletes its original temporary savepoints and writer checkpoint storage, and verifies restoration from the archives.
 
 The manifest's base revision identifies the starting revision; individual source hashes identify the exact writer inputs, including uncommitted development changes.
+Use a base revision reachable from `main` so that squashing the capture branch does not discard the revision pointer.
 Do not rewrite old provenance hashes to match current source files.
 For a released baseline, #13 must extend this procedure to verify released coordinates, the exact release tag/source and supplied jar, both artifact lines, and the new consumer classpath.
 The release tracker #6 requires capture and consumer verification after actual publication.
