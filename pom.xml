@@ -115,6 +115,7 @@ limitations under the License.
                 <configuration><sourceDirectories combine.self="override">
                     <sourceDirectory>src/main/java</sourceDirectory><sourceDirectory>src/test/java</sourceDirectory>
                     <sourceDirectory>src/test/runtime-app/java</sourceDirectory>
+                    <sourceDirectory>src/benchmark/java</sourceDirectory><sourceDirectory>src/benchmark/test</sourceDirectory>
                     <sourceDirectory>src/main/java-flink1</sourceDirectory><sourceDirectory>src/main/java-flink2</sourceDirectory>
                     <sourceDirectory>src/test/java-flink1</sourceDirectory><sourceDirectory>src/test/java-flink2</sourceDirectory>
                 </sourceDirectories></configuration>
@@ -204,6 +205,82 @@ limitations under the License.
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <properties>
+                <benchmark.jmh.version>1.37</benchmark.jmh.version>
+                <benchmark.avro.version>1.11.4</benchmark.avro.version>
+                <benchmark.thrift.version>0.23.0</benchmark.thrift.version>
+                <benchmark.chill.version>0.10.0</benchmark.chill.version>
+                <benchmark.jackson.version>2.14.3</benchmark.jackson.version>
+                <benchmark.thrift.compiler>thrift</benchmark.thrift.compiler>
+            </properties>
+            <dependencies>
+                <dependency><groupId>org.openjdk.jmh</groupId><artifactId>jmh-core</artifactId><version>${benchmark.jmh.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>org.openjdk.jmh</groupId><artifactId>jmh-generator-annprocess</artifactId><version>${benchmark.jmh.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>org.apache.flink</groupId><artifactId>flink-avro</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>org.apache.avro</groupId><artifactId>avro</artifactId><version>${benchmark.avro.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${benchmark.jackson.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>org.apache.thrift</groupId><artifactId>libthrift</artifactId><version>${benchmark.thrift.version}</version><scope>test</scope></dependency>
+                <dependency><groupId>com.twitter</groupId><artifactId>chill-protobuf</artifactId><version>${benchmark.chill.version}</version><scope>test</scope><exclusions>
+                    <exclusion><groupId>com.esotericsoftware</groupId><artifactId>kryo-shaded</artifactId></exclusion>
+                </exclusions></dependency>
+                <dependency><groupId>com.twitter</groupId><artifactId>chill-thrift</artifactId><version>${benchmark.chill.version}</version><scope>test</scope><exclusions>
+                    <exclusion><groupId>com.esotericsoftware</groupId><artifactId>kryo-shaded</artifactId></exclusion>
+                </exclusions></dependency>
+            </dependencies>
+            <build><plugins>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><executions>
+                    <execution><id>add-benchmark-sources</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals><configuration><sources>
+                        <source>src/benchmark/java</source><source>src/benchmark/test</source>
+                        <source>${project.build.directory}/generated-test-sources/benchmark-avro</source>
+                        <source>${project.build.directory}/generated-test-sources/benchmark-thrift</source>
+                    </sources></configuration></execution>
+                </executions></plugin>
+                <plugin><groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><executions>
+                    <execution><id>generate-benchmark-protobuf</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/benchmark/proto</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/generated-test-sources/benchmark-protobuf</outputDirectory>
+                        <embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                    </configuration></execution>
+                </executions></plugin>
+                <plugin><groupId>org.apache.avro</groupId><artifactId>avro-maven-plugin</artifactId><version>${benchmark.avro.version}</version><executions>
+                    <execution><id>generate-benchmark-avro</id><phase>generate-test-sources</phase><goals><goal>schema</goal></goals><configuration>
+                        <testSourceDirectory>${project.basedir}/src/benchmark/avro</testSourceDirectory>
+                        <testOutputDirectory>${project.build.directory}/generated-test-sources/benchmark-avro</testOutputDirectory>
+                        <stringType>String</stringType>
+                    </configuration></execution>
+                </executions></plugin>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><executions>
+                    <execution><id>run-benchmarks</id><goals><goal>exec</goal></goals><configuration>
+                        <executable>${java.home}/bin/java</executable><classpathScope>test</classpathScope><arguments>
+                            <argument>-Dbenchmark.library.jar=${project.build.directory}/${project.build.finalName}.jar</argument>
+                            <argument>-Dbenchmark.flink.version=${flink.version}</argument>
+                            <argument>-Dbenchmark.protobuf.version=${protobuf.version}</argument>
+                            <argument>-Dbenchmark.protoc.version=${protoc.version}</argument>
+                            <argument>-Dbenchmark.thrift.compiler=${benchmark.thrift.compiler}</argument>
+                            <argument>-cp</argument><classpath/>
+                            <argument>io.github.flink.gcp.protobuf.benchmark.BenchmarkSuite</argument>
+                            <argument>${benchmark.mode}</argument><argument>${benchmark.output}</argument>
+                        </arguments>
+                    </configuration></execution>
+                    <execution><id>generate-benchmark-thrift</id><phase>generate-test-sources</phase><goals><goal>exec</goal></goals><configuration>
+                        <executable>${benchmark.thrift.compiler}</executable><arguments>
+                            <argument>--gen</argument><argument>java:generated_annotations=suppress</argument>
+                            <argument>-out</argument><argument>${project.build.directory}/generated-test-sources/benchmark-thrift</argument>
+                            <argument>${project.basedir}/src/benchmark/thrift/benchmark.thrift</argument>
+                        </arguments>
+                    </configuration></execution>
+                </executions></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><executions>
+                    <execution><id>prepare-benchmark-generation</id><phase>initialize</phase><goals><goal>run</goal></goals><configuration><target>
+                        <exec executable="${benchmark.thrift.compiler}" outputproperty="benchmark.thrift.actual" failonerror="true"><arg value="--version"/></exec>
+                        <fail message="Benchmark generation requires Thrift ${benchmark.thrift.version}; got ${benchmark.thrift.actual}"><condition><not><equals arg1="${benchmark.thrift.actual}" arg2="Thrift version ${benchmark.thrift.version}"/></not></condition></fail>
+                        <mkdir dir="${project.build.directory}/generated-test-sources/benchmark-thrift"/>
+                    </target></configuration></execution>
+                </executions></plugin>
+            </plugins></build>
+        </profile>
         <profile><id>flink1</id><activation><property><name>flink.compat</name><value>flink1</value></property></activation>
             <properties><flink.version>1.20.4</flink.version><flink.compat>flink1</flink.compat><flink.compat.pattern>flink1</flink.compat.pattern><flink.version.pattern>1\.20\..+</flink.version.pattern></properties>
         </profile>

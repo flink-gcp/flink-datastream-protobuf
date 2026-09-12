@@ -43,6 +43,10 @@ mise x -- just --list
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
+| `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
+| `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
+| `just benchmark-smoke <version> <major> <output>` | Validate the corpus and run short JMH harness checks |
+| `just benchmark-run <version> <major> <output>` | Collect the five-block benchmark baseline and parity report |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
@@ -267,9 +271,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` in `pom.xml` |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile; keep `flink.compat=flink1` on both capture commands |
+| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the benchmark smoke `floor` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just` |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just` |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the benchmark smoke `lts` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 From the repository root, run these checks with the updated pins; substitute the new ceiling for `2.3.0` when it changes:
@@ -293,6 +297,15 @@ The subshell stops on the first failure and preserves that command's exit status
 The binary check preserves the floor's library jar, compiled tests, application jars/classes, and descriptors when executing at the ceiling.
 That check and the per-version savepoint fixtures do not establish saved-state migration between Flink versions or Protobuf profiles.
 Adding such a guarantee requires an explicit old-writer/new-reader recovery scenario and a documented compatibility decision.
+
+## Serializer benchmarks
+
+The optional `benchmarks` profile adds comparison-only test sources, generated schemas, and JMH instrumentation.
+Use `just benchmark-smoke <flink-version> <protobuf-major> <new-output-directory>` for correctness and short harness verification, or `just benchmark-run` with the same arguments for long measurements.
+The [benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the pinned compiler prerequisite, corpus, operation semantics, matrices, and evidence format.
+These recipes do not replace ordinary native verification or binary compatibility checks.
+Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
+The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
 
 ## Dependencies and packaging
 

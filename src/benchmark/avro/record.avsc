@@ -1,0 +1,67 @@
+{
+  "type": "record",
+  "name": "Record",
+  "namespace": "io.github.flink.gcp.protobuf.benchmark.generated.avro",
+  "doc": "Copyright 2026 The flink-gcp authors. Licensed under the Apache License, Version 2.0.",
+  "fields": [
+    {
+      "name": "id",
+      "type": "int"
+    },
+    {
+      "name": "timestamp",
+      "type": "long"
+    },
+    {
+      "name": "active",
+      "type": "boolean"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "note",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "payload",
+      "type": "bytes"
+    },
+    {
+      "name": "child",
+      "type": {
+        "type": "record",
+        "name": "Child",
+        "fields": [
+          {
+            "name": "code",
+            "type": "int"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "values",
+      "type": {
+        "type": "array",
+        "items": "long"
+      }
+    },
+    {
+      "name": "attributes",
+      "type": {
+        "type": "map",
+        "values": "long"
+      }
+    }
+  ]
+}
