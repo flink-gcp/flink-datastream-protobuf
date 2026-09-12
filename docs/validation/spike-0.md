@@ -87,9 +87,24 @@ This establishes one successful bounded transport on JDK 17.
 It does not establish all Chill registrations, classpath orders, Protobuf versions, or savepoint compatibility.
 The library's rationale is native type integration and an explicit state compatibility policy, rather than a claim that this Chill configuration fails.
 
+### Chill 0.10.0 follow-up
+
+The optional comparison now uses Chill 0.10.0.
+The 0.7.6 observation above remains the original experiment's record.
+The follow-up comparison checks transport of both an empty and a nonempty StringValue, plus copy and serialization through Flink's configured generic serializer.
+
+On 2026-09-12, the comparison passed on Flink 2.2.1 and 2.3.0 with Protobuf 3.25.8 and 4.33.6 on JDK 17.
+Flink's Kryo 5.6.2 was loaded alongside `chill-protobuf` 0.10.0; the resolved graph also contains Chill's `chill-java` 0.10.0 and `kryo-shaded` 4.0.2.
+This observation does not establish compatibility for other classpath orders or all Chill serializers.
+
+The Flink 1.20.4 / JDK 17 / Protobuf 3.25.8 transport comparison fails without module-opening flags on both Chill 0.7.6 and 0.10.0.
+Both runs load Flink's Kryo 2.24.0 and fail when accessing `java.util.Arrays$ArrayList.a` reflectively.
+This is a pre-existing limit of the optional generic comparison; the required native Flink 1.20 tests continue to disable generic types and use no module-opening flags.
+The comparison is excluded from ordinary CI and is not a native integration acceptance test.
+
 ## Reproduction
 
-From a trusted checkout with the development toolchain installed, select the original Flink 2.3.0 baseline explicitly:
+From a trusted checkout with the development toolchain installed, select Flink 2.3.0 explicitly:
 
 ```sh
 mise x java@temurin-17 just -- just verify-flink 2.3.0 3
@@ -101,8 +116,21 @@ mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill -Dflink.version=2.3.0 -Dtest
 ```
 
 Exact JDK patches may differ from the dated initial observation because the development commands select a maintained major version.
+These commands use the checkout's current Protobuf and Chill pins, not the historical dependency set above.
+For the Chill follow-up, run the Maven comparison for each of Flink 2.2.1 and 2.3.0, first with the default Protobuf 3 profile and then with `-Pprotobuf4`.
 The retained tests and schema are the reproducible evidence; generated classes and local logs stay outside version control.
-The optional comparison test prints the loaded artifact locations and checks the observed payload.
+The optional comparison test prints the loaded artifact locations and checks the observed payloads, serialization, and copy behavior.
+
+To reproduce the recorded LTS transport failure with the current Chill pin, run:
+
+```sh
+mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill \
+  -Dflink.compat=flink1 -Dflink.version=1.20.4 -Dprotobuf.version=3.25.8 \
+  '-Dtest=ChillCompatibilityITCase#observesChillTransport' -Dtest.excluded.groups= test
+```
+
+This command is expected to fail at the reflective access described above.
+To compare Chill 0.7.6, set the optional `chill-protobuf` dependency to 0.7.6 in a disposable checkout and repeat the command.
 
 ## Limits
 
