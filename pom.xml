@@ -58,7 +58,7 @@ limitations under the License.
         <flink.version.pattern>2\..+</flink.version.pattern>
         <test.production.classes>${project.build.outputDirectory}</test.production.classes>
         <flink.parent.artifactId>flink-datastream-protobuf</flink.parent.artifactId>
-        <protobuf.version>3.25.8</protobuf.version>
+        <protobuf.version>3.25.9</protobuf.version>
         <protoc.version>${protobuf.version}</protoc.version>
         <protobuf-maven-plugin.version>5.1.8</protobuf-maven-plugin.version>
         <junit5.version>5.14.4</junit5.version>

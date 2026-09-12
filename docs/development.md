@@ -37,7 +37,7 @@ mise x -- just --list
 |---|---|
 | `just verify` | Formatting checks, Checkstyle, compilation, unit tests, integration tests, jar packaging, and Apache RAT |
 | `just format` | Spotless with Flink's AOSP Java formatting and import order |
-| `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.8 |
+| `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.9 |
 | `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.33.6 |
 | `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
@@ -210,7 +210,7 @@ src/test/resources/savepoints/v1/
 Changing a version in `pom.xml` does not modify an existing ZIP.
 Verification selects the new version's directory and fails with a capture instruction if its manifest is missing.
 It does not fall back to a previous version or automatically capture a replacement.
-The current matrix has 24 fixtures: three Flink versions × two Protobuf profiles × two backends × two settings.
+The current matrix selects 24 fixtures: three Flink versions × two Protobuf profiles × two backends × two settings.
 Updating one Protobuf profile across that matrix requires 12 fixtures for the new version; adding one Flink version requires eight across both Protobuf profiles.
 JDK 17 captures also serve the matching JDK 21 verification lanes.
 
@@ -231,6 +231,8 @@ Copy the reviewed version directories into `src/test/resources/savepoints/v1/` e
 An interrupted capture can leave a partial destination; retry with a fresh output root.
 
 Add new version directories without relabeling the old writer's provenance.
+Remove superseded development savepoints in the same reviewed update once no supported test selects them; their previous contents remain available in Git history.
+Keep snapshot-format fixtures while they serve as fixed compatibility baselines, even when their writer runtime is no longer a current profile.
 Any replacement or removal of development fixtures must be an explicit reviewed change.
 Regenerated ZIP bytes are not a reproducibility or compatibility verdict; recovery assertions establish the behavior being tested.
 Published-release baselines must be retained without rewriting them with later writers; their capture and consumer validation remain in #13/#6.
@@ -245,6 +247,7 @@ Use this sequence for a dependency update, including patch updates proposed by D
    Keep protobuf-java and application gencode paired, and clean whenever changing profiles.
 3. Capture new development savepoints for every newly selected Flink/Protobuf pair using the preceding procedure.
    Capture uses JDK 17 and the packaged library jar, before normal verification can select those new fixtures.
+   Remove superseded development savepoint directories after checking that no supported test selects them.
 4. Run the existing snapshot-format fixtures unchanged and investigate any incompatibility or byte mismatch.
    Do not regenerate them merely to make an update pass: unlike savepoints, all four are loaded on every run and are not selected by exact runtime version.
    Use their separate generation procedure only for an intentional reviewed baseline change.
