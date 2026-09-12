@@ -64,6 +64,8 @@ Native integration tests and probes disable generic types and run without `--add
 The optional `chill` profile adds Chill only in test scope, and its tagged comparison runs only when the recipe clears the default tag exclusion.
 
 The ordinary test schemas in `src/test/proto` generate Java into `target/generated-test-sources/protobuf`.
+This includes the [pinned official OTel common schema and WKT application envelope](common-types.md#otel-schema-provenance-and-regeneration).
+The OTel source retains its upstream license header and is generated with each profile's protoc; no OTel Java artifact is added as a dependency.
 The isolated runtime application has separate schemas and outputs, described in [Test resources and version updates](#test-resources-and-version-updates).
 Clean when switching profiles so generated code and runtime stay paired.
 Neither generated messages nor any test instrumentation belongs in the library jar.
@@ -160,13 +162,13 @@ Paths below are relative to the repository root.
 | Resource | Purpose | How it is produced or consumed |
 |---|---|---|
 | `src/test/proto/` | Schemas for serializer, snapshot, and transport tests | Maven runs the selected protoc; generated Java goes under `target/generated-test-sources/protobuf` and compiles with the ordinary tests |
-| `src/test/runtime-app/java/` and `src/test/runtime-app/proto/{original,changed}/` | A controllable Flink job and two schemas with the same generated class/message names; the changed schema adds a field for rejection tests | Maven builds each variant separately under `target/runtime-app/{original,changed}/`; generated classes stay off the test runner's parent classpath |
+| `src/test/runtime-app/java/` and `src/test/runtime-app/proto/{original,changed}/` | Controllable Flink jobs and two runtime schemas with the same generated class/message names; the changed schema adds a field for rejection tests | Maven builds each variant separately under `target/runtime-app/{original,changed}/`; `RuntimeJob` uses isolated runtime gencode, while `CommonTypesRuntimeJob` uses WKT and ordinary test messages from the parent classpath |
 | `target/runtime-app/application-{original,changed}.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
 | `src/test/resources/snapshots/v1/*.properties` | Four fixed serializer snapshot/message fixtures, including checksums and writer provenance | `ProtobufSnapshotFixtureTest` reads all four in each Protobuf profile and checks restoration and current writer bytes; generation is a separate [format-fixture procedure](../src/test/resources/snapshots/v1/README.md) |
 | `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
-Its `ControlledSource` and `RuntimeJob` run inside the MiniCluster jobs started by the integration tests.
+Its `ControlledSource`, `RuntimeJob`, and `CommonTypesRuntimeJob` run inside the MiniCluster jobs started by the integration tests.
 The fixture copies of `runtime.proto` and `schema.pb` record writer inputs; Maven generates the current application from `src/test/runtime-app/proto`, not from those copies.
 
 ### What verification executes
@@ -180,16 +182,19 @@ The relevant build and test sequence is:
    The runtime outputs are `target/runtime-app/original/classes` and `target/runtime-app/changed/classes`.
 3. During `process-test-classes`, the Ant jar tasks package the two application jars.
 4. During `test`, Surefire runs `*Test`, including `ProtobufSnapshotFixtureTest`.
-5. During `integration-test`, the parent POM's Surefire execution runs `*ITCase`, including both runtime recovery suites below.
+5. During `integration-test`, the parent POM's Surefire execution runs `*ITCase`, including the runtime recovery suites below.
    The `verify` lifecycle includes this phase; no separate runtime-test command is needed.
 
 | Test | State source | What it verifies |
 |---|---|---|
 | `ProtobufRecoveryITCase` | Checkpoints and savepoints created during the current run | Checkpoint restart and replay; separate-job savepoint restore; settings transitions and schema rejection for HashMap/RocksDB |
 | `ProtobufSavepointFixtureITCase` | Committed savepoint archives during ordinary verification | Archive hashes, recorded settings, restoration through a fresh application loader, expected state values, and continued processing for HashMap/RocksDB |
+| `CommonTypesRecoveryITCase` | Checkpoints and savepoints created during the current run | WKT/OTel values, changing Struct keys and AnyValue variants, and continued processing for HashMap/RocksDB |
 
-Both suites use `RuntimeRecoveryHarness` to start jobs from the isolated application jars.
+These suites use `RuntimeRecoveryHarness` to start jobs from the attached application jars.
 The original variant serves successful restores; the changed variant exercises schema incompatibility in `ProtobufRecoveryITCase`.
+The common-types job uses the original jar's entry point and source, with WKT classes from protobuf-java and OTel/envelope classes from the ordinary test classpath.
+Its [coverage](common-types.md#verification-boundaries) complements the isolated generated-class tests without modifying the existing savepoint fixtures.
 The [runtime evidence](validation/runtime-recovery.md) describes the state assertions and compatibility boundaries.
 Ordinary verification creates temporary state for its jobs but does not rewrite either committed fixture family.
 `just verify-protobuf` and `just verify-flink` clean first, then run this same lifecycle with the selected versions.
@@ -328,7 +333,8 @@ The release sequence and current implementation status are:
 1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
 2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration.
    Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
-3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11); Google Well-Known Types and OpenTelemetry generated composite message acceptance remains in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
+3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
+   Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
 5. Prepare publication and packaged-artifact validation for both `0.1.0` and `0.1.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from published 0.1.0 state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add release-to-release API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).

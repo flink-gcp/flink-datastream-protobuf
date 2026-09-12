@@ -38,7 +38,7 @@ They also reject a wire-compatible field addition while retaining the Java class
 The [compatibility guide](../compatibility.md#schema-changes) explains why Protobuf binary compatibility does not make that addition restorable under the current library contract.
 Rejection assertions inspect the failure cause for incompatible state serializers or a changed Protobuf schema.
 
-The application and generated classes live in separate test jars that are absent from the test runner's parent classpath.
+For `ProtobufRecoveryITCase` and `ProtobufSavepointFixtureITCase`, the application and generated classes live in separate test jars that are absent from the test runner's parent classpath.
 Each job is constructed with a fresh application loader and submitted with its application jar attached.
 The application checks that recovered messages belong to its task-side application loader and retain nested values and unknown fields.
 The test runner checks that neither the application entry point nor its generated message can load through the parent.
@@ -58,5 +58,6 @@ Application jars are built before tests and never recompiled by the tests or att
 
 Each saved-state scenario keeps its Flink version, Protobuf profile, backend, parallelism, and state identity fixed.
 The suite does not establish backend migration, rescaling, cross-Flink state upgrades, cross-Protobuf restore, or cross-process message-key hashing.
-Well-Known Type and OpenTelemetry acceptance remains in #18.
+`CommonTypesRecoveryITCase` adds [Well-Known Type and OpenTelemetry acceptance](../common-types.md#verification-boundaries), using the same MiniCluster controls with a separate job and values on the ordinary test classpath.
+It verifies direct Struct ValueState, direct AnyValue MapState values, and an application envelope in operator ListState on both backends.
 Published-artifact capture, validation of both artifact lines, and retention for future direct/sequential library upgrades remain in #13/#6.

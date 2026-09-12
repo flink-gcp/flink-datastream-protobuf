@@ -74,11 +74,17 @@ Row transport uses explicit `RowTypeInfo`; lists use explicit `ListTypeInfo` on 
 Flink 2.x also infers the native element type from `TypeHint<List<MyMessage>>`; Flink 1.20 needs explicit list element information.
 This does not promise inference from an erased runtime List instance.
 
+## Common generated types
+
+The tested value types include Google Struct, Value, ListValue, Any, Timestamp, Duration, Empty, FieldMask, scalar wrappers, and OpenTelemetry AnyValue, ArrayValue, KeyValueList, and KeyValue.
+They use the native integration above, including unchanged-schema state restoration.
+See [common types and examples](docs/common-types.md) for the exact schema/runtime pins, tested configurations, and the distinction between Struct, Any, and OTel AnyValue.
+
 ## Planned releases
 
 The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates the first usable release from schema evolution.
 The serializer implements generated-class validation, bounded framing, immutable copying, configurable size, depth, and deterministic-writing behavior, and versioned descriptor snapshots.
-The release table includes implemented transport and serializer restoration, plus the remaining value-type acceptance, documentation, and publication requirements.
+The release table includes implemented transport, common-type acceptance, and serializer restoration, plus the remaining documentation and publication requirements.
 
 | Release | Planned capability |
 |---|---|

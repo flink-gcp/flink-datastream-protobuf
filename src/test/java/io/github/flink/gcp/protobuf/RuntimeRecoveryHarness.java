@@ -28,6 +28,7 @@ import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import io.github.flink.gcp.protobuf.generated.CommonTypesEnvelope;
 
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -43,7 +44,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Real job execution and scalar observations, without application gencode on the parent path. */
+/** Real job execution for isolated-schema and shared-classpath common-type recovery tests. */
 final class RuntimeRecoveryHarness implements AutoCloseable {
     static final String APPLICATION = "io.github.flink.gcp.protobuf.runtimeapp.RuntimeJob";
     static final String MESSAGE =
@@ -135,6 +136,33 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
         return Path.of(directory).toAbsolutePath();
     }
 
+    Job startCommonTypes(Path directory, String backend, String savepoint, boolean restart)
+            throws Exception {
+        Files.createDirectories(directory);
+        Path jar = apps().resolve("application-original.jar");
+        assertThat(jar).isRegularFile();
+        ClassLoader parent = getClass().getClassLoader();
+        String name = "io.github.flink.gcp.protobuf.runtimeapp.CommonTypesRuntimeJob";
+        assertThatThrownBy(() -> Class.forName(name, false, parent))
+                .isInstanceOf(ClassNotFoundException.class);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {jar.toUri().toURL()}, parent)) {
+            Class<?> application = loader.loadClass(name);
+            assertThat(application.getClassLoader()).isSameAs(loader);
+            JobGraph graph =
+                    (JobGraph)
+                            application
+                                    .getMethod("create", String.class, String.class, boolean.class)
+                                    .invoke(null, directory.toString(), backend, restart);
+            graph.addJar(new org.apache.flink.core.fs.Path(jar.toUri()));
+            if (savepoint != null) {
+                graph.setSavepointRestoreSettings(
+                        SavepointRestoreSettings.forPath(savepoint, false));
+            }
+            cluster.submitJob(graph).get(60, TimeUnit.SECONDS);
+            return new Job(directory, graph, "all");
+        }
+    }
+
     static void command(Path directory, String name, String value) throws Exception {
         Path temporary = directory.resolve(name + ".pending");
         Files.writeString(temporary, value);
@@ -191,6 +219,26 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             return kind.equals("all") || kind.equals(stateKind);
         }
 
+        void processCommonTypes(int first, int end, int attempt) throws Exception {
+            command(directory, "limit", Integer.toString(end));
+            for (int ordinal = first; ordinal < end; ordinal++) {
+                Path result = directory.resolve("value-" + attempt + "-" + ordinal);
+                await(() -> Files.exists(result));
+                int subtask =
+                        KeyGroupRangeAssignment.assignKeyToParallelOperator(ordinal % 4, 16, 2);
+                int expectedCount = 0;
+                for (int input = 0; input <= ordinal; input++) {
+                    if (KeyGroupRangeAssignment.assignKeyToParallelOperator(input % 4, 16, 2)
+                            == subtask) {
+                        expectedCount++;
+                    }
+                }
+                assertThat(Files.readString(result))
+                        .as("Verified keyed values and operator count at input %s", ordinal)
+                        .isEqualTo("verified," + expectedCount + "," + subtask);
+            }
+        }
+
         void assertRestored(int attempt, int expectedCount) throws Exception {
             List<Integer> restored = new ArrayList<>();
             FileDescriptorSet schema =
@@ -229,6 +277,25 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             String checkpoint =
                     cluster.triggerCheckpoint(graph.getJobID()).get(60, TimeUnit.SECONDS);
             assertThat(checkpoint).isNotBlank();
+        }
+
+        void assertCommonTypesRestored(int attempt, int expectedCount) throws Exception {
+            List<Integer> restored = new ArrayList<>();
+            for (int subtask = 0; subtask < 2; subtask++) {
+                Path observation = directory.resolve("restore-" + attempt + "-" + subtask);
+                await(() -> Files.exists(observation));
+                List<String> lines = Files.readAllLines(observation);
+                assertThat(lines.get(0)).isEqualTo("true");
+                for (String line : lines.subList(1, lines.size())) {
+                    CommonTypesEnvelope value =
+                            CommonTypesEnvelope.parseFrom(Base64.getDecoder().decode(line));
+                    assertThat(value).isEqualTo(CommonTypeValues.envelope(value.getOrdinal()));
+                    restored.add(value.getOrdinal());
+                }
+            }
+            assertThat(restored)
+                    .containsExactlyInAnyOrderElementsOf(
+                            java.util.stream.IntStream.range(0, expectedCount).boxed().toList());
         }
 
         String savepoint(Path target) throws Exception {
