@@ -210,7 +210,7 @@ limitations under the License.
         <profile><id>protobuf3</id></profile>
         <profile><id>protobuf4</id><properties><protobuf.version>4.33.6</protobuf.version></properties></profile>
         <profile><id>chill</id><dependencies>
-            <dependency><groupId>com.twitter</groupId><artifactId>chill-protobuf</artifactId><version>0.7.6</version><scope>test</scope></dependency>
+            <dependency><groupId>com.twitter</groupId><artifactId>chill-protobuf</artifactId><version>0.10.0</version><scope>test</scope></dependency>
         </dependencies></profile>
     </profiles>
 </project>

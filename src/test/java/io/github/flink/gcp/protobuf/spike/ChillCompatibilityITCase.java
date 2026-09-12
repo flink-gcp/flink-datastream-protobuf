@@ -17,8 +17,11 @@
 package io.github.flink.gcp.protobuf.spike;
 
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.typeutils.runtime.kryo.KryoSerializer;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.PipelineOptions;
+import org.apache.flink.core.memory.DataInputDeserializer;
+import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 import com.google.protobuf.StringValue;
@@ -31,9 +34,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("chill")
+@Timeout(120)
 class ChillCompatibilityITCase {
     @Test
-    @Timeout(120)
     void observesChillTransport() throws Exception {
         for (String name :
                 List.of(
@@ -46,22 +49,59 @@ class ChillCompatibilityITCase {
                             + " loaded from "
                             + type.getProtectionDomain().getCodeSource().getLocation());
         }
+        try (StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.createLocalEnvironment(2, chillConfiguration())) {
+            env.disableOperatorChaining();
+            System.out.println("StringValue type: " + TypeInformation.of(StringValue.class));
+            assertThat(
+                            env.fromData(
+                                            StringValue.of("chill-probe"),
+                                            StringValue.getDefaultInstance())
+                                    .rebalance()
+                                    .map(StringValue::getValue)
+                                    .executeAndCollect(2))
+                    .containsExactlyInAnyOrder("chill-probe", "");
+            System.out.println("H1 OBSERVATION: transport succeeded");
+        }
+    }
+
+    @Test
+    void copiesAndSerializesEmptyAndNonemptyMessages() throws Exception {
+        try (StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.createLocalEnvironment(2, chillConfiguration())) {
+            var serializer =
+                    TypeInformation.of(StringValue.class)
+                            .createSerializer(env.getConfig().getSerializerConfig());
+            assertThat(serializer)
+                    .isInstanceOfSatisfying(
+                            KryoSerializer.class,
+                            kryo ->
+                                    assertThat(
+                                                    kryo.getKryo()
+                                                            .getSerializer(StringValue.class)
+                                                            .getClass()
+                                                            .getName())
+                                            .isEqualTo(
+                                                    "com.twitter.chill.protobuf.ProtobufSerializer"));
+            for (StringValue value :
+                    List.of(StringValue.getDefaultInstance(), StringValue.of("chill-copy"))) {
+                assertThat(serializer.copy(value)).isEqualTo(value);
+                DataOutputSerializer output = new DataOutputSerializer(64);
+                serializer.serialize(value, output);
+                assertThat(
+                                serializer.deserialize(
+                                        new DataInputDeserializer(output.getCopyOfBuffer())))
+                        .isEqualTo(value);
+            }
+        }
+    }
+
+    private static Configuration chillConfiguration() {
         Configuration config = new Configuration();
         config.set(
                 PipelineOptions.SERIALIZATION_CONFIG,
                 List.of(
                         "com.google.protobuf.Message: {type: kryo, kryo-type: default, class: com.twitter.chill.protobuf.ProtobufSerializer}"));
-        try (StreamExecutionEnvironment env =
-                StreamExecutionEnvironment.createLocalEnvironment(2, config)) {
-            env.disableOperatorChaining();
-            System.out.println("StringValue type: " + TypeInformation.of(StringValue.class));
-            assertThat(
-                            env.fromData(StringValue.of("chill-probe"))
-                                    .rebalance()
-                                    .map(StringValue::getValue)
-                                    .executeAndCollect(1))
-                    .containsExactly("chill-probe");
-            System.out.println("H1 OBSERVATION: transport succeeded");
-        }
+        return config;
     }
 }
