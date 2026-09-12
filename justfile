@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import 'dev-tools.just'
+import 'benchmarks.just'
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 

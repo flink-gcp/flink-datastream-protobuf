@@ -45,6 +45,31 @@ jobs:
             lts) just verify-protobuf "$PROTOBUF" -Dflink.compat=flink1 ;;
             *) exit 1 ;;
           esac
+      - name: Prepare the opt-in benchmark compiler
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y bison flex cmake
+          just benchmark-tools "$RUNNER_TEMP/benchmark-tools"
+      - name: Validate serializer selection and smoke the benchmark harness
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PROTOBUF: ${{ matrix.protobuf }}
+          BENCHMARK_THRIFT_COMPILER: ${{ runner.temp }}/benchmark-tools/build/compiler/cpp/bin/thrift
+        run: |
+          case "$RUNTIME" in
+            floor) version=2.2.1 ;;
+            ceiling) version="$FLINK_CEILING" ;;
+            lts) version=1.20.4 ;;
+            *) exit 1 ;;
+          esac
+          just benchmark-smoke "$version" "$PROTOBUF" "$RUNNER_TEMP/benchmark-smoke"
+      - name: Retain benchmark smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-${{ matrix.runtime }}-jdk${{ matrix.java }}-protobuf${{ matrix.protobuf }}
+          path: ${{ runner.temp }}/benchmark-smoke
+          if-no-files-found: warn
   binary-compat:
     name: Unchanged 2.x jar / Protobuf ${{ matrix.protobuf }}
     runs-on: ubuntu-latest
