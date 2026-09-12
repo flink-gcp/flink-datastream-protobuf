@@ -19,6 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
+- Dependency update policy amended: 2026-09-12
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -41,6 +42,15 @@ The PR orchestrator has no path filter and requires both reusable workflows to s
 An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven.
+
+Dependabot proposes individual weekly Maven and GitHub Actions updates.
+Flink major/minor changes follow ADR-0003, and Protobuf major changes require an explicit compatibility decision.
+JUnit major upgrades follow the supported Flink floor: adopt JUnit 6 when that upstream Flink release's root POM (`flink-parent`) pins it, then verify the complete supported matrix, including LTS.
+This uses the adoption condition recorded in [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906); minor and patch updates within JUnit 5 remain reviewable.
+Keep the test logging binding on the SLF4J API major supplied by Flink and exclude independent binding major updates.
+Revisit these exclusions when changing the supported Flink window or when a security alert requires an excluded upgrade.
+Keep Dependabot alerts and security-update PRs enabled in repository settings; security updates still require review and verification before merge.
+Ignore conditions can also prevent security-update PRs, so alerts requiring an excluded upgrade need manual review and preparation.
 
 All changes after the initial empty main commit use a dedicated worktree and a Draft PR with the WHAT/WHY template.
 Require two distinct self-review rounds, an independent reviewer that did not author the change, and current aggregate CI before Ready.

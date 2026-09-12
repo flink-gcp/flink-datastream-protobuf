@@ -294,6 +294,35 @@ This library has no Google Cloud BOM, connector dependency, or shaded dependenci
 The optional Chill dependency is absent from ordinary builds.
 The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inherited ASF resource bundle is disabled.
 
+### Dependency updates
+
+Dependabot checks Maven and GitHub Actions weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
+During dependency maintenance, also check the `protobuf4` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
+Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.
+Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including new exact-version fixtures and matrix checks.
+Keep each Protobuf runtime and protoc pair together.
+The existing `org.apache.flink:*` exclusion also covers `flink-connector-parent` major/minor upgrades; check its releases during dependency maintenance and review relevant build-tool changes separately from runtime-window changes.
+
+JUnit major upgrades follow the supported Flink floor, using the same adoption condition as [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906).
+Check the upstream Apache Flink release's root POM (`flink-parent`) for this condition; this library inherits `flink-connector-parent` separately.
+Adopt JUnit 6 when the floor's upstream POM pins JUnit 6, then verify every supported runtime, including LTS.
+The current [floor POM (2.2.1)](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L158) pins JUnit 5.11.4 and the [LTS POM (1.20.4)](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L155) pins 5.10.1; this project maintains its own tested JUnit 5 minor/patch pin.
+Dependabot ignores major updates to `org.junit:junit-bom`, so recheck this condition whenever the supported Flink window changes.
+
+Keep `slf4j-simple` on the SLF4J API major used by the supported Flink runtimes.
+The current runtimes use SLF4J 1.7.36; upgrading only the binding to 2.x leaves the 1.7 API without a usable binding and disables test logging.
+The upstream pins are recorded in the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L136), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L136), and [1.20.4](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L131) release POMs.
+Dependabot ignores binding major updates; revisit the rule when reviewing a change to Flink's logging dependencies.
+
+Chill remains an optional comparison dependency with individually reviewed updates.
+Ordinary CI excludes its tagged tests, so run the comparison explicitly and inspect the resolved and loaded Kryo/Chill versions before accepting an update.
+Keep historical measurements distinct from results for the new dependency version.
+
+Dependabot alerts and security-update PRs are repository settings, separate from the weekly version-update schedule in `.github/dependabot.yml`.
+Keep both enabled and review security-update PRs through the same verification and review flow.
+GitHub also applies [ignore conditions to security updates](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated#ignoring-specific-dependencies), so enabling them does not guarantee a PR for every alert.
+Review alerts even when no PR appears, and prepare an excluded upgrade manually when needed; an ignore rule is not a vulnerability assessment.
+
 ## Agent tooling
 
 AGENTS.md is shared guidance; CLAUDE.md imports it.
