@@ -19,6 +19,8 @@ limitations under the License.
 Adding a field can preserve Protobuf binary compatibility, but the current library rejects restoring state with that changed schema.
 The implemented 0.1.0 contract accepts unchanged schemas; supported schema evolution is planned for 0.2.0.
 No library release has been published yet.
+The 0.x versions denote development milestones; 1.0.0 is the planned first Maven Central release.
+Milestone upgrade checks use fixed development artifacts and fixtures with exact source/checksum provenance.
 
 ## Three compatibility checks
 
@@ -112,6 +114,6 @@ The [development guide](development.md#test-resources-and-version-updates) conta
 ## Planned schema evolution
 
 The [0.2.0 design](adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) adds a directional evaluator for supported field additions, removals/reservations, and enum additions, including referenced types.
-Its evaluator is tracked in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), and restoration from published 0.1.0 state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16).
+Its evaluator is tracked in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), and restoration from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16).
 Those capabilities are planned and are not implemented by the current unchanged-schema tests.
 The design remains conservative about conditional numeric conversions and other unsupported changes; parsing success alone does not prove that values retain their meaning.

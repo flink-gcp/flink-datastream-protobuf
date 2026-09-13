@@ -19,7 +19,7 @@ limitations under the License.
 This local comparison measures the getter-name removal, metadata cache, and sizing refactor against commit `f6a6e33d272f74da80f82e9d77718399cda9702e`.
 The candidate is the implementation accompanying this report.
 It is a small implementation comparison, not a ranking against other formats or an end-to-end Flink throughput result.
-The maintained cross-format benchmark and release baseline are tracked in [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30).
+The maintained cross-format harness and its v0.1.0 baseline work are described in the [serializer benchmark report](serializer-benchmarks-v0.1.0.md), tracked in [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30).
 
 ## Conditions
 
@@ -40,7 +40,8 @@ java -cp "$BENCHMARK_CLASSPATH" org.openjdk.jmh.Main SerializerBenchmark \
   -jvmArgs '-Xms256m -Xmx256m -XX:+UseG1GC' -prof gc -rf json -rff results.json
 ```
 
-The harness and raw JSON are local investigation artifacts; a maintained, independently runnable harness is part of #30.
+This implementation comparison's harness and raw JSON remain local investigation artifacts.
+The separate [maintained benchmark](serializer-benchmarks-v0.1.0.md) provides independently runnable cross-format comparisons.
 No benchmark dependencies enter this library's production artifact.
 
 ## Workloads

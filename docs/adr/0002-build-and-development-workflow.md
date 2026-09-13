@@ -69,13 +69,13 @@ This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp
 
 A parent reactor and separate adapter/examples modules are unnecessary before there is code to separate.
 The original deferral of Hugo and publication infrastructure applies only to bootstrap.
-The [staged release contract](0001-native-protobuf-type-integration.md#release-stages) requires GitHub Pages documentation and verified Maven Central publication in 0.1.0.
+The [staged release contract](0001-native-protobuf-type-integration.md#development-stages-and-first-publication) requires GitHub Pages development documentation in 0.1.0 and first Maven Central publication in 1.0.0.
 [Issue #19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) owns the site implementation using the shared flink-gcp-dev-tools Hugo design, project-specific URLs, release/development documentation, and CI/deployment validation.
 That implementation must amend this ADR and the development instructions with the actual Hugo and publishing workflow; this release-contract amendment does not create or deploy the site.
-[Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns publication preparation and candidate verification, with actual publication and consumer verification required by the 0.1.0 release tracker.
-Release-to-release API checks are added for 0.2.0 against the published 0.1.0 baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
-Retain those checks in 0.3.0 and extend them to the published 0.2.0 baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
+[Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns 1.0.0 publication preparation, candidate verification, actual publication, and consumer verification.
+Milestone-to-milestone API checks are added for 0.2.0 against the fixed 0.1.0 development baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
+Retain those checks in 0.3.0 and extend them to the fixed 0.2.0 development baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
 Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.
-Undocumented regressions and failures of claimed supported paths block publication.
+Undocumented regressions and failures of claimed supported paths block milestone completion and eventual publication.
 The public API and supported forward-restore contract stabilize at 1.0.0; DynamicMessage implementation structure is selected by its design issue rather than fixed here.
 This bootstrap creates neither a Maven Central release nor a stable public API.
