@@ -43,6 +43,10 @@ mise x -- just --list
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
+| `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
+| `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
+| `just benchmark-smoke <version> <major> <output>` | Validate the corpus and run short JMH harness checks |
+| `just benchmark-run <version> <major> <output>` | Collect the five-block benchmark baseline and parity report |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
@@ -146,7 +150,7 @@ Unsupported formats, corrupt data, and invalid descriptors fail during reading; 
 The [format fixtures](../src/test/resources/snapshots/v1/README.md) retain fixed development snapshot/message bytes and writer provenance.
 Tests verify the Flink envelope, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
 The separate runtime suite verifies job recovery and retains [development savepoints](../src/test/resources/savepoints/v1/README.md).
-Issues #13/#6 own published-artifact fixture capture, consumer verification, and release completion.
+Issue #13 and the 1.0.0 milestone own published-artifact fixture capture, consumer verification, and first-release completion; #6 tracks development acceptance only.
 
 ## Test resources and version updates
 
@@ -166,6 +170,8 @@ Paths below are relative to the repository root.
 | `target/runtime-app/application-{original,changed}.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
 | `src/test/resources/snapshots/v1/*.properties` | Four fixed serializer snapshot/message fixtures, including checksums and writer provenance | `ProtobufSnapshotFixtureTest` reads all four in each Protobuf profile and checks restoration and current writer bytes; generation is a separate [format-fixture procedure](../src/test/resources/snapshots/v1/README.md) |
 | `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
+| `src/benchmark/{java,test,proto,avro,thrift}/` | Opt-in harness, negative tests, and equivalent corpus schemas | The `benchmarks` profile compiles these as test inputs and generates sources under `target`; none enter the production jar |
+| `docs/validation/data/serializer-benchmarks-v0.1.0/` | Fixed measurement and diagnostic evidence with source provenance | The [data inventory](validation/data/serializer-benchmarks-v0.1.0/README.md) records checksums and supported contents; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
 Its `ControlledSource`, `RuntimeJob`, and `CommonTypesRuntimeJob` run inside the MiniCluster jobs started by the integration tests.
@@ -240,7 +246,7 @@ Remove superseded development savepoints in the same reviewed update once no sup
 Keep snapshot-format fixtures while they serve as fixed compatibility baselines, even when their writer runtime is no longer a current profile.
 Any replacement or removal of development fixtures must be an explicit reviewed change.
 Regenerated ZIP bytes are not a reproducibility or compatibility verdict; recovery assertions establish the behavior being tested.
-Published-release baselines must be retained without rewriting them with later writers; their capture and consumer validation remain in #13/#6.
+Published-release baselines must be retained without rewriting them with later writers; their capture and consumer validation remain in #13 for the first 1.0.0 publication.
 
 ### Updating Protobuf, schemas, or Flink
 
@@ -267,9 +273,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` in `pom.xml` |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile; keep `flink.compat=flink1` on both capture commands |
+| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the benchmark smoke `floor` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just` |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just` |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the benchmark smoke `lts` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 From the repository root, run these checks with the updated pins; substitute the new ceiling for `2.3.0` when it changes:
@@ -293,6 +299,41 @@ The subshell stops on the first failure and preserves that command's exit status
 The binary check preserves the floor's library jar, compiled tests, application jars/classes, and descriptors when executing at the ceiling.
 That check and the per-version savepoint fixtures do not establish saved-state migration between Flink versions or Protobuf profiles.
 Adding such a guarantee requires an explicit old-writer/new-reader recovery scenario and a documented compatibility decision.
+
+## Serializer benchmarks
+
+The optional `benchmarks` profile adds comparison-only test sources, generated schemas, and JMH instrumentation.
+Use `just benchmark-smoke <flink-version> <protobuf-major> <new-output-directory>` for correctness and short harness verification, or `just benchmark-run` with the same arguments for long measurements.
+The [benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the pinned compiler prerequisite, corpus, operation semantics, matrices, and evidence format.
+These recipes do not replace ordinary native verification or binary compatibility checks.
+Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
+The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
+
+### Retaining diagnostic evidence
+
+Run profiling against the synthetic benchmark corpus in a process environment containing only the variables needed by the toolchain.
+Keep credentials out of that environment, JVM arguments, and benchmark parameters.
+Store raw JFR recordings, heap dumps, and other process dumps in a private directory outside the repository and CI artifact upload paths.
+These files can capture environment variables, system properties, command arguments, and application data.
+The ignore rules cover common raw-dump filenames; they do not inspect archives or make diagnostic output safe to publish.
+
+For the allocation investigation, export only `jdk.ObjectAllocationSample` and `jdk.ExecutionSample` events into JSON.
+Inspect every field in the export, including thread names and stack metadata, before retaining it.
+Retain JMH result JSON, reviewed logs, comparison summaries, and the toolchain/source provenance needed to reproduce the measurements.
+Never copy an entire profiling output directory into a publication archive.
+
+Prepare a publication copy with personal home-directory prefixes replaced by `/benchmark-home`, preserving toolchain versions and relative path suffixes.
+Treat the rewritten command paths as provenance, not portable invocation paths.
+Set tar owner IDs and member timestamps to zero, clear owner names, and remove extended headers carrying the original metadata; omit the gzip filename and set its timestamp to zero.
+Archive timestamps no longer preserve per-result completion times, so retain the run-window records and result ordering separately when the report depends on them.
+Compare every member before and after preparation to confirm that only the documented path substitutions changed its contents, and record those transformations in the evidence README.
+
+Before staging an evidence archive, enumerate all members and inspect their decompressed contents.
+Reject raw recordings, heap dumps, nested archives, unexpected binary files, and members outside the intended evidence inventory.
+Check the retained text, commands, and metadata for credentials without printing credential values in review output.
+Credential-pattern scanning supplements this content review; a scan with no findings does not prove that arbitrary sensitive data is absent.
+Recompute the final archive checksum and confirm that its measurement inventory and summaries still agree with the report.
+Apply the same review to CI artifact uploads and replacement archives before publishing them.
 
 ## Dependencies and packaging
 
@@ -325,6 +366,12 @@ Dependabot ignores binding major updates; revisit the rule when reviewing a chan
 Chill remains an optional comparison dependency with individually reviewed updates.
 Ordinary CI excludes its tagged tests, so run the comparison explicitly and inspect the resolved and loaded Kryo/Chill versions before accepting an update.
 Keep historical measurements distinct from results for the new dependency version.
+
+Update `benchmark.thrift.version` together with the compiler archive version, URL, and SHA-256 in `benchmarks.just`.
+The same property pins `libthrift` and the required compiler version; updating only the Maven runtime pin makes benchmark initialization reject the older compiler.
+Check `benchmark.avro.version` against the `flink-avro` dependency pins for every supported Flink runtime before accepting an update; validate any intentional difference explicitly.
+For either update, regenerate the benchmark schemas, run both Protobuf profiles across the ADR-0003 smoke matrix, and retain new provenance separately from the fixed baseline.
+Review Dependabot proposals for these coordinated changes; a Maven-only version bump is not sufficient.
 
 Dependabot alerts and security-update PRs are repository settings, separate from the weekly version-update schedule in `.github/dependabot.yml`.
 Keep both enabled and review security-update PRs through the same verification and review flow.
@@ -359,8 +406,9 @@ Neither MCP server is required to build or test the project.
 ## Next implementation steps
 
 The [ADR-0001 release contract](adr/0001-native-protobuf-type-integration.md) defines the initial public entry points, settings/defaults, framing, snapshot format, and descriptor normalization.
-The 0.x policy permits documented breaking changes while the design matures; 1.0.0 is the stabilization point.
-The release sequence and current implementation status are:
+Versions 0.1.0, 0.2.0, and 0.3.0 are unpublished development milestones and permit documented breaking changes while the design matures.
+Version 1.0.0 is the stabilization point and first Maven Central publication.
+The development sequence and current implementation status are:
 
 1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
 2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration.
@@ -368,13 +416,14 @@ The release sequence and current implementation status are:
 3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
 4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
-5. Prepare publication and packaged-artifact validation for both `0.1.0` and `0.1.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Complete [release #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
-6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from published 0.1.0 state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add release-to-release API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
-7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential upgrade outcomes before release.
+5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
+6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
+7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
+8. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
 After 0.3.0, assess remaining issues, missing implementation and validation gaps before adding another milestone.
 Define further 0.x work when needed; prepare 1.0.0 only when the design and compatibility contract are ready to stabilize.
-There is no scheduled 1.0.0 milestone in the current roadmap.
+The 1.0.0 milestone tracks first publication, with no calendar deadline.
 
 Implementation PRs update documentation for behavior they actually deliver.
 Construction and registration examples describe implemented APIs; the runtime acceptance suite verifies unchanged-schema checkpoint/savepoint recovery.
@@ -393,9 +442,9 @@ The following scenarios are obligations for the linked implementation issues, no
 | Snapshot and normalization | Version-1 round trips; unsupported/corrupt data and flags; missing/conflicting imports; recursive message graphs; deterministic dependency ordering; SourceCodeInfo ignored but options/declaration order/unknown content retained; same fingerprint with differing descriptor content cannot establish compatibility | #10 |
 | Unchanged-schema restore | Changed fields, names, imported descriptors and framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11 |
 | Runtime values and types | Continued processing and restored values in scalar-keyed and operator state, including MapState values with scalar user keys; unknown fields; nested WKT/OTel values; Any payload bytes kept opaque; negative controls show both inferred and explicitly typed keyBy bypass the non-key declaration and equal message bytes can hash into different groups across isolated classloaders | #9, #11, #18 |
-| Published release baseline | Attributable message/snapshot bytes and complete savepoints from the published artifact, expected values, settings, schemas/imports, job/state identity, generation commands, and exact source/artifact/toolchain provenance; retain fixtures without overwriting them with newer writers | #13, #6 |
-| 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported released 0.1.0 fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
-| 0.3.0 upgrade decisions | Source/API checks; already-compiled consumers for unchanged APIs and compiled replacements for intentional breaks; direct and sequential upgrade outcomes, including newly emitted state after 0.2.0 evolution; retain published fixtures and test supported restore/migration or explicit rejection; document each break and required procedure | #20, #21, #22, #23 |
+| Published release baseline | Attributable message/snapshot bytes and complete savepoints from the published artifact, expected values, settings, schemas/imports, job/state identity, generation commands, and exact source/artifact/toolchain provenance; retain fixtures without overwriting them with newer writers | #13 (1.0.0) |
+| 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported fixed 0.1.0 development fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
+| 0.3.0 upgrade decisions | Source/API checks; already-compiled consumers for unchanged APIs and compiled replacements for intentional breaks; direct and sequential upgrade outcomes, including newly emitted state after 0.2.0 evolution; retain development fixtures and test supported restore/migration or explicit rejection; document each break and required procedure | #20, #21, #22, #23 |
 
 Run production acceptance across the ADR-0003 matrix: JDK 17/21 for both supported Flink 2.x minors and JDK 17 for Flink 1.20, with the pinned Protobuf 3.25.x/4.x profiles and matching application gencode/runtime pairs, including a packaged-library consumer for each artifact line.
 Compatibility across changed built-in descriptors is not implied by supporting both runtime profiles.

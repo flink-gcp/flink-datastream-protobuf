@@ -43,7 +43,9 @@ Use Maven coordinates `io.github.flink-gcp:flink-datastream-protobuf` for both l
 The bare release version `X.Y.Z` is built at the 2.x floor, with no Flink-minor suffix.
 The version `X.Y.Z-1.20` is compiled against Flink 1.20 with `flink.compat=flink1`.
 There is no cross-major binary compatibility guarantee.
-The 0.1.0, 0.2.0, and 0.3.0 capability milestones and 0.x breaking-change policy in ADR-0001 apply to both lines; this decision does not advance the release number or publish an artifact.
+The 0.1.0, 0.2.0, and 0.3.0 capability milestones and development breaking-change policy in ADR-0001 apply to both lines.
+Under the 2026-09-13 publication amendment, these milestones remain unpublished; the first Maven Central versions are `1.0.0` and `1.0.0-1.20`.
+This decision does not itself publish an artifact.
 
 Keep one Maven module and shared sources.
 Use `flink.compat=flink2` by default and select alternate roots only for actual API differences.
@@ -88,7 +90,7 @@ Source and binary compatibility do not imply saved-state compatibility across Fl
 Library-only upgrade fixtures keep the Flink version fixed and use the matching artifact line.
 Cross-Flink-minor or cross-major savepoint upgrades require a separately declared path and fixtures proving restored values and continued processing; no such path is claimed here.
 Versioned descriptor snapshots replace the intermediate `snapshotConfiguration()` failure.
-All claimed runtime restore paths must still be verified before 0.1.0 publication.
+All claimed runtime restore paths must still be verified before 1.0.0 publication.
 
 ## Source basis and alternatives
 

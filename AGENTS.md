@@ -15,6 +15,9 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just verify-flink <version> <protobuf-major>`: clean verification with the matching Flink adapter.
 - `just binary-compat <ceiling> <protobuf-major>`: run the unchanged 2.x floor jar and tests at the ceiling.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
+- `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.
+- `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.
+- `just benchmark-run <version> <protobuf-major> <new-output>`: run the opt-in long measurements under ADR-0004 and the evidence-retention procedure in `docs/development.md`.
 - `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 

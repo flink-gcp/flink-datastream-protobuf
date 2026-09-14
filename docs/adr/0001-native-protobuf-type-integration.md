@@ -18,6 +18,7 @@ limitations under the License.
 
 - Status: Accepted
 - Date: 2026-09-06
+- Publication policy amended: 2026-09-13; 0.x versions are unpublished development milestones and 1.0.0 is the first Maven Central release
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests
 - Evidence: [Spike 0](../validation/spike-0.md)
@@ -36,16 +37,17 @@ Consequently, failure of that configuration is not a premise of this design.
 
 ## Decision
 
-### Release stages
+### Development stages and first publication
 
-The maintainer selected an incremental first release on 2026-09-06.
-The descriptor-based design remains the target, with its compatibility evaluator delivered after the first usable library.
-These are release requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, and MiniCluster tests cover unchanged-schema runtime checkpoint/savepoint recovery.
+The maintainer amended the incremental release plan on 2026-09-13: 0.1.0, 0.2.0, and 0.3.0 are development milestones, with no Maven Central publication.
+The descriptor-based design remains the target, with its compatibility evaluator delivered after basic generated-message integration.
+Version 1.0.0 is the first Maven Central release, after design stabilization and release validation.
+These are development acceptance requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, and MiniCluster tests cover unchanged-schema runtime checkpoint/savepoint recovery.
 
-| Release | Required outcome |
+| Milestone | Required outcome |
 |---|---|
-| [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Generated full-runtime messages, native type integration and transport, and unchanged-schema checkpoint/savepoint restore; common Google Well-Known Types, OpenTelemetry generated composite messages, GitHub Pages documentation, and a verified Maven Central release |
-| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Directional descriptor compatibility evaluation and restoration of supported schema changes from state written by the published 0.1.0 artifact |
+| [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Generated full-runtime messages, native type integration and transport, and unchanged-schema checkpoint/savepoint restore; common Google Well-Known Types, OpenTelemetry generated composite messages, GitHub Pages documentation, and retained development artifact/benchmark evidence |
+| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Directional descriptor compatibility evaluation and restoration of supported schema changes from state written by a fixed 0.1.0 development artifact |
 | [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage integration, with its API/state upgrade behavior documented and tested under the 0.x policy below |
 
 ### Type integration and public entry points
@@ -111,7 +113,7 @@ Supporting these generated types does not implement DynamicMessage, ProtoJSON, O
 
 Validate settings at `build()`.
 Builder reuse must not mutate previously built type information or serializers.
-The factory uses the documented release defaults; changes in a later 0.x release require the compatibility review and upgrade documentation below.
+The factory uses the documented release defaults; changes in a later 0.x milestone require the compatibility review and upgrade documentation below.
 
 This integration supports Protobuf messages as values, not as keys, throughout 0.1.0, 0.2.0, and 0.3.0.
 This restriction covers both DataStream partitioning keys and MapState user keys; Protobuf messages may be MapState values with supported scalar user keys.
@@ -268,14 +270,14 @@ Any wrapper compatibility does not validate the opaque schema of its payload.
 
 ### Compatibility policy before 1.0.0
 
-The 0.x releases are an initial development period; public APIs, defaults, supported dependency combinations, message framing, snapshot formats, and supported restore paths may change incompatibly.
+The unpublished 0.x milestones are an initial development period; public APIs, defaults, supported dependency combinations, message framing, snapshot formats, and supported restore paths may change incompatibly.
 The maintainer selected this policy to allow the generated-message and DynamicMessage designs to mature before stabilizing them at 1.0.0.
 The current API and format definitions guide 0.1.0 implementation; they do not freeze all subsequent 0.x designs.
 Prefer compatible extensions when practical, and record the design benefit and migration cost when a breaking change is chosen.
 Neither `@PublicEvolving` nor a version number alone communicates the impact to an application author.
 
-Every intentional 0.x break must be documented before publication in the affected ADR, release notes, upgrade guide, and release compatibility matrix.
-Identify affected releases, APIs/defaults or state formats, the supported upgrade direction, and the exact application or operational steps required.
+Every intentional 0.x break must be documented before milestone completion in the affected ADR, development change notes, upgrade guide, and compatibility matrix.
+Identify affected development artifacts, APIs/defaults or state formats, the supported upgrade direction, and the exact application or operational steps required.
 If saved state cannot be restored or migrated, say so explicitly and document that starting with fresh state or replaying input is required, including the application's responsibility for resulting state/data effects.
 Do not imply that a migration tool or compatible reader exists unless it has been implemented and tested.
 A blanket 0.x warning is not sufficient to waive an unexplained regression.
@@ -283,13 +285,13 @@ A blanket 0.x warning is not sufficient to waive an unexplained regression.
 API source/binary compatibility, state-byte compatibility, and application gencode/runtime compatibility remain separate checks.
 For supported unchanged-API paths, run already-compiled consumers against the new artifact without recompilation.
 For an intentional API break, retain evidence that identifies the affected usage and verify the documented replacement with compiled examples.
-A known API difference may be accepted only through an explicit, narrowly scoped record linked to the breaking-change documentation; unrelated failures still block publication.
-For each claimed state restore or migration path, assert restored values and continued processing using published-artifact fixtures.
+A known API difference may be accepted only through an explicit, narrowly scoped record linked to the breaking-change documentation; unrelated failures still block milestone completion.
+For each claimed state restore or migration path, assert restored values and continued processing using attributable fixtures from the fixed earlier development artifacts.
 For a declared unsupported path, test explicit rejection without falling back to generic serialization, guessing at unknown formats, or reporting successful restore while dropping state.
 
 Track direct and sequential upgrade outcomes rather than assuming transitive compatibility:
 
-| Candidate upgrade path | Required release decision and evidence |
+| Candidate development upgrade path | Required decision and evidence |
 |---|---|
 | 0.1.0 to 0.2.0 | The planned evaluator restores supported 0.1.0 state; verify that path, or document and test an intentional breaking change with its replacement procedure |
 | 0.1.0 directly to 0.3.0 | State whether direct upgrade works, requires an intermediate version or migration, or is unsupported; test the claimed result |
@@ -303,27 +305,31 @@ DynamicMessage requires an explicit root descriptor because its Java class alone
 Issue #21 must compare shared type-information/serializer/snapshot implementations with separate implementations before selecting the API and persisted representation for 0.3.0.
 A common construction API or a versioned snapshot with an explicit generated/dynamic discriminator is allowed; separate classes are also allowed when their restoration responsibilities justify them.
 Share framing, descriptor normalization, and compatibility evaluation where their semantics agree.
-Assess type safety, configuration/validation, classloading, restoration, test coverage, and the impact on published generated-message applications; compatibility is one design constraint rather than a requirement to choose separation.
+Assess type safety, configuration/validation, classloading, restoration, test coverage, and the impact on existing generated-message development applications; compatibility is one design constraint rather than a requirement to choose separation.
 Any change to the generated snapshot layout uses a new version or class and follows the breaking-change process if an old restore path is dropped.
 Automatic generated-to-dynamic saved-state conversion remains outside the release scope unless separately designed and tested; unifying implementation classes does not establish that conversion.
 
-The current roadmap ends at 0.3.0; 1.0.0 is a stabilization goal rather than a scheduled release or an automatic next step.
+The current capability roadmap ends at 0.3.0; the 1.0.0 milestone tracks stabilization and first publication, without a calendar deadline or automatic completion after 0.3.0.
 After 0.3.0, assess remaining design issues, missing implementation and validation gaps.
 If further development is needed, define 0.4.0 or later 0.x milestones from that assessment; otherwise, refine the compatibility contract and prepare 1.0.0.
 Version 1.0.0 is the stabilization point for the application-facing API, configuration defaults, persisted formats and supported forward-restore contract.
-Before publishing it, resolve the generated/dynamic construction and restoration design, define the supported runtime and upgrade matrix, and verify those guarantees against released fixtures.
+Before publishing it, resolve the generated/dynamic construction and restoration design, define the supported runtime and upgrade matrix, and verify those guarantees against retained development and candidate fixtures.
+Consumer verification and fixture capture from the actual published 1.0.0 artifacts complete the publication gate; no earlier published artifact exists.
 Within 1.x, preserve the declared public API and supported state-reading paths; any future incompatible contract change requires a new major version and migration documentation.
-The 0.x-to-1.0.0 transition must have its own explicit upgrade guidance and evidence; 1.0.0 does not retroactively guarantee all 0.x APIs or state formats.
+The 0.x-to-1.0.0 transition must have its own explicit upgrade guidance and evidence; 1.0.0 does not retroactively guarantee all development APIs or state formats.
 
-### Released fixtures and publication evidence
+### Development fixtures and publication evidence
 
-Retain attributable snapshot and message-byte fixtures, complete savepoints and expected restored values written by the published 0.1.0 artifact.
+For milestone-to-milestone checks, retain attributable snapshot and message-byte fixtures, complete savepoints, and expected restored values from fixed development artifacts, including the 0.1.0 baseline.
+Record the exact source revision and packaged artifact checksum; a newer working-tree build cannot stand in for that writer.
+For first-publication acceptance, capture and consumer-verify fixtures written by both published 1.0.0 artifact lines.
+Development fixtures do not satisfy this published-artifact gate.
 Record the Maven artifact coordinates/checksum, source tag/commit, snapshot class/version, settings, Flink/JDK/protoc/runtime versions, `.proto` sources/imports and descriptors, generation commands, and job/state identity needed to reproduce each fixture.
 Preserve both deterministic modes, scalar-keyed and operator value state, representative resource settings, and representative nested/unknown-field and supported generated-type cases.
 Test the current setting contract: unchanged settings, each monotonic limit increase, both deterministic-mode transitions, and rejected decreases, including decreases after an earlier increase and new snapshot emission.
 Do not regenerate or overwrite released fixtures using a newer writer and call them evidence from the original release.
 Issues [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10), [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11), and [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) own format fixtures, development runtime savepoints and capture/restore tooling, and published-artifact provenance respectively.
-Actual capture and consumer verification using both published 0.1.0 artifact lines are completion gates of #6, prepared by #13; they are not required to close the development runtime work in #11.
+Actual capture and consumer verification using both published 1.0.0 artifact lines are completion gates of #13 and the 1.0.0 milestone; they are not required to close the development runtime work in #11.
 Retain the original 0.1.0 fixtures and add independently attributable 0.2.0 and later fixture sets, including fixtures for formats that a later release explicitly stops supporting.
 Supported generated-message restore tests use the new application with old generated classes absent.
 Current aggregate CI, successful tests of every claimed supported path, explicit rejection of unsupported paths, and complete breaking-change documentation are release gates.
@@ -349,6 +355,6 @@ Keeping byte arrays or an application envelope is suitable when operators mostly
 A Kryo adapter leaves the message in Flink's generic-type path and does not meet the requirement to disable generic types.
 It is outside this library's staged release scope.
 Exact full-descriptor equality deliberately rejects all schema changes in 0.1.0; using it as the permanent value-state policy would unnecessarily reject the compatible changes planned for 0.2.0.
-Fingerprint equality alone is insufficient in either release.
+Fingerprint equality alone is insufficient in either development milestone.
 
 Cross-Flink-version savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.
