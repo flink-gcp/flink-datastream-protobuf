@@ -7,6 +7,7 @@ The repository implements native serialization, explicit TypeInformation, and su
 Versioned descriptor snapshots support serializer restoration for unchanged schemas.
 MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
 No release is available.
+Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
 The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
 It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 and 4.33.6.
@@ -80,16 +81,16 @@ The tested value types include Google Struct, Value, ListValue, Any, Timestamp, 
 They use the native integration above, including unchanged-schema state restoration.
 See [common types and examples](docs/common-types.md) for the exact schema/runtime pins, tested configurations, and the distinction between Struct, Any, and OTel AnyValue.
 
-## Planned releases
+## Development milestones and first release
 
-The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates the first usable release from schema evolution.
+The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates generated-message integration, schema evolution, and DynamicMessage development before the first public artifact.
 The serializer implements generated-class validation, bounded framing, immutable copying, configurable size, depth, and deterministic-writing behavior, and versioned descriptor snapshots.
-The release table includes implemented transport, common-type acceptance, and serializer restoration, plus the remaining documentation and publication requirements.
+The milestone table includes implemented transport, common-type acceptance, and serializer restoration, plus the remaining documentation and publication requirements.
 
-| Release | Planned capability |
+| Milestone | Planned capability |
 |---|---|
-| [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Native generated-message integration and unchanged-schema state restore, including common Google Well-Known Types and OpenTelemetry composite messages; GitHub Pages documentation and Maven Central publication |
-| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution and restore from published 0.1.0 state |
+| [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Native generated-message integration and unchanged-schema state restore, including common Google Well-Known Types and OpenTelemetry composite messages; GitHub Pages development documentation and benchmark evidence |
+| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution and restore from retained 0.1.0 development state |
 | [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage support, with documented API/state upgrade behavior |
 
 The 0.1.0 contract rejects changed schemas while allowing unchanged-schema value-state restore with increased reader limits or a deterministic-mode change.
@@ -97,11 +98,13 @@ This includes otherwise wire-safe field additions; see [Protobuf updates and sta
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
-The 0.x releases may contain breaking changes to APIs, defaults, runtime requirements, or saved-state compatibility while the design matures toward 1.0.0.
-Each release must document its specific breaks, supported upgrade paths, and required migration or fresh-state/replay procedure; check that guidance before upgrading.
-Separate API checks and released-state fixtures must verify supported paths and explicit rejection of unsupported state.
-Version 1.0.0 will establish the stable API and forward-restore contract; compatibility with every earlier 0.x release is not implied.
-The current roadmap ends at 0.3.0; the remaining work will determine whether further 0.x releases or preparation for 1.0.0 comes next.
+The unpublished 0.x milestones may contain breaking changes to APIs, defaults, runtime requirements, or saved-state compatibility while the design matures toward 1.0.0.
+Each milestone must document its specific breaks, supported upgrade paths, and required migration or fresh-state/replay procedure; check that guidance before upgrading.
+Separate API checks and attributable development-state fixtures must verify supported paths and explicit rejection of unsupported state.
+Version 1.0.0 will establish the stable API and forward-restore contract; compatibility with every earlier development artifact is not implied.
+The current roadmap ends at 0.3.0; the remaining work will determine whether further development milestones or preparation for 1.0.0 comes next.
+The [1.0.0 publication work](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) must validate and publish both `1.0.0` and `1.0.0-1.20`, verify consumers, and retain fixtures from each published artifact.
+No calendar deadline is set.
 The library has no Kryo/Chill implementation or internal fallback; Flink can still select its own generic serializer when native integration is not selected, so native usage must set `pipeline.generic-types: false`.
 The [development sequence](docs/development.md#next-implementation-steps) tracks implementation and release validation separately from the existing probes.
 

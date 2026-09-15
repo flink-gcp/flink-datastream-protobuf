@@ -6,6 +6,13 @@ target/
 .settings/
 .DS_Store
 *.log
+# Raw JVM diagnostics can contain credentials and application data.
+*.jfr
+*.jfr.gz
+*.jfr.zip
+*.hprof
+*.hprof.gz
+*.heapdump
 .env
 mise.local.toml
 .serena/project.local.yml
