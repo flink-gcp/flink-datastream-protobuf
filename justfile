@@ -14,6 +14,7 @@
 
 import 'dev-tools.just'
 import 'benchmarks.just'
+import 'baselines.just'
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 

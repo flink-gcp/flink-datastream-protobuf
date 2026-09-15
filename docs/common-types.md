@@ -105,7 +105,8 @@ These cases use default serializer settings, fixed parallelism and state identit
 The common-types job shares the existing MiniCluster controls and attached application jar.
 Its WKT classes come from the runtime, and its OTel/envelope classes come from the ordinary test classpath.
 The separate [isolated application recovery suite](validation/runtime-recovery.md) retains the generated-class isolation and settings-transition coverage.
-The existing 24 development savepoint archives are unchanged; published-artifact fixtures and consumer validation remain in issues #13/#6.
+The existing 24 development savepoint archives are unchanged; published-artifact fixtures and consumer validation remain in issue #13.
+Issue #40's [development bundle tooling](validation/development-baselines.md) prepares separate retained inputs for milestone checks.
 
 ## OTel schema provenance and regeneration
 

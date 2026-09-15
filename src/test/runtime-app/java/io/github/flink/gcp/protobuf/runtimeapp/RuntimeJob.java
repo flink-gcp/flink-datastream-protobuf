@@ -68,6 +68,7 @@ public final class RuntimeJob {
         Configuration config = new Configuration();
         config.set(PipelineOptions.GENERIC_TYPES, false);
         config.set(StateBackendOptions.STATE_BACKEND, backend);
+        config.set(CheckpointingOptions.INCREMENTAL_CHECKPOINTS, false);
         config.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
         config.set(CheckpointingOptions.FS_SMALL_FILE_THRESHOLD, new MemorySize(0));
         config.set(

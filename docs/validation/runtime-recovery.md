@@ -63,4 +63,5 @@ Each saved-state scenario keeps its Flink version, Protobuf profile, backend, pa
 The suite does not establish backend migration, rescaling, cross-Flink state upgrades, cross-Protobuf restore, or cross-process message-key hashing.
 `CommonTypesRecoveryITCase` adds [Well-Known Type and OpenTelemetry acceptance](../common-types.md#verification-boundaries), using the same MiniCluster controls with a separate job and values on the ordinary test classpath.
 It verifies direct Struct ValueState, direct AnyValue MapState values, and an application envelope in operator ListState on both backends.
-Published-artifact capture, validation of both artifact lines, and retention for future direct/sequential library upgrades remain in #13/#6.
+Issue #40's [development bundle tooling](development-baselines.md) captures packaged writers and compiled consumers with retained state for later milestone checks.
+Final development capture follows the remaining v0.1.0 work; published-artifact capture and validation of both release lines remain in #13.
