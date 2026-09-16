@@ -273,10 +273,11 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
                                     : List.of());
         }
 
-        void checkpoint() throws Exception {
+        String checkpoint() throws Exception {
             String checkpoint =
                     cluster.triggerCheckpoint(graph.getJobID()).get(60, TimeUnit.SECONDS);
             assertThat(checkpoint).isNotBlank();
+            return checkpoint;
         }
 
         void assertCommonTypesRestored(int attempt, int expectedCount) throws Exception {

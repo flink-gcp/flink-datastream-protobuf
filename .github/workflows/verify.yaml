@@ -92,3 +92,57 @@ jobs:
         env:
           PROTOBUF: ${{ matrix.protobuf }}
         run: just binary-compat "$FLINK_CEILING" "$PROTOBUF"
+  development-baseline:
+    name: Development bundle / ${{ matrix.line }} / Protobuf ${{ matrix.protobuf }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        line: [flink2, flink1]
+        protobuf: ['3', '4']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        with:
+          tool: just
+      - name: Capture the development bundle once
+        env:
+          LINE: ${{ matrix.line }}
+          PROTOBUF: ${{ matrix.protobuf }}
+        run: |
+          just baseline-capture "$LINE" "$PROTOBUF" "$RUNNER_TEMP/baseline"
+          mv target "$RUNNER_TEMP/baseline-build"
+          just baseline-check "$RUNNER_TEMP/baseline"
+      - name: Read retained inputs on JDK 17 without build outputs
+        env:
+          LINE: ${{ matrix.line }}
+        run: |
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          for version in $versions; do
+            just baseline-read "$RUNNER_TEMP/baseline" "$version" "$RUNNER_TEMP/read-17-$version"
+          done
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: matrix.line == 'flink2'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Read the same retained inputs on JDK 21
+        if: matrix.line == 'flink2'
+        run: |
+          for version in 2.2.1 2.3.0; do
+            just baseline-read "$RUNNER_TEMP/baseline" "$version" "$RUNNER_TEMP/read-21-$version"
+          done
+      - name: Show failed development capture or reader logs
+        if: failure()
+        run: |
+          for directory in "$RUNNER_TEMP/baseline" "$RUNNER_TEMP"/read-*; do
+            if [[ -d "$directory" ]]; then
+              find "$directory" -name '*.log' -type f -exec tail -n 60 {} +
+            fi
+          done

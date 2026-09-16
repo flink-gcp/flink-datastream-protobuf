@@ -49,6 +49,21 @@ verify-flink version major="3":
 binary-compat ceiling major="3":
     python3 scripts/binary-compat.py "$1" "$2"
 
+# Capture an unpublished development bundle from a clean committed checkout on JDK 17.
+[positional-arguments]
+baseline-capture line major output:
+    java src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java capture "$1" "$2" "$3"
+
+# Check a retained bundle without Maven, recompilation, or network access.
+[positional-arguments]
+baseline-check bundle:
+    java -cp "$1/tools.jar" io.github.flink.gcp.protobuf.BaselineTool check "$1"
+
+# Run retained bytecode and state under the selected runtime and the current JDK.
+[positional-arguments]
+baseline-read bundle version output:
+    java -cp "$1/tools.jar" io.github.flink.gcp.protobuf.BaselineTool read "$1" "$2" "$3"
+
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups= verify

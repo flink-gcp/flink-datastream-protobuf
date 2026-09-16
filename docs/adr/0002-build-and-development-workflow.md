@@ -20,6 +20,7 @@ limitations under the License.
 - Date: 2026-09-06
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Dependency update policy amended: 2026-09-12
+- Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -73,6 +74,9 @@ The [staged release contract](0001-native-protobuf-type-integration.md#developme
 [Issue #19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) owns the site implementation using the shared flink-gcp-dev-tools Hugo design, project-specific URLs, release/development documentation, and CI/deployment validation.
 That implementation must amend this ADR and the development instructions with the actual Hugo and publishing workflow; this release-contract amendment does not create or deploy the site.
 [Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns 1.0.0 publication preparation, candidate verification, actual publication, and consumer verification.
+Issue #40's test-only development bundle tooling retains packaged writers, compiled consumers, runtime dependencies, and state outside the source tree.
+The capture workflow builds each artifact/profile once and reruns its retained inputs on the supported JDK/Flink combinations without compilation.
+CI exercises these as disposable rehearsals; final milestone capture and long-term storage follow the remaining v0.1.0 work.
 Milestone-to-milestone API checks are added for 0.2.0 against the fixed 0.1.0 development baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
 Retain those checks in 0.3.0 and extend them to the fixed 0.2.0 development baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
 Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.
