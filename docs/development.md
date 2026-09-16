@@ -42,6 +42,9 @@ mise x -- just --list
 | `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
+| `just baseline-capture <line> <major> <output>` | Capture a development bundle in a new external directory |
+| `just baseline-check <bundle>` | Check retained inventory and checksums without rebuilding |
+| `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
 | `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
 | `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
@@ -168,6 +171,7 @@ Paths below are relative to the repository root.
 | `src/test/proto/` | Schemas for serializer, snapshot, and transport tests | Maven runs the selected protoc; generated Java goes under `target/generated-test-sources/protobuf` and compiles with the ordinary tests |
 | `src/test/runtime-app/java/` and `src/test/runtime-app/proto/{original,changed}/` | Controllable Flink jobs and two runtime schemas with the same generated class/message names; the changed schema adds a field for rejection tests | Maven builds each variant separately under `target/runtime-app/{original,changed}/`; `RuntimeJob` uses isolated runtime gencode, while `CommonTypesRuntimeJob` uses WKT and ordinary test messages from the parent classpath |
 | `target/runtime-app/application-{original,changed}.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
+| `target/baseline/tools.jar` | Retained test instruments, messages, and resources | Built during `process-test-classes`; never attached as a Maven publication artifact |
 | `src/test/resources/snapshots/v1/*.properties` | Four fixed serializer snapshot/message fixtures, including checksums and writer provenance | `ProtobufSnapshotFixtureTest` reads all four in each Protobuf profile and checks restoration and current writer bytes; generation is a separate [format-fixture procedure](../src/test/resources/snapshots/v1/README.md) |
 | `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
 | `src/benchmark/{java,test,proto,avro,thrift}/` | Opt-in harness, negative tests, and equivalent corpus schemas | The `benchmarks` profile compiles these as test inputs and generates sources under `target`; none enter the production jar |
@@ -186,7 +190,7 @@ The relevant build and test sequence is:
    Each runtime variant also gets a `schema.pb` descriptor set including imports.
 2. During `test-compile`, Maven compiles the ordinary tests and separately compiles the shared runtime application Java with each generated variant.
    The runtime outputs are `target/runtime-app/original/classes` and `target/runtime-app/changed/classes`.
-3. During `process-test-classes`, the Ant jar tasks package the two application jars.
+3. During `process-test-classes`, the Ant jar tasks package the two application jars and the development bundle companion jar.
 4. During `test`, Surefire runs `*Test`, including `ProtobufSnapshotFixtureTest`.
 5. During `integration-test`, the parent POM's Surefire execution runs `*ITCase`, including the runtime recovery suites below.
    The `verify` lifecycle includes this phase; no separate runtime-test command is needed.
@@ -204,6 +208,13 @@ Its [coverage](common-types.md#verification-boundaries) complements the isolated
 The [runtime evidence](validation/runtime-recovery.md) describes the state assertions and compatibility boundaries.
 Ordinary verification creates temporary state for its jobs but does not rewrite either committed fixture family.
 `just verify-protobuf` and `just verify-flink` clean first, then run this same lifecycle with the selected versions.
+
+### Fixed development bundles
+
+The [development bundle procedure](validation/development-baselines.md) provides `baseline-capture`, `baseline-check`, and `baseline-read` for #40.
+It retains packaged library jars, compiled consumers, resolved runtime dependencies, snapshots, and checkpoint/savepoint archives outside the repository.
+The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
+This prepares the capture tooling; final v0.1.0 source selection and long-term retention follow completion of #12, #19, and #41.
 
 ### Selecting and capturing savepoint fixtures
 
@@ -270,6 +281,7 @@ Use this sequence for a dependency update, including patch updates proposed by D
 |---|---|
 | Protobuf 3 runtime | Change the default `protobuf.version` in `pom.xml`; the `protobuf3` profile uses that default |
 | Protobuf 4 runtime | Change `protobuf.version` in the `protobuf4` profile |
+| Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |

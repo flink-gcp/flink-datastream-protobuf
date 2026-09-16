@@ -66,5 +66,7 @@ The manifest's base revision identifies the starting revision; individual source
 Use a base revision reachable from `main` so that squashing the capture branch does not discard the revision pointer.
 Do not rewrite old provenance hashes to match current source files.
 For a released baseline, #13 must extend this procedure to verify released coordinates, the exact release tag/source and supplied jar, both artifact lines, and the new consumer classpath.
-The release tracker #6 requires capture and consumer verification after actual publication.
-Retain each released baseline without regenerating it with a later writer, for the supported direct and sequential upgrade tests through 0.3.0.
+Issue #40 prepares [fixed development bundles](../../../../../docs/validation/development-baselines.md) for milestone-to-milestone checks, separately from these version-selected fixtures.
+Final development capture follows the remaining v0.1.0 work and supplies provenance for #6.
+Published-artifact capture remains in #13 for the first 1.0.0 publication.
+Retain fixed development and published baselines without regenerating them with later writers.

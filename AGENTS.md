@@ -14,6 +14,8 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just verify-protobuf 3` / `just verify-protobuf 4`: clean verification for each runtime/gencode pair.
 - `just verify-flink <version> <protobuf-major>`: clean verification with the matching Flink adapter.
 - `just binary-compat <ceiling> <protobuf-major>`: run the unchanged 2.x floor jar and tests at the ceiling.
+- `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
+- `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
 - `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.
 - `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.

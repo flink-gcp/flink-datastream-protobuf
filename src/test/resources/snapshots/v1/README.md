@@ -18,7 +18,8 @@ limitations under the License.
 
 These fixtures were written by the unpublished 0.1.0-SNAPSHOT implementation of issue #10.
 They preserve the format baseline; they are not evidence from a released Maven artifact or a Flink savepoint.
-Issue #11 owns complete runtime savepoints, and #13/#6 must add fixtures from both published artifact lines before release completion.
+Issue #11 owns the existing runtime savepoints; #40 prepares [fixed development bundles](../../../../../docs/validation/development-baselines.md) for later milestone checks.
+Issue #13 must add fixtures from both published artifact lines for the first 1.0.0 release.
 Do not overwrite these files with later writers and describe them as the original writer's output.
 
 Each properties file contains Base64-encoded Flink snapshot-envelope bytes and one framed message, with SHA-256 checksums.
