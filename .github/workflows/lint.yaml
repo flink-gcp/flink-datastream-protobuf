@@ -20,3 +20,13 @@ jobs:
           tool: just
       - name: Lint workflows and documentation
         run: just lint
+      - name: Test the evidence content gate with synthetic inputs
+        run: just benchmark-evidence-test
+      - name: Inspect retained benchmark evidence
+        run: just benchmark-evidence-repository "$RUNNER_TEMP/evidence-inventories"
+      - name: Retain inspection inventories without the existing evidence archives
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: retained-benchmark-evidence-inventories
+          path: ${{ runner.temp }}/evidence-inventories
+          if-no-files-found: error

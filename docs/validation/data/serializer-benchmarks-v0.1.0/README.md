@@ -36,7 +36,9 @@ Toolchain versions and relative path suffixes remain intact; these paths are pro
 Archive owner names and numeric IDs are cleared, and archive timestamps are normalized.
 These publication-only transformations leave all measurement values, event records apart from matching path strings, source patches, and result inventories unchanged.
 
-Verify a hash with `shasum -a 256 protobuf-3.tar.gz`, then extract into a temporary directory:
+From the repository root, run `just benchmark-evidence-repository <new-output-directory>` to inspect these committed archives and retain member inventories and checksums.
+This reads the archives without extracting their paths or changing their bytes.
+After checking the inventory and completing human review, verify a hash with `shasum -a 256 protobuf-3.tar.gz`, then extract into a temporary directory:
 
 ```sh
 mkdir -p /tmp/flink-protobuf-baseline-evidence

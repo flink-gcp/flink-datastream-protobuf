@@ -23,7 +23,7 @@ The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, and uv for optional Serena integration.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
-The binary compatibility and application-example recipes also need Python 3.9 or newer, using only its standard library.
+The binary compatibility, application-example, and benchmark evidence recipes also need Python 3.9 or newer, using only its standard library.
 Install Python separately; `mise.toml` does not provide it.
 
 ```sh
@@ -53,6 +53,10 @@ mise x -- just --list
 | `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
 | `just benchmark-smoke <version> <major> <output>` | Validate the corpus and run short JMH harness checks |
 | `just benchmark-run <version> <major> <output>` | Collect the five-block benchmark baseline and parity report |
+| `just benchmark-evidence-check <input> <new-output>` | Validate a benchmark directory or normalized `.tar.gz`; retain checked bytes and their inventory |
+| `just benchmark-evidence-staged <new-output>` | Validate retained benchmark archives from the Git index before committing |
+| `just benchmark-evidence-repository <new-output>` | Validate retained benchmark archives from HEAD and retain inspection inventories |
+| `just benchmark-evidence-test` | Run the gate's synthetic positive and negative controls |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
@@ -377,6 +381,73 @@ Check the retained text, commands, and metadata for credentials without printing
 Credential-pattern scanning supplements this content review; a scan with no findings does not prove that arbitrary sensitive data is absent.
 Recompute the final archive checksum and confirm that its measurement inventory and summaries still agree with the report.
 Apply the same review to CI artifact uploads and replacement archives before publishing them.
+
+#### Automated content gate
+
+The [evidence validator](../scripts/benchmark_evidence.py) implements the content gate for the current benchmark evidence formats.
+It uses Python's standard library and is not packaged in the production jar.
+Use a new output directory outside the input tree:
+
+```sh
+just benchmark-evidence-check /private/benchmark-publication/protobuf-3.tar.gz /tmp/checked-benchmark-evidence
+```
+
+A successful check creates `evidence/` with the exact inspected bytes and `inventory.json` with the validator's SHA-256, policy version, archive checksum when applicable, and every member's relative path, format, byte count, and SHA-256.
+It does not extract archive paths onto the filesystem, rewrite contents, or remove offending members to make a bundle pass.
+An error rejects the entire input, removes its temporary copy, and leaves no successful output directory.
+Error messages contain fixed rule identifiers and, for content-rule failures, a member ordinal rather than matched values, input paths, parser excerpts, or exception details.
+Use those identifiers to inspect the original input privately.
+
+The initial container formats are a directory of benchmark files and a normalized, single-stream gzip containing POSIX ustar.
+Archive owner IDs, owner names, and timestamps must match the normalization above; gzip optional headers, tar extended headers, links, special entries, duplicate paths, unsafe paths, conflicting file/directory paths, and uninspected trailing data are rejected.
+Only regular files and the optional `protobuf-3`, `protobuf-4`, or `diagnostics` directory prefix are supported.
+Directory inputs reject symbolic and hard links.
+The limits are 10,000 members, 64 MiB per decompressed file, 256 MiB of member contents, and JSON nesting depth 64.
+Compressed inputs also have a 256 MiB limit, with bounded decompression including tar headers and padding.
+These are input limits, not a claim about a fixed peak process memory footprint.
+
+The file inventory permits the harness's lane/workload/operation result names and the existing measurement, support, and provenance filenames.
+It validates JMH JSON structure, diagnostic command string arrays, diagnostic summary structure, the three CSV headers and row widths, and the reviewed Java properties keys and syntax.
+JMH numeric fields accept its string encodings `NaN`, `-INF`, and `+INF` where measurements are undefined.
+Logs, source patches, and provenance text must be UTF-8 without binary control bytes and match the documented inventory in the validator.
+Unknown filenames, unknown JSON fields, duplicate JSON keys, unreadable or malformed inputs, raw JFR, heap dumps, binary files, and nested archives fail closed.
+A file extension does not override content checks.
+This gate validates content retention; it does not establish measurement completeness or the statistical claims in the benchmark report.
+
+JFR exports accept only `recording.events` entries for `jdk.ObjectAllocationSample` and `jdk.ExecutionSample`.
+Allocation values contain `startTime`, `eventThread`, `stackTrace`, `objectClass`, and `weight`; execution values contain `startTime`, `sampledThread`, `stackTrace`, and `state`.
+The validator's `JFR_SCHEMAS` defines the reviewed fields and types for nested threads, thread groups, classes, class loaders, packages, modules, methods, stack frames, and stack truncation.
+JFR's null references and nullable strings are supported; additional fields or event types require a reviewed policy change.
+Environment, system-property, and command-line metadata are not accepted as JFR events or additional fields.
+Renaming a recognizable JFR export to a log does not bypass the JFR policy.
+Recorded benchmark command arrays and JMH JVM arguments are separate supported provenance formats and remain subject to credential scanning and human review.
+
+The credential rules cover private-key markers, GitHub tokens, AWS access-key IDs, Google API keys and OAuth tokens, Slack tokens, authentication headers, and common credential assignments.
+The gate scans raw text and decoded JSON strings, keys, and Java property values without printing matches.
+It does not recognize arbitrary secrets, every provider's credentials, encoded/encrypted secrets, or sensitive prose that lacks a known pattern.
+A passing inventory explicitly records that human review is still required; it is not publication approval.
+Keep the credential-free measurement process and member-by-member human review above.
+
+After reviewing a publication copy, validate it before staging, then stage only the checked evidence and its reviewed documentation.
+Keep the corresponding inventory with the retained evidence in the external review records.
+Run the index check immediately before the commit, using another new output directory:
+
+```sh
+just benchmark-evidence-staged /tmp/staged-benchmark-evidence-inventories
+```
+
+The index check inspects the exact staged blobs under `docs/validation/data`, records their Git object IDs and archive checksums, and rejects unrecognized retained files except the evidence README files.
+It scans all retained benchmark archives, including unchanged ones; unstaged working-tree replacements cannot hide unsafe staged bytes.
+A failure stops the evidence commit procedure.
+Rerun after changing the index; Git hooks are not installed by this tool.
+The repository check applies the same rules to HEAD in CI and uploads only the inspection inventories, without uploading the existing archives again.
+
+CI smoke uploads use `benchmark-evidence-check` after the measurement process has stopped, including when it failed and left partial output.
+Only a successful gate enables the upload, and the upload reads the checked copy and its inventory rather than the original measurement directory.
+Missing output produces no upload; malformed or unsafe partial output fails the gate and prevents the entire upload.
+A successful content check does not clear the benchmark step's failure.
+The synthetic gate tests and retained-evidence checks run in the lint workflow and therefore participate in the aggregate `CI passed` result.
+Changes to the gate do not authorize publishing existing private evidence or changing a publication hold.
 
 ## Dependencies and packaging
 
