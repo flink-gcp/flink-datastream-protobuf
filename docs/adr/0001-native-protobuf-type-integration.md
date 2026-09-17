@@ -113,7 +113,7 @@ Supporting these generated types does not implement DynamicMessage, ProtoJSON, O
 
 Validate settings at `build()`.
 Builder reuse must not mutate previously built type information or serializers.
-The factory uses the documented release defaults; changes in a later 0.x milestone require the compatibility review and upgrade documentation below.
+The factory uses the documented default settings; changes in a later 0.x milestone require the compatibility review and upgrade documentation below.
 
 This integration supports Protobuf messages as values, not as keys, throughout 0.1.0, 0.2.0, and 0.3.0.
 This restriction covers both DataStream partitioning keys and MapState user keys; Protobuf messages may be MapState values with supported scalar user keys.

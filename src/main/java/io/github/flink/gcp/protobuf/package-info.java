@@ -22,7 +22,9 @@
  * against AbstractMessage before type extraction. The factory registry is process-global. Disable
  * generic types to reject accidental fallback and extract stable scalar keys instead of message
  * keys. Versioned snapshots support unchanged-schema checkpoint/savepoint recovery, verified with
- * HashMap and RocksDB state backends in MiniCluster tests. This is not a complete release API.
- * Connector boundary serialization schemas and Table/SQL formats are outside this package.
+ * HashMap and RocksDB state backends in MiniCluster tests. Changed schemas are rejected in the
+ * 0.1.0 development contract; schema evolution is planned for 0.2.0. No Maven Central release is
+ * available yet. Connector boundary serialization schemas and Table/SQL formats are outside this
+ * package.
  */
 package io.github.flink.gcp.protobuf;

@@ -14,17 +14,11 @@
  * limitations under the License.
  */
 
-package io.github.flink.gcp.protobuf;
-
-import org.apache.flink.annotation.Internal;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
-
-/**
- * Flink 2.x adapter for native type information.
- *
- * @param <T> concrete generated message type
- */
-@Internal
-abstract class CrossVersionProtobufTypeInformation<T> extends TypeInformation<T> {
-    private static final long serialVersionUID = 1L;
+syntax = "proto3";
+package examples;
+option java_package = "io.github.flink.gcp.protobuf.examples.generated";
+option java_multiple_files = true;
+message Event {
+  string account = 1;
+  int64 amount = 2;
 }

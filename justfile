@@ -81,3 +81,13 @@ lint:
 # Pin new or updated GitHub Actions to commit SHAs.
 pin-actions:
     mise x pinact -- pinact run
+
+# Build a local development artifact and verify its independent application consumer.
+[positional-arguments]
+examples-verify version major repository:
+    bash scripts/verify-examples.sh "$1" "$2" "$3"
+
+# Check public API documentation without the parent's incompatible Maven Javadoc options.
+[positional-arguments]
+docs-javadoc compat="flink2" major="3":
+    bash scripts/docs-javadoc.sh "$1" "$2"

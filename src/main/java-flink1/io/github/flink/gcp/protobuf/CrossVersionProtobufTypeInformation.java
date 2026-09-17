@@ -21,7 +21,11 @@ import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 
-/** Flink 1.x adapter for native type information. */
+/**
+ * Flink 1.x adapter for native type information.
+ *
+ * @param <T> concrete generated message type
+ */
 @Internal
 abstract class CrossVersionProtobufTypeInformation<T> extends TypeInformation<T> {
     private static final long serialVersionUID = 1L;
