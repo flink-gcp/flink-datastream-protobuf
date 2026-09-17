@@ -63,11 +63,15 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     static final int FRAMING_VERSION = 1;
 
     /**
+     * The generated class represented by this instance.
+     *
      * @serial Concrete generated application class, resolved by the job deserializer.
      */
     private final Class<T> messageClass;
 
     /**
+     * The serialization settings retained across Java serialization.
+     *
      * @serial Immutable wire and reader settings.
      */
     private final ProtobufSerializerSettings settings;

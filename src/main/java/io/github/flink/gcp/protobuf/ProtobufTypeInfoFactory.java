@@ -26,7 +26,7 @@ import java.lang.reflect.Type;
 import java.util.Map;
 
 /**
- * Creates native type information with the release defaults for full-runtime generated messages.
+ * Creates native type information with the default settings for full-runtime generated messages.
  *
  * <p>Register against {@code com.google.protobuf.AbstractMessage} through {@code
  * pipeline.serialization-config} before type extraction. Lookup follows superclasses; registering

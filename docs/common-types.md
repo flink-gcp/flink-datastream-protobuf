@@ -33,7 +33,7 @@ Changing a Struct key or choosing another AnyValue variant changes the data with
 Wrappers remain supported for existing schemas.
 For new schemas, prefer explicit field presence, such as proto3 `optional`, as described in the [WKT guidance](https://protobuf.dev/reference/protobuf/google.protobuf/).
 
-Tests use protobuf-java/protoc 3.25.8 together and protobuf-java/protoc 4.33.6 together.
+Current tests use protobuf-java/protoc 3.25.9 together and protobuf-java/protoc 4.33.6 together.
 Google classes come from the selected protobuf-java runtime; the pinned OTel schema and application envelope are generated with that profile's protoc.
 The [Flink matrix](../README.md#supported-flink-versions) runs both profiles: Flink 2.2.1/2.3.0 on JDK 17/21, and Flink 1.20.4 on JDK 17.
 The unchanged-jar lane also reruns the floor's compiled tests and application jars on Flink 2.3.0.
@@ -78,7 +78,7 @@ var otelType = ProtobufTypeInformation.of(AnyValue.class);
 ```
 
 Supply these type information objects to sources or `.returns(...)`, and keep `pipeline.generic-types: false`.
-The [superclass factory configuration](../README.md#native-type-information) also selects these generated types.
+The [superclass factory configuration](usage.md#factory-registration) also selects these generated types.
 Applications supply their own OTel generated classes and compatible Protobuf runtime; the library does not bundle OTel classes.
 `CommonTypesTest` compiles and exercises these construction examples.
 

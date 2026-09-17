@@ -23,7 +23,8 @@ The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, and uv for optional Serena integration.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
-The binary compatibility recipe also needs Python 3.9 or newer, using only its standard library.
+The binary compatibility and application-example recipes also need Python 3.9 or newer, using only its standard library.
+Install Python separately; `mise.toml` does not provide it.
 
 ```sh
 mise trust
@@ -45,6 +46,8 @@ mise x -- just --list
 | `just baseline-capture <line> <major> <output>` | Capture a development bundle in a new external directory |
 | `just baseline-check <bundle>` | Check retained inventory and checksums without rebuilding |
 | `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
+| `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
+| `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
 | `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
 | `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
@@ -105,6 +108,29 @@ Production integration tests independently verify the native type information an
 The separate [runtime acceptance suite](validation/runtime-recovery.md) verifies managed-state recovery for both version lines.
 Issue #13 retains verification of the published consumer classpath.
 
+### Application examples and API documentation
+
+`just examples-verify <flink-version> <protobuf-major> <external-maven-repository>` calls [verify-examples.sh](../scripts/verify-examples.sh) to build and install the development library, then run the standalone consumer's verification lifecycle.
+The 2.x library is compiled at the floor even for a ceiling consumer; LTS uses its separate adapter.
+The library package step uses the normal dependency cache, then `install-file` installs its jar and POM into the isolated consumer repository.
+The package step skips its tests because the ordinary verification lane owns those; run `just verify` before pushing changes.
+Use a distinct external Maven repository for each adapter/Protobuf-major pair to avoid overwriting the shared development SNAPSHOT coordinates.
+The application generates its own messages, tests explicit and registered transport and scalar-keyed state updates, and launches each entrypoint from the packaged jar with Flink supplied separately.
+The recipe also executes all three documented Maven launch goals with the selected versions, so their classpaths and entrypoint configuration are exercised in CI.
+`DocumentationExamplesTest` checks that the example's default dependency versions and the quickstart's explicit version arguments match the root POM pins.
+Registration tests use separate JVMs and every native path disables generic types without module-opening flags.
+These checks run in every existing source-build CI matrix cell.
+
+The library's formatting and Checkstyle checks also cover the handwritten application sources.
+`DocumentationExamplesTest` checks the marked snippets in the quickstart and usage guide against the compiled application sources and its actual YAML.
+When editing a marked snippet, update its source and the corresponding Markdown together.
+Generated application code and jars remain under the example's ignored `target/` directory and are not library publication artifacts.
+
+`just docs-javadoc <flink1|flink2> <3|4>` calls [docs-javadoc.sh](../scripts/docs-javadoc.sh) to compile the selected production adapter and invoke Javadoc directly with Java 17 language/API targeting, full doclint, and warnings treated as errors.
+The output is `target/apidocs/`, ready for the future site integration.
+This avoids the connector parent's incompatible Maven Javadoc export/release options; repairing the Maven release Javadoc-jar configuration remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
+Both adapters and Protobuf profiles are checked in CI.
+
 ### Native serializer implementation
 
 The production `ProtobufTypeSerializer` is internal machinery with package-private construction.
@@ -114,7 +140,7 @@ The native transport probes still exercise their separate test serializer; `Prot
 The production registration suite covers superclass lookup under both generated hierarchies through the paired Protobuf profiles, with fresh-JVM unregistered and Message-interface controls.
 The key restriction tests retain both inferred and explicit keyBy bypass controls and show that identical message bytes can select different key groups across isolated generated-class loaders.
 Those controls document unsupported message-key use; they are not a promise that the library rejects every such use.
-See the [construction and configuration examples](../README.md#native-type-information) for registration timing, defaults, and explicit type settings.
+See the [construction and configuration examples](usage.md) for registration timing, defaults, and explicit type settings.
 
 The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without materializing the serialized message in a payload array.
 Before writing the prefix, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget.
@@ -279,16 +305,21 @@ Use this sequence for a dependency update, including patch updates proposed by D
 
 | Change | Configuration and fixture impact |
 |---|---|
-| Protobuf 3 runtime | Change the default `protobuf.version` in `pom.xml`; the `protobuf3` profile uses that default |
-| Protobuf 4 runtime | Change `protobuf.version` in the `protobuf4` profile |
+| Protobuf 3 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, and update `docs/quickstart.md`; the `protobuf3` profile uses the root default |
+| Protobuf 4 runtime | Change `protobuf.version` in the `protobuf4` profile and the explicit runtime override in `docs/quickstart.md` |
 | Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the benchmark smoke `floor` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just` |
+| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just` |
 | Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just` |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the benchmark smoke `lts` version in `.github/workflows/verify.yaml`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
+
+Dependabot scans the root Maven project.
+Review the standalone example's dependency and plugin pins in `examples/datastream/pom.xml` alongside root updates; they are maintained explicitly.
+When changing the development library version, update the example's `protobuf.integration.version` and the quickstart together.
+The launch-version test rejects runtime or development-coordinate drift before the commands reach users.
 
 From the repository root, run these checks with the updated pins; substitute the new ceiling for `2.3.0` when it changes:
 
@@ -427,7 +458,7 @@ The development sequence and current implementation status are:
    Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
-4. Add compiled usage examples and the complete guide in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12), then implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), amending ADR-0002 with the actual publishing workflow.
+4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). Implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), then connect README to its verified quickstart/API URLs and amend ADR-0002 with the publishing workflow.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.

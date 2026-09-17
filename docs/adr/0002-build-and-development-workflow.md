@@ -68,7 +68,11 @@ This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp
 
 ## Consequences
 
-A parent reactor and separate adapter/examples modules are unnecessary before there is code to separate.
+The library remains a single Maven module with no parent reactor.
+A standalone application under `examples/datastream` consumes an installed development jar through ordinary Maven coordinates; it is not a reactor module or publication artifact.
+Its independent build verifies application use without relying on library source roots, and allows the same consumer to switch to Maven Central coordinates at 1.0.0.
+The existing runtime/JDK/Protobuf CI matrix verifies the examples, and marked documentation snippets are checked against their compiled source.
+Public API documentation is checked by direct Javadoc generation; Maven release Javadoc packaging remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
 The original deferral of Hugo and publication infrastructure applies only to bootstrap.
 The [staged release contract](0001-native-protobuf-type-integration.md#development-stages-and-first-publication) requires GitHub Pages development documentation in 0.1.0 and first Maven Central publication in 1.0.0.
 [Issue #19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) owns the site implementation using the shared flink-gcp-dev-tools Hugo design, project-specific URLs, release/development documentation, and CI/deployment validation.

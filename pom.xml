@@ -109,11 +109,12 @@ limitations under the License.
             <plugin>
                 <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId>
                 <!-- Keep formatting active on both JDKs despite the parent's java21 profile. -->
-                <configuration><skip>false</skip><java><includes><include>src/**/*.java</include></includes></java></configuration>
+                <configuration><skip>false</skip><java><includes><include>src/**/*.java</include><include>examples/datastream/src/**/*.java</include></includes></java></configuration>
             </plugin>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId>
                 <configuration><sourceDirectories combine.self="override">
                     <sourceDirectory>src/main/java</sourceDirectory><sourceDirectory>src/test/java</sourceDirectory>
+                    <sourceDirectory>examples/datastream/src/main/java</sourceDirectory><sourceDirectory>examples/datastream/src/test/java</sourceDirectory>
                     <sourceDirectory>src/test/runtime-app/java</sourceDirectory>
                     <sourceDirectory>src/benchmark/java</sourceDirectory><sourceDirectory>src/benchmark/test</sourceDirectory>
                     <sourceDirectory>src/main/java-flink1</sourceDirectory><sourceDirectory>src/main/java-flink2</sourceDirectory>

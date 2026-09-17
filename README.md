@@ -9,7 +9,8 @@ MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint rest
 No release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
-The planned artifact is `io.github.flink-gcp:flink-datastream-protobuf`.
+The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.1.0-SNAPSHOT`.
+Start with the [quickstart](docs/quickstart.md) to build/install it locally and run the compiled application examples.
 It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 and 4.33.6.
 
 ## Supported Flink versions
@@ -31,49 +32,14 @@ On Flink 1.20, supply explicit `ListTypeInfo` for lists of messages; `TypeHint<L
 
 ## Native type information
 
-Use explicit type information for `.returns(...)` and per-type settings.
-For a generated full-runtime class named `MyMessage`, the construction API is:
+Use `ProtobufTypeInformation.of(MyMessage.class)` or its builder for explicit sources, `.returns(...)`, and state descriptors.
+Alternatively, register `ProtobufTypeInfoFactory` against `com.google.protobuf.AbstractMessage` before type extraction.
+Always disable generic types, and use stable scalar keys.
 
-```java
-var defaults = ProtobufTypeInformation.of(MyMessage.class);
-var configured = ProtobufTypeInformation.newBuilder(MyMessage.class)
-        .deterministicSerialization(true)
-        .maxMessageSize(1024 * 1024)
-        .recursionLimit(64)
-        .build();
-```
-
-Import `io.github.flink.gcp.protobuf.ProtobufTypeInformation` and supply the application's generated class.
-The defaults disable deterministic writing and allow a 64 MiB payload and parser recursion depth of 100.
-Numeric limits must be positive; `build()` validates settings and the generated class.
-`of(Class<T>)` matches Flink's unbounded static factory signature, so unsupported classes can compile but fail with `IllegalArgumentException` at construction.
-The builder also enforces `T extends Message` at compile time.
-Use `of(MyMessage.class)` or the builder for explicit native selection.
-The inherited `of(TypeHint)` overload follows Flink's ordinary type extraction and can select a generic type when the factory is not registered.
-Builder reuse does not change previously built type information or serializers.
-These limits constrain accepted inputs, not total heap usage or stack capacity.
-
-For automatic selection, apply this configuration before any type extraction, including calls to `TypeInformation.of`, `TypeHint`, and source/operator construction:
-
-```yaml
-pipeline.generic-types: false
-pipeline.serialization-config:
-  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
-```
-
-On Flink 1.20, put this YAML list in `config.yaml`.
-The legacy `flink-conf.yaml` parser does not read this list, and that file takes precedence over `config.yaml` when both exist.
-
-Flink follows superclasses when finding a factory, so register `AbstractMessage`, not the `Message` interface.
-The registry is process-global; it does not provide per-job registration isolation.
-The factory always uses the documented defaults, and explicit construction does not register it or change those defaults.
-Unsupported types fail explicitly without an internal generic/Kryo fallback.
-Keep generic types disabled for explicit construction too, to reject accidental generic serialization elsewhere in the job.
-
-Production tests verify registered top-level, POJO-field, and tuple-element selection and transport.
-Row transport uses explicit `RowTypeInfo`; lists use explicit `ListTypeInfo` on every supported runtime.
-Flink 2.x also infers the native element type from `TypeHint<List<MyMessage>>`; Flink 1.20 needs explicit list element information.
-This does not promise inference from an erased runtime List instance.
+The [usage and configuration guide](docs/usage.md) covers settings, registration timing, nested values, state, and unsupported paths.
+The [quickstart](docs/quickstart.md) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
+Generate the API reference with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
+Pages publication and deployed quickstart/API links are tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
 
 ## Common generated types
 
@@ -99,7 +65,7 @@ Protobuf messages are supported as values; use stable scalar keys for DataStream
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
 The unpublished 0.x milestones may contain breaking changes to APIs, defaults, runtime requirements, or saved-state compatibility while the design matures toward 1.0.0.
-Each milestone must document its specific breaks, supported upgrade paths, and required migration or fresh-state/replay procedure; check that guidance before upgrading.
+Each milestone must document its specific breaks, supported upgrade paths, and required migration or fresh-state/replay procedure; read the [development-build compatibility guidance](docs/compatibility.md#development-builds-before-100) before upgrading.
 Separate API checks and attributable development-state fixtures must verify supported paths and explicit rejection of unsupported state.
 Version 1.0.0 will establish the stable API and forward-restore contract; compatibility with every earlier development artifact is not implied.
 The current roadmap ends at 0.3.0; the remaining work will determine whether further development milestones or preparation for 1.0.0 comes next.

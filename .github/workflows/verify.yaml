@@ -45,6 +45,25 @@ jobs:
             lts) just verify-protobuf "$PROTOBUF" -Dflink.compat=flink1 ;;
             *) exit 1 ;;
           esac
+      - name: Verify the standalone application examples
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PROTOBUF: ${{ matrix.protobuf }}
+        run: |
+          case "$RUNTIME" in
+            floor) version=2.2.1 ;;
+            ceiling) version="$FLINK_CEILING" ;;
+            lts) version=1.20.4 ;;
+            *) exit 1 ;;
+          esac
+          just examples-verify "$version" "$PROTOBUF" "$RUNNER_TEMP/example-maven-repository"
+      - name: Check public API Javadoc
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PROTOBUF: ${{ matrix.protobuf }}
+        run: |
+          if [[ "$RUNTIME" == lts ]]; then compat=flink1; else compat=flink2; fi
+          just docs-javadoc "$compat" "$PROTOBUF"
       - name: Prepare the opt-in benchmark compiler
         run: |
           sudo apt-get -o Acquire::Retries=3 update

@@ -22,6 +22,18 @@ No library release has been published yet.
 The 0.x versions denote development milestones; 1.0.0 is the planned first Maven Central release.
 Milestone upgrade checks use fixed development artifacts and fixtures with exact source/checksum provenance.
 
+## Development builds before 1.0.0
+
+The current source version is `0.1.0-SNAPSHOT`; compatibility between arbitrary development builds is not implied.
+The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
+Each development milestone must document its actual breaks, supported upgrade paths, and migration or fresh-state/replay requirements before completion.
+Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
+The [development bundle tooling](validation/development-baselines.md) retains attributable inputs for these checks.
+Historical serializer-format fixtures do not establish arbitrary full-job upgrade compatibility.
+
+[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned stable API and forward-restore boundary, without implying compatibility with every earlier development artifact.
+Its preparation must disclose unsupported development-to-release upgrade paths and follow the [quickstart's Maven Central transition](quickstart.md#switch-to-maven-central-at-100).
+
 ## Three compatibility checks
 
 An application update needs three separate checks:
@@ -54,6 +66,7 @@ These are Protobuf binary-format properties, not this library's state-restore po
 See the [Protobuf schema-update rules](https://protobuf.dev/programming-guides/proto3/#updating).
 
 The current state-restore results below assume supported snapshot formats, unchanged Java/message names, and nondecreasing size/depth limits.
+Deterministic-writing mode may change in either direction.
 
 | Schema change | Protobuf binary-format rule | Current library state restore |
 |---|---|---|
@@ -101,13 +114,15 @@ Separate fixture directories record each tested environment; they do not indicat
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 
-1. Write a savepoint with the old application, retaining its operator UIDs and state names.
-2. Restore it with the updated application and check saved values, input positions, and continued processing.
-3. Write another savepoint after processing with the updated application and verify restoration from that state too.
+1. Write a savepoint with the old application and retain its exact application/library jars, schemas, settings, operator UIDs, state names, and runtime versions.
+2. Compare the documented API, default, runtime, and state changes before replacing a development build or dependency.
+3. Restore the savepoint with the updated application and check saved values, input positions, and continued processing.
+4. Write another savepoint after processing with the updated application and verify restoration from that state too.
 
 For a validated compatible update, stop the old job with a savepoint and resume the updated job from it.
 See [Flink's savepoint operations](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/ops/state/savepoints/#stopping-a-job-with-savepoint).
 An intermediate run without restoring state does not convert old state or make an incompatible schema compatible.
+If restoration is rejected, retain the old deployment or explicitly choose a documented migration or fresh-state/replay procedure.
 Starting fresh requires an explicit decision about rebuilding state and replaying input; the current library provides no changed-schema migration path.
 The [development guide](development.md#test-resources-and-version-updates) contains the capture commands and dependency-update checks.
 
