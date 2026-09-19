@@ -10,7 +10,7 @@ No release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
 The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.1.0-SNAPSHOT`.
-Start with the [quickstart](docs/quickstart.md) to build/install it locally and run the compiled application examples.
+Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to build/install it locally and run the compiled application examples.
 It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 and 4.33.6.
 
 ## Supported Flink versions
@@ -36,12 +36,11 @@ Use `ProtobufTypeInformation.of(MyMessage.class)` or its builder for explicit so
 Alternatively, register `ProtobufTypeInfoFactory` against `com.google.protobuf.AbstractMessage` before type extraction.
 Always disable generic types, and use stable scalar keys.
 
-The [usage and configuration guide](docs/usage.md) covers settings, registration timing, nested values, state, and unsupported paths.
-The [quickstart](docs/quickstart.md) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
-Generate the API reference with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
-The versioned documentation site is prepared for GitHub Pages at `https://flink-gcp.github.io/flink-datastream-protobuf/`.
-Initial deployment and live verification remain tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the guide links above remain on GitHub until then.
-See [documentation versions](docs/versions.md) for the Development-only period and the release retention policy from 1.0.0.
+The [usage and configuration guide](https://flink-gcp.github.io/flink-datastream-protobuf/docs/usage/) covers settings, registration timing, nested values, state, and unsupported paths.
+The [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
+Browse the [API reference](https://flink-gcp.github.io/flink-datastream-protobuf/api/java/), or generate it locally with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
+The [documentation site](https://flink-gcp.github.io/flink-datastream-protobuf/) includes version selection and search.
+See [documentation versions](https://flink-gcp.github.io/flink-datastream-protobuf/docs/versions/) for the Development-only period and the release retention policy from 1.0.0.
 
 ## Common generated types
 

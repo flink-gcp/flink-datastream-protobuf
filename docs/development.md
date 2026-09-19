@@ -148,8 +148,9 @@ Both adapters and Protobuf profiles are checked in CI.
 
 ### Documentation site and publication
 
-The site imports `flink-gcp-dev-tools/hugo` at commit `c3784bce1f95dc75848b1fc2de0f370e5c0a09ea`, recorded in `docs/go.mod` and `docs/go.sum`.
+The site imports `flink-gcp-dev-tools/hugo` at commit `632527214d3d1a41cc0c5099e64d3893358059f9`, recorded in `docs/go.mod` and `docs/go.sum`.
 This module supplies Hugo Book v0.14.0 and the shared layout, theme toggle, typography and code palettes.
+Search initialization and its regression test are maintained in the shared repository.
 The site imports that same pinned Hugo Book version directly to restrict its static mount to the favicons and Fuse module.
 Unused KaTeX, Mermaid and asciinema bundles are not distributed; enabling those features requires reviewing their assets and notices.
 The shared assets retain Apache-2.0 attribution; the [site licenses](licenses.md) retain the MIT notices for Hugo Book and modern-normalize.
@@ -195,9 +196,9 @@ The CI `workflow_run` hook then rebuilds the selected release sources and curren
 A bare tag without a published GitHub Release is not a documentation version.
 The hook is prepared here; Maven Central publication remains owned by #13.
 
-For initial rollout after merge, enable GitHub Pages with GitHub Actions as the build source, then dispatch CI on main.
-Verify the actual repository URL, redirects, search, assets, API reference, mobile menu and both themes before treating issue #19 as complete.
-Until that first deployment is verified, README retains working GitHub guide links and describes the site as pending deployment.
+GitHub Pages uses GitHub Actions as the build source, and the initial main deployment is live.
+README links point to the public site.
+Verify the actual repository URL, redirects, search, assets, API reference, mobile menu and both themes after deploying the search initialization repair before treating [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) as complete.
 No 0.x milestone archive or Maven Central publication is required for this rollout.
 
 ### Native serializer implementation
@@ -594,7 +595,7 @@ The development sequence and current implementation status are:
    Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
-4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); initial Pages deployment and live verification follow merge.
+4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.

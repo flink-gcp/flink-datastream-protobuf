@@ -178,4 +178,4 @@ Version 1.0.0 is the planned first Maven Central release and stabilization point
 
 Generate the API reference with `mise x -- just docs-javadoc`, then open `target/apidocs/index.html`.
 The documentation site includes this API reference for each [retained version](versions.md).
-Initial public deployment is tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); README links will switch to deployed URLs once verified.
+The public documentation site is live and linked from README; final live verification after the search initialization repair remains tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
