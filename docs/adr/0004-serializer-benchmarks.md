@@ -1,3 +1,7 @@
+---
+title: "ADR-0004: Opt-in serializer benchmarks with explicit comparison contracts"
+bookHidden: true
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

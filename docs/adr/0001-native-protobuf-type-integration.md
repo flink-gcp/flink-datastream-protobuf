@@ -1,3 +1,7 @@
+---
+title: "ADR-0001: Native Protobuf type integration for DataStream"
+bookHidden: true
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

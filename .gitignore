@@ -19,3 +19,10 @@ mise.local.toml
 .serena/cache/
 .serena/memories/
 __pycache__/
+
+# Generated documentation and documentation-tool environments.
+docs/public/
+docs/resources/
+docs/.hugo_build.lock
+docs/.venv/
+.pytest_cache/

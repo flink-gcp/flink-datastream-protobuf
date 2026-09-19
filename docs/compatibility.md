@@ -1,3 +1,7 @@
+---
+title: State compatibility
+weight: 30
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

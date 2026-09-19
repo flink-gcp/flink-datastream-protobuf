@@ -1,27 +1,81 @@
 name: CI
 on:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # #13 must publish a stable GitHub Release before this tag-push workflow ends.
+  # A successful manual Release dry run must not publish documentation.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) && 'docs-publication' || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 permissions: {}
 jobs:
+  source:
+    name: Freeze source revision
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.id == github.repository_id) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      publish: ${{ github.repository_id == '1358906035' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref == 'refs/heads/main' && 'main' || github.sha }}
+          persist-credentials: false
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   verify:
+    needs: source
     uses: ./.github/workflows/verify.yaml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
     permissions:
       contents: read
   lint:
+    needs: source
     uses: ./.github/workflows/lint.yaml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
+    permissions:
+      contents: read
+  docs:
+    needs: source
+    uses: ./.github/workflows/docs.yaml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
     permissions:
       contents: read
   ci_passed:
     name: CI passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [verify, lint]
-    if: ${{ always() }}
+    needs: [source, verify, lint, docs]
+    if: ${{ always() && needs.source.result != 'skipped' }}
     steps:
       - name: Require every dependency to succeed
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: printf '%s' "$NEEDS" | jq -e 'all(.[]; .result == "success")'
+  deploy:
+    name: Deploy documentation site
+    needs: [source, ci_passed]
+    if: ${{ needs.source.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

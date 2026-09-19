@@ -1,3 +1,7 @@
+---
+title: Supported types
+weight: 40
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

@@ -1,3 +1,7 @@
+---
+title: "ADR-0002: A single Maven module with a shared local and CI workflow"
+bookHidden: true
+---
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -39,7 +43,8 @@ Run each test class in a fresh JVM to isolate Flink's static factory registry.
 The current probes require no Docker, cloud credentials, or module-opening flags.
 
 CI calls the same just recipes used locally.
-The PR orchestrator has no path filter and requires both reusable workflows to succeed through one `CI passed` gate.
+The CI orchestrator has no path filter and requires source selection, Verify, Lint and Docs to succeed through one `CI passed` gate.
+It freezes the source SHA before calling each reusable workflow, on PRs and trusted publication events.
 An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven.
@@ -71,12 +76,30 @@ This follows the [shared-assets decision](https://github.com/flink-gcp/flink-gcp
 The library remains a single Maven module with no parent reactor.
 A standalone application under `examples/datastream` consumes an installed development jar through ordinary Maven coordinates; it is not a reactor module or publication artifact.
 Its independent build verifies application use without relying on library source roots, and allows the same consumer to switch to Maven Central coordinates at 1.0.0.
-The existing runtime/JDK/Protobuf CI matrix verifies the examples, and marked documentation snippets are checked against their compiled source.
+The existing runtime/JDK/Protobuf CI matrix verifies the examples.
+Hugo `example` shortcodes render the named marker region directly from that version's application source or YAML.
+Markdown stores only the source reference, with no copied excerpt or synchronization step.
+GitHub readers follow the adjacent links to the executable sources; Hugo validates the marker references during site generation.
 Public API documentation is checked by direct Javadoc generation; Maven release Javadoc packaging remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
-The original deferral of Hugo and publication infrastructure applies only to bootstrap.
-The [staged release contract](0001-native-protobuf-type-integration.md#development-stages-and-first-publication) requires GitHub Pages development documentation in 0.1.0 and first Maven Central publication in 1.0.0.
-[Issue #19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) owns the site implementation using the shared flink-gcp-dev-tools Hugo design, project-specific URLs, release/development documentation, and CI/deployment validation.
-That implementation must amend this ADR and the development instructions with the actual Hugo and publishing workflow; this release-contract amendment does not create or deploy the site.
+The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design, with existing Markdown mounted as canonical content.
+The consumer owns URLs, source links, version selection, Javadoc and publication; no Java runtime dependency on the connector or shared tooling is introduced.
+The bootstrap-only deferral of Hugo is complete.
+
+Documentation follows Development until the first 1.0.0 release, then retains the latest patch of the current and previous released minor series plus Development.
+Only published stable `vX.Y.Z` releases from 1.0.0 are eligible; the Flink 1.20 artifact suffix shares its release's documentation slot.
+Each selected source is pinned to a commit and builds its own examples, dependencies and strict Javadoc.
+The controller checks provenance and assembles into a fresh output directory; it does not rewrite historical release content or retain generated HTML as an archive.
+Development is excluded from indexing, and source links identify the exact build commit.
+Version-free URLs point to Development before the first release and the current release afterwards.
+
+PRs validate and package the complete site without deploying.
+Trusted main and release-triggered runs publish only after the same frozen main source passes Verify, Lint and Docs.
+Publication is serialized from source selection through deployment, and only the deployment job has Pages write permissions.
+The release hook accepts successful tag-push `Release` runs; failed runs and manual dry runs do not deploy.
+The release workflow itself remains part of #13.
+Initial Pages configuration and verification of the deployed URL remain post-merge rollout gates of [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
+Current commands, retention details and rollout instructions live in the development guide and documentation versions page.
+
 [Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns 1.0.0 publication preparation, candidate verification, actual publication, and consumer verification.
 Issue #40's test-only development bundle tooling retains packaged writers, compiled consumers, runtime dependencies, and state outside the source tree.
 The capture workflow builds each artifact/profile once and reruns its retained inputs on the supported JDK/Flink combinations without compilation.

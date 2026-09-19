@@ -17,6 +17,8 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application; requires Python 3.9 or newer.
+- `just docs` / `just docs-serve`: build or preview the shared-design site.
+- `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.
 - `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `target/apidocs`.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
 - `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.

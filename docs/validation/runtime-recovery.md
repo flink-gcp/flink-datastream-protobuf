@@ -1,3 +1,7 @@
+---
+title: "Runtime state recovery"
+bookHidden: true
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

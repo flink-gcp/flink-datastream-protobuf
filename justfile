@@ -91,3 +91,34 @@ examples-verify version major repository:
 [positional-arguments]
 docs-javadoc compat="flink2" major="3":
     bash scripts/docs-javadoc.sh "$1" "$2"
+
+# Render the existing Markdown with the pinned shared design.
+docs:
+    mise x hugo-extended go -- hugo --source docs --cleanDestinationDir --gc --minify --panicOnWarning
+    mise x uv -- uv run --project docs --locked python scripts/docs-site.py check-sources docs/public
+
+# Preview prose; run docs-validate first to include the generated API reference.
+docs-serve:
+    mise x hugo-extended go -- hugo server --source docs
+
+# Validate launch versions and examples, generate the API reference, then render.
+docs-validate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ mvn }} -Dtest=DocumentationExamplesTest test
+    repository=$(mktemp -d)
+    trap 'rm -rf "$repository"' EXIT
+    floor=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}properties/{*}flink.version"))')
+    just examples-verify "$floor" 3 "$repository"
+    just docs-javadoc
+    just docs-site prepare-api target/apidocs
+    just docs
+
+# Check release selection, provenance, rendering and navigation.
+test-doc-versions:
+    mise x hugo-extended go node uv -- uv run --project docs --locked python -m pytest docs/tests
+
+# Plan, build and assemble independently built documentation versions.
+[positional-arguments]
+docs-site +args:
+    mise x uv -- uv run --project docs --locked python scripts/docs-site.py "$@"

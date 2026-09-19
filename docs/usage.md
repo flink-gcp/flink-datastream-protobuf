@@ -1,3 +1,7 @@
+---
+title: Usage and configuration
+weight: 20
+---
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -24,12 +28,7 @@ The serializer and snapshot classes are internal machinery; construct types thro
 
 Use explicit type information for `.returns(...)` and per-type settings.
 The following construction example uses the generated full-runtime `Event` class from the quickstart.
-Add these imports at the top of the Java source file:
-
-```java
-import io.github.flink.gcp.protobuf.ProtobufTypeInformation;
-import io.github.flink.gcp.protobuf.examples.generated.Event;
-```
+The [explicit example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) shows the imports for these types.
 
 `ProtobufTypeInformation` comes from this library; `Event` comes from the application's generated code.
 Replace the `Event` import and class reference with the application's message type.
@@ -57,32 +56,26 @@ These limits constrain accepted inputs, not total heap usage or stack capacity.
 
 ## Factory registration
 
-The example's `config.yaml` contains ordinary [Flink pipeline configuration](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/config/#pipeline-serialization-config).
+The example's [config.yaml](../examples/datastream/config/config.yaml) contains ordinary [Flink pipeline configuration](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/config/#pipeline-serialization-config).
 It holds the two options needed for this registration example; the library does not define a separate configuration-file format.
 Add these options to the Flink configuration used when constructing the job, or load a configuration directory explicitly as shown below.
 If `pipeline.serialization-config` already has entries for other types, add this entry to the existing list.
 
 Apply the configuration before any type extraction, including `TypeInformation.of`, `TypeHint`, and source/operator construction:
 
-<!-- example: config.yaml -->
-```yaml
-pipeline.generic-types: false
-pipeline.serialization-config:
-  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
-```
-<!-- /example -->
+{{< example "config.yaml#configuration" >}}
 
 ### What each entry means
 
 | Entry | Meaning and value to use |
 |---|---|
 | `pipeline.generic-types: false` | Disable Flink's generic serialization path so missing native type information fails instead of silently selecting Kryo. This option alone does not register the Protobuf factory. |
-| `pipeline.serialization-config` | Flink's list of type/serialization registrations. Keep the YAML list and mapping structure shown above. |
+| `pipeline.serialization-config` | Flink's list of type/serialization registrations. Keep the YAML list and mapping structure in the linked `config.yaml`. |
 | `com.google.protobuf.AbstractMessage` | The fully qualified Protobuf superclass to register, supplied by `protobuf-java`. Flink's superclass lookup reaches supported generated subclasses through this type. |
 | `type: typeinfo` | Select Flink's TypeInfoFactory registration mechanism. Use this value for native type information. |
 | `class: io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory` | The fully qualified factory class supplied by this library. This is the class Flink instantiates to construct native type information. |
 
-Use both fully qualified class names exactly as shown; they are class names, not package prefixes or wildcard patterns.
+Use both fully qualified class names exactly as listed in the table; they are class names, not package prefixes or wildcard patterns.
 The `class` value is the factory, not `ProtobufTypeInformation`, `ProtobufTypeSerializer`, or an application's generated message class.
 For example, the application's message is `io.github.flink.gcp.protobuf.examples.generated.Event`, but that name does not replace either class name in this superclass registration.
 The same registration covers supported generated classes in other Java packages, so a separate entry for each message is unnecessary.
@@ -91,31 +84,10 @@ See Flink's [type information factory documentation](https://nightlies.apache.or
 
 ### Load the configuration before constructing the job
 
-The configuration-loading snippet uses these Flink imports:
-
-```java
-import org.apache.flink.api.common.typeinfo.Types;
-import org.apache.flink.configuration.GlobalConfiguration;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-```
-
 The factory class is named in YAML, so this Java code needs no `ProtobufTypeInfoFactory` import.
 The [registration application](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/RegisteredExample.java) reads the actual [config.yaml](../examples/datastream/config/config.yaml) before constructing its job:
 
-<!-- example: RegisteredExample#registration -->
-```java
-var config = GlobalConfiguration.loadConfiguration(args[0]);
-try (var env = StreamExecutionEnvironment.getExecutionEnvironment(config)) {
-    env.setParallelism(2);
-    messages(env)
-            .rebalance()
-            .map(event -> event.getAccount() + ":" + event.getAmount())
-            .returns(Types.STRING)
-            .print();
-    env.execute("Registered Protobuf values");
-}
-```
-<!-- /example -->
+{{< example "RegisteredExample#registration" >}}
 
 The argument `args[0]` names the directory containing `config.yaml`, not the YAML file itself.
 In the [quickstart](quickstart.md#run-registration-and-state-examples), `exec:exec@registered` passes `examples/datastream/config` as an absolute path to the application.
@@ -163,44 +135,15 @@ Deterministic bytes neither stabilize generated-message hashing across classload
 
 ## State and recovery
 
-The state snippets and the operator's state fields use these imports:
-
-```java
-import org.apache.flink.api.common.state.MapState;
-import org.apache.flink.api.common.state.MapStateDescriptor;
-import org.apache.flink.api.common.state.ValueState;
-import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.common.typeinfo.Types;
-
-import io.github.flink.gcp.protobuf.ProtobufTypeInformation;
-import io.github.flink.gcp.protobuf.examples.generated.Event;
-```
-
 The [state example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/StatefulExample.java) partitions by a scalar and assigns a stable operator UID.
 `RunningTotal` is a nested operator class defined in that example; its `total` and `recent` fields have types `ValueState<Event>` and `MapState<String, Event>` respectively.
-The linked source includes the complete operator and its additional Flink imports.
+The linked source includes the complete operator and its Flink imports.
 
-<!-- example: StatefulExample#scalar-state -->
-```java
-return events.keyBy(Event::getAccount, Types.STRING)
-        .process(new RunningTotal())
-        .returns(Types.STRING)
-        .uid("account-totals");
-```
-<!-- /example -->
+{{< example "StatefulExample#scalar-state" >}}
 
 It creates native value descriptors in the operator's `open` method:
 
-<!-- example: StatefulExample#state-descriptors -->
-```java
-var eventType = ProtobufTypeInformation.of(Event.class);
-total = getRuntimeContext().getState(new ValueStateDescriptor<>("total", eventType));
-recent =
-        getRuntimeContext()
-                .getMapState(
-                        new MapStateDescriptor<>("recent", Types.STRING, eventType));
-```
-<!-- /example -->
+{{< example "StatefulExample#state-descriptors" >}}
 
 `MapState<String, Event>` is supported: the map key is a string and its value is Protobuf.
 `MapState<Event, ...>` remains unsupported even if a particular runtime accepts its descriptor.
@@ -234,4 +177,5 @@ The unpublished 0.x milestones can break APIs, defaults, runtime requirements, a
 Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.
 
 Generate the API reference with `mise x -- just docs-javadoc`, then open `target/apidocs/index.html`.
-The [site implementation](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) will publish these pages and the API reference; README links will switch to deployed URLs once verified.
+The documentation site includes this API reference for each [retained version](versions.md).
+Initial public deployment is tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); README links will switch to deployed URLs once verified.

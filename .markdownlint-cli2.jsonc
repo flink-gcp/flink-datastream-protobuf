@@ -1,8 +1,10 @@
 {
   "config": {
     "MD013": false,
+    "MD025": { "front_matter_title": "" },
     "MD052": { "shortcut_syntax": true },
     "MD060": false
   },
+  "ignores": ["docs/public/**", "docs/resources/**", "docs/.venv/**"],
   "globs": ["README.md", "CONTRIBUTING.md", "docs/**/*.md"]
 }

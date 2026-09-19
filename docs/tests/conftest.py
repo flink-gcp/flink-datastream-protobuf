@@ -11,9 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib.util
+from pathlib import Path
 
-# docs:start configuration
-pipeline.generic-types: false
-pipeline.serialization-config:
-  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
-# docs:end configuration
+
+def load_script(name):
+    path = Path(__file__).resolve().parents[2] / "scripts" / name
+    spec = importlib.util.spec_from_file_location("docs_site", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
