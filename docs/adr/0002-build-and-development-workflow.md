@@ -97,7 +97,7 @@ Trusted main and release-triggered runs publish only after the same frozen main 
 Publication is serialized from source selection through deployment, and only the deployment job has Pages write permissions.
 The release hook accepts successful tag-push `Release` runs; failed runs and manual dry runs do not deploy.
 The release workflow itself remains part of #13.
-Initial Pages configuration and verification of the deployed URL remain post-merge rollout gates of [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
+GitHub Pages is configured and the initial deployment is live; final verification of the deployed site after the search initialization repair remains a rollout gate of [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
 Current commands, retention details and rollout instructions live in the development guide and documentation versions page.
 
 [Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns 1.0.0 publication preparation, candidate verification, actual publication, and consumer verification.
