@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# docs:start configuration
-pipeline.generic-types: false
-pipeline.serialization-config:
-  - com.google.protobuf.AbstractMessage: {type: typeinfo, class: io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
-# docs:end configuration
+[project]
+name = "protobuf-docs-checks"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["pytest==9.0.2", "pyyaml==6.0.3"]
+
+[tool.uv]
+package = false

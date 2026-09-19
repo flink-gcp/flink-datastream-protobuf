@@ -1,3 +1,7 @@
+---
+title: Quickstart
+weight: 10
+---
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -67,47 +71,20 @@ mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
 ```
 
 The result includes `alice:3` and `bob:8`; task prefixes and output order can vary.
-The Java snippets below use these imports:
-
-```java
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.PipelineOptions;
-
-import io.github.flink.gcp.protobuf.ProtobufTypeInformation;
-import io.github.flink.gcp.protobuf.examples.generated.Event;
-```
+The linked [explicit example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) contains the imports for the snippets below.
 
 `Event` is generated from the example's `event.proto`; replace its import with the generated message class from the application.
 The example disables generic types before creating the environment:
 
-<!-- example: ExplicitExample#explicit-configuration -->
-```java
-Configuration config = new Configuration();
-config.set(PipelineOptions.GENERIC_TYPES, false);
-```
-<!-- /example -->
+{{< example "ExplicitExample#explicit-configuration" >}}
 
 It supplies native type information to the source:
 
-<!-- example: ExplicitExample#explicit-source -->
-```java
-var eventType = ProtobufTypeInformation.of(Event.class);
-var events =
-        env.fromData(
-                eventType,
-                Event.newBuilder().setAccount("alice").setAmount(2).build(),
-                Event.newBuilder().setAccount("bob").setAmount(7).build());
-```
-<!-- /example -->
+{{< example "ExplicitExample#explicit-source" >}}
 
 The transformation declares the same native output type:
 
-<!-- example: ExplicitExample#explicit-returns -->
-```java
-return events.map(event -> event.toBuilder().setAmount(event.getAmount() + 1).build())
-        .returns(eventType);
-```
-<!-- /example -->
+{{< example "ExplicitExample#explicit-returns" >}}
 
 See [ExplicitExample.java](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) for the complete executable entrypoint, including environment creation.
 The library has no internal Kryo fallback.

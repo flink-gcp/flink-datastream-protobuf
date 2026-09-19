@@ -10,3 +10,7 @@ node = "24"
 pinact = "4"
 # Optional Serena integration in .mcp.json and .codex/config.toml.
 uv = "0.12.1"
+
+# Shared documentation design toolchain.
+hugo-extended = "0.164.0"
+go = "1.26.5"

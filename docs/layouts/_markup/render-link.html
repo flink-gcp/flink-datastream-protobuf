@@ -1,0 +1,38 @@
+{{/*
+Copyright 2026 The flink-gcp authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+*/}}
+{{- $href := .Destination -}}
+{{- $url := urls.Parse $href -}}
+{{- if and (not $url.IsAbs) (not (strings.HasPrefix $href "#")) -}}
+  {{- if strings.HasPrefix $url.Path "/" -}}
+    {{- $href = strings.TrimPrefix "/" $url.Path | relURL -}}
+  {{- else -}}
+  {{- $path := path.Clean (path.Join .Page.File.Dir $url.Path) -}}
+  {{- $page := .Page.GetPage $url.Path -}}
+  {{- if $page -}}
+    {{- $href = $page.RelPermalink -}}
+  {{- else -}}
+    {{- $source := $path -}}
+    {{- if strings.HasPrefix $source "../" -}}
+      {{- errorf "Link escapes repository: %s in %s" .Destination .Page.File.Path -}}
+    {{- end -}}
+    {{- $href = printf "%s/blob/%s/%s" .Page.Site.Params.BookRepo .Page.Site.Params.SourceCommit $source -}}
+  {{- end -}}
+  {{- end -}}
+  {{- with $url.RawQuery -}}{{- $href = printf "%s?%s" $href . -}}{{- end -}}
+  {{- with $url.Fragment -}}{{- $href = printf "%s#%s" $href . -}}{{- end -}}
+{{- end -}}
+<a href="{{ $href | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>

@@ -1,3 +1,7 @@
+---
+title: Development
+weight: 60
+---
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -21,7 +25,8 @@ limitations under the License.
 The Maven Wrapper pins Maven 3.9.16; all Maven recipes in just invoke the wrapper.
 The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
-`mise.toml` supplies just, the workflow and Markdown linters, pinact, and uv for optional Serena integration.
+`mise.toml` supplies just, the workflow and Markdown linters, pinact, uv, Hugo Extended 0.164.0, and Go 1.26.5.
+The site tools use Python 3.11 or newer through uv; the application-example and binary recipes retain their Python 3.9 minimum.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
 The binary compatibility, application-example, and benchmark evidence recipes also need Python 3.9 or newer, using only its standard library.
 Install Python separately; `mise.toml` does not provide it.
@@ -126,14 +131,74 @@ Registration tests use separate JVMs and every native path disables generic type
 These checks run in every existing source-build CI matrix cell.
 
 The library's formatting and Checkstyle checks also cover the handwritten application sources.
-`DocumentationExamplesTest` checks the marked snippets in the quickstart and usage guide against the compiled application sources and its actual YAML.
-When editing a marked snippet, update its source and the corresponding Markdown together.
+The quickstart and usage guide reference source excerpts through the Hugo `example` shortcode.
+Its only argument identifies a file and region: `ExplicitExample#explicit-source` selects that named region in `ExplicitExample.java`, and `config.yaml#configuration` selects the marked YAML.
+Use the shortcode calls in `docs/quickstart.md` and `docs/usage.md` as authoring examples.
+Hugo reads the selected version's Example sources between matching `docs:start` and `docs:end` markers.
+Markdown stores no copy of these excerpts, so changing an Example requires no snippet synchronization.
+Missing, repeated, reversed or empty marker regions fail the site build.
+GitHub does not expand Hugo shortcodes; adjacent source links let readers open the executable examples and configuration directly.
+`DocumentationExamplesTest` checks launch versions; the standalone consumer compiles and executes the Example sources, and Hugo validates their referenced regions.
 Generated application code and jars remain under the example's ignored `target/` directory and are not library publication artifacts.
 
 `just docs-javadoc <flink1|flink2> <3|4>` calls [docs-javadoc.sh](../scripts/docs-javadoc.sh) to compile the selected production adapter and invoke Javadoc directly with Java 17 language/API targeting, full doclint, and warnings treated as errors.
-The output is `target/apidocs/`, ready for the future site integration.
+The output is `target/apidocs/`, mounted into the site at `api/java/`.
 This avoids the connector parent's incompatible Maven Javadoc export/release options; repairing the Maven release Javadoc-jar configuration remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
 Both adapters and Protobuf profiles are checked in CI.
+
+### Documentation site and publication
+
+The site imports `flink-gcp-dev-tools/hugo` at commit `c3784bce1f95dc75848b1fc2de0f370e5c0a09ea`, recorded in `docs/go.mod` and `docs/go.sum`.
+This module supplies Hugo Book v0.14.0 and the shared layout, theme toggle, typography and code palettes.
+The site imports that same pinned Hugo Book version directly to restrict its static mount to the favicons and Fuse module.
+Unused KaTeX, Mermaid and asciinema bundles are not distributed; enabling those features requires reviewing their assets and notices.
+The shared assets retain Apache-2.0 attribution; the [site licenses](licenses.md) retain the MIT notices for Hugo Book and modern-normalize.
+Update the module pin deliberately and review the resulting theme, navigation and mobile rendering.
+The version assembly and controls are adapted from connector commit `83b05d26c736625549824cf54b021eeb9f70c18c` under Apache-2.0.
+
+Existing Markdown remains the canonical prose for GitHub and Hugo; Example source files own the rendered code excerpts.
+The site mounts the guides, ADRs and validation reports without duplicating their bodies or publishing raw evidence archives.
+Some Javadoc distributions emit a DejaVu stylesheet import without the font resources.
+Site preparation removes that import only when its target is absent, leaving the doclet's system-font fallbacks in effect.
+The assembled-site check validates CSS resources as well as HTML links; other missing resources fail publication.
+The link render hook resolves documentation links within the selected version and other repository links to the recorded source commit.
+The source-excerpt partial follows the connector tagged-snippet implementation and uses this repository's existing `docs:start` / `docs:end` markers.
+Real Hugo fixtures verify that source changes appear without editing Markdown, malformed markers fail, and each version reads its own checkout.
+
+| Command | Purpose |
+|---|---|
+| `just docs` | Render prose with warnings fatal and check repository source links; include any existing `target/apidocs` |
+| `just docs-serve` | Preview at localhost:1313; run `docs-validate` first for the API reference |
+| `just docs-validate` | Check launch versions, build and run the standalone default-profile examples, generate strict Javadoc, and render the site |
+| `just test-doc-versions` | Run the locked Python tests plus real Hugo and Node navigation fixtures |
+| `just docs-site plan <manifest>` | Read all published GitHub Releases and resolve retained tags and checkout HEAD to immutable SHAs |
+| `just docs-site build <manifest> <id> <source> <output>` | Validate and build one version from a separate clean checkout at its planned SHA |
+| `just docs-site assemble <manifest> <inputs> <output>` | Combine every planned version into a fresh output directory |
+| `just docs-site check <manifest> <output>` | Check local page, asset and anchor destinations in the combined site |
+
+Version IDs are `development` or a minor such as `1.0`.
+Planning requires `gh` authentication and locally fetched tags; an API error or unresolved tag fails instead of silently omitting releases.
+Run `plan` from the controller checkout whose HEAD should supply Development.
+Create separate detached source worktrees at the manifest SHAs, run `build` for each ID with a shared new external output directory, then `assemble` and `check` into another new external directory.
+Generated HTML, Python environments, Hugo caches and temporary application repositories are not committed.
+The [version policy](versions.md) retains two released minor series and Development; zero eligible releases is a valid Development-only site.
+
+The CI orchestrator freezes the source revision before calling Verify, Lint and Docs.
+PRs build the same retained-version Pages artifact without deploying.
+Main pushes and manual runs on main resolve current main after entering the serialized publication group and deploy only after `CI passed` succeeds.
+A failed generation leaves the previously deployed site in place.
+Only the deployment job receives `pages: write` and `id-token: write`, through the `github-pages` environment.
+Standalone Verify retains its scheduled and manual runs; it does not deploy.
+
+Issue #13 must name its release workflow `Release`, trigger real publication by tag push, validate the release, and publish a stable `vX.Y.Z` GitHub Release before successful completion.
+The CI `workflow_run` hook then rebuilds the selected release sources and current main; failed runs and manual dry runs do not deploy documentation.
+A bare tag without a published GitHub Release is not a documentation version.
+The hook is prepared here; Maven Central publication remains owned by #13.
+
+For initial rollout after merge, enable GitHub Pages with GitHub Actions as the build source, then dispatch CI on main.
+Verify the actual repository URL, redirects, search, assets, API reference, mobile menu and both themes before treating issue #19 as complete.
+Until that first deployment is verified, README retains working GitHub guide links and describes the site as pending deployment.
+No 0.x milestone archive or Maven Central publication is required for this rollout.
 
 ### Native serializer implementation
 
@@ -529,7 +594,7 @@ The development sequence and current implementation status are:
    Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
-4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). Implement the shared-design GitHub Pages site in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19), then connect README to its verified quickstart/API URLs and amend ADR-0002 with the publishing workflow.
+4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); initial Pages deployment and live verification follow merge.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), add the pure directional evaluator in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), integrate supported schema evolution and restore from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.

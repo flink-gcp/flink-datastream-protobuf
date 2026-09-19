@@ -25,13 +25,10 @@ import javax.xml.xpath.XPathFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Checks the published excerpts against the application sources compiled by the consumer build. */
+/** Checks documented launch versions against the standalone application and library build. */
 class DocumentationExamplesTest {
     @Test
     void documentedLaunchVersionsMatchTheBuiltDevelopmentArtifact() throws Exception {
@@ -66,52 +63,5 @@ class DocumentationExamplesTest {
         String value = XPathFactory.newInstance().newXPath().evaluate(expression, document);
         assertThat(value).as(expression).isNotBlank();
         return value;
-    }
-
-    @Test
-    void documentedSnippetsMatchTheCompiledExamplesAndActualConfiguration() throws Exception {
-        var snippet =
-                Pattern.compile(
-                        "<!-- example: ([A-Za-z0-9.#-]+) -->\\n```(?:java|yaml)\\n(.*?)\\n```\\n<!-- /example -->",
-                        Pattern.DOTALL);
-        List<String> checked = new ArrayList<>();
-        for (String page : List.of("quickstart", "usage")) {
-            var matches = snippet.matcher(Files.readString(Path.of("docs/" + page + ".md")));
-            while (matches.find()) {
-                String identity = matches.group(1);
-                String source;
-                if (identity.equals("config.yaml")) {
-                    source = Files.readString(Path.of("examples/datastream/config/config.yaml"));
-                    source = source.substring(source.indexOf("pipeline.generic-types:"));
-                } else {
-                    String[] parts = identity.split("#", 2);
-                    source =
-                            Files.readString(
-                                    Path.of(
-                                            "examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/"
-                                                    + parts[0]
-                                                    + ".java"));
-                    String start = "// docs:start " + parts[1] + "\n";
-                    String end = "// docs:end " + parts[1];
-                    assertThat(source).containsOnlyOnce(start).containsOnlyOnce(end);
-                    source =
-                            source.substring(
-                                    source.indexOf(start) + start.length(), source.indexOf(end));
-                }
-                assertThat(matches.group(2))
-                        .as("%s in %s", identity, page)
-                        .isEqualTo(source.stripIndent().strip());
-                checked.add(identity);
-            }
-        }
-        assertThat(checked)
-                .containsExactlyInAnyOrder(
-                        "ExplicitExample#explicit-configuration",
-                        "ExplicitExample#explicit-source",
-                        "ExplicitExample#explicit-returns",
-                        "config.yaml",
-                        "RegisteredExample#registration",
-                        "StatefulExample#scalar-state",
-                        "StatefulExample#state-descriptors");
     }
 }

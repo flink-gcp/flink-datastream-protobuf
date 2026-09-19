@@ -39,7 +39,9 @@ Always disable generic types, and use stable scalar keys.
 The [usage and configuration guide](docs/usage.md) covers settings, registration timing, nested values, state, and unsupported paths.
 The [quickstart](docs/quickstart.md) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
 Generate the API reference with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
-Pages publication and deployed quickstart/API links are tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).
+The versioned documentation site is prepared for GitHub Pages at `https://flink-gcp.github.io/flink-datastream-protobuf/`.
+Initial deployment and live verification remain tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the guide links above remain on GitHub until then.
+See [documentation versions](docs/versions.md) for the Development-only period and the release retention policy from 1.0.0.
 
 ## Common generated types
 

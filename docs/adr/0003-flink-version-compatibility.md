@@ -1,3 +1,7 @@
+---
+title: "ADR-0003: Support current/previous Flink 2.x minors and Flink 1.20 LTS"
+bookHidden: true
+---
 <!--
 Copyright 2026 The flink-gcp authors
 

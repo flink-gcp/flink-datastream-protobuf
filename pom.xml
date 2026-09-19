@@ -197,6 +197,9 @@ limitations under the License.
                     </license></licenses>
                     <licenseFamilies><licenseFamily implementation="org.apache.rat.license.SimpleLicenseFamily"><familyName>Apache License 2.0</familyName></licenseFamily></licenseFamilies>
                     <excludes>
+                        <!-- Generated documentation and dependency inventories. -->
+                        <exclude>docs/go.sum</exclude><exclude>docs/uv.lock</exclude>
+                        <exclude>docs/public/**</exclude><exclude>docs/resources/**</exclude><exclude>**/__pycache__/**</exclude>
                         <exclude>**/.*</exclude><exclude>**/.*/**</exclude><exclude>**/target/**</exclude>
                         <exclude>LICENSE</exclude><exclude>NOTICE</exclude><exclude>mvnw</exclude><exclude>mvnw.cmd</exclude>
                         <exclude>mise.toml</exclude><exclude>mise.local.toml</exclude><exclude>**/*.log</exclude>
