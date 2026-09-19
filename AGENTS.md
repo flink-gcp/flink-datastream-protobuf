@@ -22,6 +22,10 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.
 - `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.
 - `just benchmark-run <version> <protobuf-major> <new-output>`: run the opt-in long measurements under ADR-0004 and the evidence-retention procedure in `docs/development.md`.
+- `just benchmark-evidence-check <input> <new-output>`: validate retained benchmark bytes before upload; follow the human review procedure in `docs/development.md`.
+- `just benchmark-evidence-staged <new-output>`: validate the exact staged benchmark archives before an evidence commit.
+- `just benchmark-evidence-repository <new-output>`: inspect committed benchmark archives and retain member inventories without re-uploading the archives.
+- `just benchmark-evidence-test`: run synthetic content-gate tests without Maven or Thrift.
 - `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 

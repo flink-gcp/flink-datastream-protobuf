@@ -18,6 +18,7 @@ limitations under the License.
 
 - Status: Accepted
 - Date: 2026-09-12
+- Evidence content gate added: 2026-09-18, [issue #41](https://github.com/flink-gcp/flink-datastream-protobuf/issues/41)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -57,6 +58,22 @@ Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf
 Do not impose timing thresholds on shared runners.
 Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 17, and both supported Protobuf profiles.
 This baseline describes that machine and does not establish whole-job throughput or saved-state compatibility.
+
+## Evidence retention
+
+Use one Python standard-library content gate for local retention, staged benchmark archives, and CI artifact uploads.
+The gate is development tooling outside the production jar and requires neither Maven nor the opt-in benchmark compiler.
+Support the existing normalized `.tar.gz` archives and benchmark output directories with an explicit file inventory and reviewed JSON/property structures.
+Reject unknown inputs, unsafe archive metadata and paths, nested archives, raw diagnostics, binary members, and known credential patterns.
+JFR-derived events are restricted to allocation and execution samples, including an allowlist for nested fields.
+Keep human content review and credential-free measurement environments: pattern scanning cannot prove the absence of arbitrary secrets.
+
+Retain a checked copy with hashes of the exact archive and member bytes, and upload only that copy after the complete gate succeeds.
+A failed benchmark may retain partial diagnostic evidence only when the whole partial directory passes the gate; content validation does not change the measurement failure.
+Repository CI inspects committed benchmark archives without uploading those archives again.
+The staged check reads Git blobs instead of working-tree paths, and the retention procedure requires it immediately before an evidence commit.
+No Git hook or publication authorization is implied.
+The [development procedure](../development.md#automated-content-gate) specifies formats, resource limits, scanning boundaries, and the shared local/CI commands.
 
 ## Source basis and alternatives
 

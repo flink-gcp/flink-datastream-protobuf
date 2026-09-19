@@ -18,3 +18,4 @@ mise.local.toml
 .serena/project.local.yml
 .serena/cache/
 .serena/memories/
+__pycache__/
