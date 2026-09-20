@@ -66,7 +66,7 @@ jobs:
         with:
           working_directory: source
           install_args: hugo-extended go java uv node
-      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+      - uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: just
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

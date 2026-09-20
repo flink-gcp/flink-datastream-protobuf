@@ -20,7 +20,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: actionlint shellcheck node npm:markdownlint-cli2
-      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+      - uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: just
       - name: Lint workflows and documentation
