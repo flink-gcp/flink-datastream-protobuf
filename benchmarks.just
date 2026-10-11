@@ -14,8 +14,8 @@
 
 # Benchmark tools are opt-in; the production build never needs Thrift or CMake.
 benchmark_thrift := env_var_or_default("BENCHMARK_THRIFT_COMPILER", "thrift")
-benchmark_thrift_version := "0.23.0"
-benchmark_thrift_sha256 := "1859d932d2ae1f13d16c5a196931208c116310a5ff50f2bfd11d3db03be8f46f"
+benchmark_thrift_version := "0.25.0"
+benchmark_thrift_sha256 := "66da4707214c54c94bac082103dc67adaf9e08925662700f269170a7b534b214"
 
 # Build the pinned compiler in an explicit external cache. Requires CMake, Flex, Bison 3.8+ and C++.
 [positional-arguments]
@@ -44,6 +44,10 @@ benchmark-tools cache:
     if [[ "$(uname -s)" == Darwin ]]; then
         sdk=$(xcrun --show-sdk-path)
         cmake_args+=("-DCMAKE_OSX_SYSROOT=$sdk" "-DCMAKE_CXX_FLAGS=-isystem $sdk/usr/include/c++/v1")
+    fi
+    # CMake refuses a build directory configured from another source tree, such as an earlier pinned version.
+    if [[ -f "$cache/build/CMakeCache.txt" ]] && ! grep -q "^CMAKE_HOME_DIRECTORY:INTERNAL=.*/thrift-$version\$" "$cache/build/CMakeCache.txt"; then
+        rm -rf "$cache/build"
     fi
     cmake -S "$cache/thrift-$version" -B "$cache/build" "${cmake_args[@]}" -DBUILD_COMPILER=ON -DBUILD_LIBRARIES=OFF -DBUILD_TESTING=OFF -DBUILD_TUTORIALS=OFF -DCMAKE_BUILD_TYPE=Release
     cmake --build "$cache/build" --target thrift-compiler --parallel 2

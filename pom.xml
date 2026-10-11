@@ -215,7 +215,7 @@ limitations under the License.
             <properties>
                 <benchmark.jmh.version>1.37</benchmark.jmh.version>
                 <benchmark.avro.version>1.11.4</benchmark.avro.version>
-                <benchmark.thrift.version>0.23.0</benchmark.thrift.version>
+                <benchmark.thrift.version>0.25.0</benchmark.thrift.version>
                 <benchmark.chill.version>0.10.0</benchmark.chill.version>
                 <benchmark.jackson.version>2.14.3</benchmark.jackson.version>
                 <benchmark.thrift.compiler>thrift</benchmark.thrift.compiler>
