@@ -310,7 +310,7 @@ Ordinary verification creates temporary state for its jobs but does not rewrite 
 The [development bundle procedure](validation/development-baselines.md) provides `baseline-capture`, `baseline-check`, and `baseline-read` for #40.
 It retains packaged library jars, compiled consumers, resolved runtime dependencies, snapshots, and checkpoint/savepoint archives outside the repository.
 The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
-This prepares the capture tooling; final v0.1.0 source selection and long-term retention follow completion of #12, #19, and #41.
+The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
 
 ### Selecting and capturing savepoint fixtures
 

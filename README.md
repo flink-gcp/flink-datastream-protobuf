@@ -6,10 +6,10 @@ This project is under development.
 The repository implements native serialization, explicit TypeInformation, and superclass factory registration for generated messages.
 Versioned descriptor snapshots support serializer restoration for unchanged schemas.
 MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
-No release is available.
+No Maven Central release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
-The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.1.0-SNAPSHOT`.
+The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.2.0-SNAPSHOT`.
 Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to build/install it locally and run the compiled application examples.
 It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 and 4.33.6.
 

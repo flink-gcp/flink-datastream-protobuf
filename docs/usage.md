@@ -171,6 +171,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 ## Development upgrades and API reference
 
 The 0.1.0 contract rejects schema changes, including otherwise wire-safe field additions.
+Current `0.2.0-SNAPSHOT` development builds still implement this contract; their compatibility with the retained 0.1.0 baseline is established only by the tests added under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks.
 Supported schema evolution is planned for 0.2.0, and descriptor-driven DynamicMessage support for 0.3.0.
 Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.
 The unpublished 0.x milestones can break APIs, defaults, runtime requirements, and saved-state compatibility.

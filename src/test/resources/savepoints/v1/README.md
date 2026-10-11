@@ -51,7 +51,7 @@ For example, from the repository root, capture the Flink 2.2.1 / Protobuf 3 fixt
 mise x -- ./mvnw -ntp clean -Pprotobuf3 -Dflink.version=2.2.1 -DskipTests package
 mise x -- ./mvnw -ntp -Pprotobuf3 -Dflink.version=2.2.1 \
   -Dtest=ProtobufSavepointFixtureITCase \
-  -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.1.0-SNAPSHOT.jar" \
+  -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.2.0-SNAPSHOT.jar" \
   -Dprotobuf.fixture.capture=/tmp/protobuf-savepoint-capture \
   -Dprotobuf.fixture.revision="$(git merge-base HEAD origin/main)" \
   surefire:test@integration-tests
@@ -67,6 +67,6 @@ Use a base revision reachable from `main` so that squashing the capture branch d
 Do not rewrite old provenance hashes to match current source files.
 For a released baseline, #13 must extend this procedure to verify released coordinates, the exact release tag/source and supplied jar, both artifact lines, and the new consumer classpath.
 Issue #40 prepares [fixed development bundles](../../../../../docs/validation/development-baselines.md) for milestone-to-milestone checks, separately from these version-selected fixtures.
-Final development capture follows the remaining v0.1.0 work and supplies provenance for #6.
+The final v0.1.0 bundles are retained as assets of the `v0.1.0` pre-release and supply the milestone provenance for #6.
 Published-artifact capture remains in #13 for the first 1.0.0 publication.
 Retain fixed development and published baselines without regenerating them with later writers.

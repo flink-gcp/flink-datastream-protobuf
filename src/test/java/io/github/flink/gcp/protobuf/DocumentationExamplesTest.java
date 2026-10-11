@@ -28,7 +28,7 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Checks documented launch versions against the standalone application and library build. */
+/** Checks documented versions against the standalone application and library build. */
 class DocumentationExamplesTest {
     @Test
     void documentedLaunchVersionsMatchTheBuiltDevelopmentArtifact() throws Exception {
@@ -47,16 +47,26 @@ class DocumentationExamplesTest {
                 property(
                         library,
                         "/project/profiles/profile[id='protobuf4']/properties/protobuf.version");
+        String version = property(library, "/project/version");
         assertThat(property(example, "/project/properties/protobuf.integration.version"))
-                .isEqualTo(property(library, "/project/version"));
+                .isEqualTo(version);
         assertThat(property(example, "/project/properties/flink.version")).isEqualTo(floor);
         assertThat(property(example, "/project/properties/protobuf.version")).isEqualTo(protobuf3);
         assertThat(Files.readString(Path.of("docs/quickstart.md")))
                 .contains(
+                        "sets `protobuf.integration.version` to `" + version + "`",
                         "examples-verify " + floor + " 3 ",
                         "examples-verify " + lts + " 4 ",
                         "-Dflink.version=" + lts + " ",
                         "-Dprotobuf.version=" + protobuf4 + " exec:exec@explicit");
+        assertThat(Files.readString(Path.of("README.md")))
+                .contains("`io.github.flink-gcp:flink-datastream-protobuf:" + version + "`");
+        assertThat(Files.readString(Path.of("docs/compatibility.md")))
+                .contains("The current source version is `" + version + "`");
+        assertThat(Files.readString(Path.of("docs/usage.md")))
+                .contains("Current `" + version + "` development builds");
+        assertThat(Files.readString(Path.of("src/test/resources/savepoints/v1/README.md")))
+                .contains("/target/flink-datastream-protobuf-" + version + ".jar");
     }
 
     private static String property(Document document, String expression) throws Exception {

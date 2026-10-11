@@ -68,4 +68,4 @@ The suite does not establish backend migration, rescaling, cross-Flink state upg
 `CommonTypesRecoveryITCase` adds [Well-Known Type and OpenTelemetry acceptance](../common-types.md#verification-boundaries), using the same MiniCluster controls with a separate job and values on the ordinary test classpath.
 It verifies direct Struct ValueState, direct AnyValue MapState values, and an application envelope in operator ListState on both backends.
 Issue #40's [development bundle tooling](development-baselines.md) captures packaged writers and compiled consumers with retained state for later milestone checks.
-Final development capture follows the remaining v0.1.0 work; published-artifact capture and validation of both release lines remain in #13.
+The final v0.1.0 bundles are retained as [pre-release assets](development-baselines.md#retained-v010-baseline); published-artifact capture and validation of both release lines remain in #13.
