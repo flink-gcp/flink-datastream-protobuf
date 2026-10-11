@@ -1,0 +1,72 @@
+name: Fetch a retained development bundle
+description: Verify and extract one retained baseline bundle, reusing its archive from a cache keyed by the archive checksum.
+inputs:
+  tag:
+    description: Release tag with a pinned retained baseline, such as v0.1.0
+    required: true
+  bundle:
+    description: Bundle name, such as flink2-pb3
+    required: true
+  output:
+    description: New absolute directory outside the checkout for the release inventory and the bundle
+    required: true
+  token:
+    description: Token used only to download release assets
+    default: ${{ github.token }}
+outputs:
+  bundle:
+    description: Path of the verified bundle directory
+    value: ${{ steps.fetch.outputs.bundle }}
+runs:
+  using: composite
+  steps:
+    - name: Identify the pinned archive checksum
+      id: asset
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        TAG: ${{ inputs.tag }}
+        BUNDLE: ${{ inputs.bundle }}
+        ACTION: ${{ github.action_path }}
+      run: |
+        script=$(cd "$ACTION/../../.." && pwd)/scripts/baseline_fetch.py
+        sha256=$(python3 "$script" asset "$TAG" "$BUNDLE")
+        {
+          echo "script=$script"
+          echo "key=development-baseline-$TAG-$BUNDLE-$sha256"
+          echo "archives=$RUNNER_TEMP/development-baseline-archives-$TAG-$BUNDLE"
+        } >> "$GITHUB_OUTPUT"
+    - name: Restore the retained archive
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.asset.outputs.archives }}
+        key: ${{ steps.asset.outputs.key }}
+    - name: Verify, extract, and check the bundle
+      id: fetch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        TAG: ${{ inputs.tag }}
+        BUNDLE: ${{ inputs.bundle }}
+        OUTPUT: ${{ inputs.output }}
+        ARCHIVES: ${{ steps.asset.outputs.archives }}
+        KEY: ${{ steps.asset.outputs.key }}
+        RESTORED: ${{ steps.cache.outputs.cache-hit }}
+        SCRIPT: ${{ steps.asset.outputs.script }}
+      run: |
+        restored=()
+        if [[ "$RESTORED" == true ]]; then restored=(--restored); fi
+        if ! python3 "$SCRIPT" fetch "$TAG" "$OUTPUT" "$BUNDLE" --archives "$ARCHIVES" "${restored[@]}"; then
+          if [[ "$RESTORED" == true ]]; then
+            echo "::error::Fetching failed with a restored archive; if the cached copy is missing or does not match, delete cache entry $KEY with gh cache delete."
+          fi
+          exit 1
+        fi
+        echo "bundle=$OUTPUT/$BUNDLE" >> "$GITHUB_OUTPUT"
+    - name: Save the verified archive
+      if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.asset.outputs.archives }}
+        key: ${{ steps.asset.outputs.key }}

@@ -28,7 +28,7 @@ Java output targets release 17.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, uv, Hugo Extended 0.164.0, and Go 1.26.5.
 The site tools use Python 3.11 or newer through uv; the application-example and binary recipes retain their Python 3.9 minimum.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
-The binary compatibility, application-example, and benchmark evidence recipes also need Python 3.9 or newer, using only its standard library.
+The binary compatibility, application-example, baseline retrieval, and benchmark evidence recipes also need Python 3.9 or newer, using only its standard library.
 Install Python separately; `mise.toml` does not provide it.
 
 ```sh
@@ -51,6 +51,8 @@ mise x -- just --list
 | `just baseline-capture <line> <major> <output>` | Capture a development bundle in a new external directory |
 | `just baseline-check <bundle>` | Check retained inventory and checksums without rebuilding |
 | `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
+| `just baseline-fetch <tag> <output> [bundle...] [--archives <dir>]` | Download, verify, extract, and check retained release bundles in a new external directory |
+| `just baseline-fetch-test` | Run the retrieval checks against synthetic releases without network access |
 | `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
@@ -312,6 +314,7 @@ The [development bundle procedure](validation/development-baselines.md) provides
 It retains packaged library jars, compiled consumers, resolved runtime dependencies, snapshots, and checkpoint/savepoint archives outside the repository.
 The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
+Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 
 ### Selecting and capturing savepoint fixtures
 

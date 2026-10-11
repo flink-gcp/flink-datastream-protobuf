@@ -103,8 +103,75 @@ The release assets are:
 The embedded manifests keep `milestone.final=false` and the Maven version `0.1.0-SNAPSHOT`.
 `FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #40 select these exact bundles as the milestone baseline.
 Do not rename, re-tag, or replace these assets.
-Verify downloaded assets against `SHA256SUMS` before extraction, then run `baseline-check` on each extracted bundle; the release `README.md` lists the commands.
-Retrieval and verification for #16 and #17 are tracked in [#61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61).
+Obtain them with [`baseline-fetch`](#retrieve-the-retained-baseline); the release `README.md` lists equivalent manual commands.
+
+## Retrieve the retained baseline
+
+`baseline-fetch` downloads the designated release assets with `gh release download`, verifies them, and extracts the selected bundles into a new directory outside the repository.
+It needs an authenticated `gh`, Python 3.9 or newer, and JDK 17 or 21 for the final `baseline-check`.
+Without bundle names it fetches all four bundles.
+Give absolute paths: just runs the recipe from the repository root, so a relative path resolves there and is rejected.
+
+```sh
+mise x -- just baseline-fetch v0.1.0 /tmp/baseline-v0.1.0
+mise x -- just baseline-fetch v0.1.0 /tmp/baseline-v0.1.0-flink2-pb3 flink2-pb3
+```
+
+The output contains `release/`, which holds `SHA256SUMS`, `FINAL-BASELINE.json`, `INVENTORY.json`, and the downloaded archives, and one directory per bundle.
+With `--archives <directory>`, archives are kept in that directory instead and reused by later runs; for example, `just baseline-fetch v0.1.0 /tmp/new-output flink1-pb3 --archives /tmp/baseline-archives`.
+
+The checks run in this order:
+
+1. The SHA-256 of the downloaded `SHA256SUMS` must equal the digest pinned for the tag in `scripts/baseline_fetch.py`, before any archive is downloaded.
+2. `FINAL-BASELINE.json`, `INVENTORY.json`, and each selected archive must match their `SHA256SUMS` entries, and each archive must also match the name, size, and checksum recorded in `FINAL-BASELINE.json`.
+3. `FINAL-BASELINE.json` and `INVENTORY.json` must agree on each bundle's file count, total size, inner `SHA256SUMS` hash, and the `library.jar` and `tools.jar` hashes in the embedded manifest.
+4. Extraction accepts only directories and regular files under the bundle's top-level directory, with plain path components.
+   Every file must appear in `INVENTORY.json` with the same size and SHA-256, exactly once, and every inventory file must be present.
+5. `baseline-check` runs the bundle's own `tools.jar` on the extracted bundle, with GitHub token variables removed from its environment.
+
+Any failure leaves the destination absent.
+The command also refuses a tag without a pinned digest, an unknown bundle name, an existing destination, and a destination or archive directory inside the repository.
+Work happens in a hidden staging directory beside the destination, which is renamed to the destination only after every selected bundle passes and is removed on failure.
+A process killed by a signal can leave that hidden directory, or a hidden download directory inside the archive directory, behind; remove it before retrying.
+A reused archive that does not match is reported, not replaced; remove that copy and run again.
+The command only reads release assets; it never uploads, edits, or re-tags them.
+
+The pinned digest ties every accepted byte to the inventory reviewed in this repository.
+The checksums establish integrity against that retained inventory, not publisher authenticity: no signature accompanies the assets, and a change to both the assets and the pin would be accepted.
+`baseline-check` executes code from the bundle, so it runs only after the archive and every extracted file have matched the inventory.
+Add a pin for a later designated baseline, such as the 0.2.0 baseline in [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63), only after reviewing its `SHA256SUMS` and final manifest.
+
+The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
+The `dependencies/` tree was resolved on macOS/aarch64.
+Several of its jars carry native libraries, such as RocksDB, Netty, Snappy, and LZ4 for a set of operating systems and architectures, and that resolution and its native loading are not claimed for another host.
+CI consumers must not put that tree on a classpath; they resolve their runtime dependencies for the runner instead.
+For the same reason, CI does not run `baseline-read` on the retained v0.1.0 bundles, because the reader starts the retained code with those dependency jars.
+
+### Retained bundles in CI
+
+The composite action `.github/actions/baseline-fetch` fetches one bundle per job:
+
+```yaml
+- uses: ./.github/actions/baseline-fetch
+  with:
+    tag: v0.1.0
+    bundle: flink2-pb3
+    output: ${{ runner.temp }}/retained-baseline
+```
+
+Its `bundle` output is the verified bundle directory.
+The action reads the archive checksum from the pinned `SHA256SUMS` and uses the cache key `development-baseline-<tag>-<bundle>-<archive SHA-256>`, so jobs that need the same bundle share one cache entry.
+An entry saved by a pull request run is visible only to that pull request; other branches restore it once a `main` run has saved it.
+It restores only that exact key and passes the cached archive to `baseline-fetch --archives`, which verifies it again on every run.
+After a hit the action also passes `--restored`, so an entry without the expected archive fails instead of triggering a new download.
+On a miss it downloads and verifies the archive, then saves it after the bundle passes; a failed run saves nothing.
+A restored archive that is missing or fails verification fails the job without replacing the entry; delete it with `gh cache delete <key>`, using the key in the error annotation.
+The job does not fall back to a fresh download, so a corrupt or replaced entry stays visible instead of being bypassed.
+The four entries total about 780 MB of the repository's Actions cache quota.
+The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
+
+The Verify workflow's retained-baseline job runs this action for each of the four v0.1.0 bundles.
+The milestone-upgrade jobs planned in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) and the API-compatibility jobs planned in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) are to use the same action, which shares these cache entries.
 
 ## Retention
 

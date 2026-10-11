@@ -16,6 +16,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just binary-compat <ceiling> <protobuf-major>`: run the unchanged 2.x floor jar and tests at the ceiling.
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
+- `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.
 - `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application; requires Python 3.9 or newer.
 - `just docs` / `just docs-serve`: build or preview the shared-design site.
 - `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.
