@@ -22,6 +22,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `target/apidocs`.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
 - `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.
+- `just benchmark-tools-check <compiler>`: reject a compiler that is not the pinned version or cannot generate the benchmark corpus.
 - `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.
 - `just benchmark-run <version> <protobuf-major> <new-output>`: run the opt-in long measurements under ADR-0004 and the evidence-retention procedure in `docs/development.md`.
 - `just benchmark-evidence-check <input> <new-output>`: validate retained benchmark bytes before upload; follow the human review procedure in `docs/development.md`.
