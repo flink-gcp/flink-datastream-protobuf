@@ -256,7 +256,7 @@ limitations under the License.
                         <stringType>String</stringType>
                     </configuration></execution>
                 </executions></plugin>
-                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><executions>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.6.4</version><executions>
                     <execution><id>run-benchmarks</id><goals><goal>exec</goal></goals><configuration>
                         <executable>${java.home}/bin/java</executable><classpathScope>test</classpathScope><arguments>
                             <argument>-Dbenchmark.library.jar=${project.build.directory}/${project.build.finalName}.jar</argument>
