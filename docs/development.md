@@ -55,6 +55,7 @@ mise x -- just --list
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
 | `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
+| `just benchmark-tools-check <compiler>` | Reject a compiler that is not the pinned version or cannot generate the benchmark corpus |
 | `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
 | `just benchmark-smoke <version> <major> <output>` | Validate the corpus and run short JMH harness checks |
 | `just benchmark-run <version> <major> <output>` | Collect the five-block benchmark baseline and parity report |
@@ -422,6 +423,28 @@ These recipes do not replace ordinary native verification or binary compatibilit
 Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
 The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
 
+### CI compiler reuse and job budgets
+
+Each Verify matrix job restores the compiler built by `just benchmark-tools` from an Actions cache entry.
+The private `benchmark-tools-identity` recipe names the entry from the pinned Thrift version, a source archive checksum prefix, a digest of the `benchmark-tools` recipe text, the distribution release, the architecture, and a digest of the C++ compiler's `--version` output (`$CXX`, or `c++`).
+The restore uses only that exact key.
+A restored compiler is used only after `just benchmark-tools-check` confirms its version and generates Java from the benchmark corpus with the Maven build's generator options.
+On a miss, the job installs the build prerequisites and builds the pinned source with `just benchmark-tools`, which ends with the same check, then saves the compiler before any benchmark process starts.
+Concurrent misses build independently; the first save creates the entry, and the other jobs log a reservation conflict without replacing it.
+A restored compiler that fails the check produces a warning and a rebuild in that job, but the existing entry is not replaced; delete it with `gh cache delete <key>`, using the key shown by the restore step.
+Any edit to the `benchmark-tools` recipe text, including its comment, the pinned source, or the compiler version produces a new key.
+CMake, Bison, and Flex versions are not part of the key, because the check verifies the resulting compiler rather than its build tools.
+
+Cache and artifact credentials stay in their own action steps; benchmark processes run in later shell steps without them.
+The smoke command runs under a five-minute `timeout`, so a hang fails the step with an error annotation and the existing content gate still checks any partial evidence.
+The step then kills any process left in the timeout's process group, so the gate does not read output that a surviving JVM is still writing.
+A job time limit cancels the job instead, and the gate does not run after cancellation.
+
+Verify job and smoke limits are at least twice the slowest measured successful run, rounded up to five minutes.
+The [CI budget measurements](validation/ci-budget.md) record the GitHub runner durations behind the current limits.
+Recheck them when a matrix job adds substantial work, when the runner image changes distribution release, or when the measured maximum moves past half of its limit.
+Shared-runner durations set time limits only; they are not benchmark results or pass/fail thresholds.
+
 ### Retaining diagnostic evidence
 
 Run profiling against the synthetic benchmark corpus in a process environment containing only the variables needed by the toolchain.
@@ -547,7 +570,7 @@ Chill remains an optional comparison dependency with individually reviewed updat
 Ordinary CI excludes its tagged tests, so run the comparison explicitly and inspect the resolved and loaded Kryo/Chill versions before accepting an update.
 Keep historical measurements distinct from results for the new dependency version.
 
-Update `benchmark.thrift.version` together with the compiler archive version, URL, and SHA-256 in `benchmarks.just`.
+Update `benchmark.thrift.version` together with `benchmark_thrift_version` and `benchmark_thrift_sha256` in `benchmarks.just`; both values enter the CI compiler cache identity.
 The same property pins `libthrift` and the required compiler version; updating only the Maven runtime pin makes benchmark initialization reject the older compiler.
 Check `benchmark.avro.version` against the `flink-avro` dependency pins for every supported Flink runtime before accepting an update; validate any intentional difference explicitly.
 For either update, regenerate the benchmark schemas, run both Protobuf profiles across the ADR-0003 smoke matrix, and retain new provenance separately from the fixed baseline.

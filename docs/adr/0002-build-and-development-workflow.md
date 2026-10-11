@@ -25,6 +25,7 @@ limitations under the License.
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Dependency update policy amended: 2026-09-12
 - Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
+- CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -48,6 +49,15 @@ It freezes the source SHA before calling each reusable workflow, on PRs and trus
 An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven.
+
+Verify reuses the pinned benchmark compiler through an exact-key Actions cache rather than rebuilding it in every matrix job.
+The key identifies the Thrift version, source checksum, build recipe, distribution release, architecture, and C++ compiler.
+Each job checks a restored compiler before use and rebuilds the pinned source when the entry is missing or fails the check; only a job that missed the entry saves its newly built and checked compiler, before benchmark processes run.
+A shared preparation job was rejected because every matrix job would wait for it, including runs with a usable cache entry.
+Separate smoke jobs were rejected because they would repeat checkout, JDK, and Maven setup in ten more jobs; Verify already starts 16 jobs per run, and the organization's [GitHub Free plan](https://docs.github.com/en/actions/reference/limits) allows 20 concurrent standard-runner jobs.
+Neither alternative changes the supported runtime matrix or the aggregate gate; the cache keeps the smoke in the job that verified the same runtime.
+Job limits come from measured GitHub runner durations with at least twice the slowest successful run, and the smoke has a command limit so that a hung measurement fails before the job limit cancels evidence retention.
+Shared-runner durations never become benchmark pass/fail thresholds.
 
 Dependabot proposes individual weekly Maven and GitHub Actions updates.
 Flink major/minor changes follow ADR-0003, and Protobuf major changes require an explicit compatibility decision.

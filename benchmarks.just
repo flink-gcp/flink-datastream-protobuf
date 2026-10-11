@@ -14,6 +14,8 @@
 
 # Benchmark tools are opt-in; the production build never needs Thrift or CMake.
 benchmark_thrift := env_var_or_default("BENCHMARK_THRIFT_COMPILER", "thrift")
+benchmark_thrift_version := "0.23.0"
+benchmark_thrift_sha256 := "1859d932d2ae1f13d16c5a196931208c116310a5ff50f2bfd11d3db03be8f46f"
 
 # Build the pinned compiler in an explicit external cache. Requires CMake, Flex, Bison 3.8+ and C++.
 [positional-arguments]
@@ -22,29 +24,69 @@ benchmark-tools cache:
     set -euo pipefail
     cache="$1"
     mkdir -p "$cache"
-    archive="$cache/thrift-0.23.0.tar.gz"
-    expected=1859d932d2ae1f13d16c5a196931208c116310a5ff50f2bfd11d3db03be8f46f
+    version='{{benchmark_thrift_version}}'
+    archive="$cache/thrift-$version.tar.gz"
+    expected='{{benchmark_thrift_sha256}}'
     if [[ ! -f "$archive" ]] || [[ "$(shasum -a 256 "$archive" | awk '{print $1}')" != "$expected" ]]; then
-        download=$(mktemp "$cache/thrift-0.23.0.tar.gz.XXXXXX")
+        download=$(mktemp "$archive.XXXXXX")
         trap 'rm -f "$download"' EXIT
-        curl --fail --location --retry 3 --retry-delay 2 --output "$download" https://archive.apache.org/dist/thrift/0.23.0/thrift-0.23.0.tar.gz
+        curl --fail --location --retry 3 --retry-delay 2 --output "$download" "https://archive.apache.org/dist/thrift/$version/thrift-$version.tar.gz"
         actual=$(shasum -a 256 "$download" | awk '{print $1}')
         [[ "$actual" == "$expected" ]]
         mv "$download" "$archive"
         trap - EXIT
     fi
-    if [[ ! -f "$cache/thrift-0.23.0/.benchmark-extracted" ]]; then
+    if [[ ! -f "$cache/thrift-$version/.benchmark-extracted" ]]; then
         tar -xf "$archive" -C "$cache"
-        touch "$cache/thrift-0.23.0/.benchmark-extracted"
+        touch "$cache/thrift-$version/.benchmark-extracted"
     fi
     cmake_args=()
     if [[ "$(uname -s)" == Darwin ]]; then
         sdk=$(xcrun --show-sdk-path)
         cmake_args+=("-DCMAKE_OSX_SYSROOT=$sdk" "-DCMAKE_CXX_FLAGS=-isystem $sdk/usr/include/c++/v1")
     fi
-    cmake -S "$cache/thrift-0.23.0" -B "$cache/build" "${cmake_args[@]}" -DBUILD_COMPILER=ON -DBUILD_LIBRARIES=OFF -DBUILD_TESTING=OFF -DBUILD_TUTORIALS=OFF -DCMAKE_BUILD_TYPE=Release
+    cmake -S "$cache/thrift-$version" -B "$cache/build" "${cmake_args[@]}" -DBUILD_COMPILER=ON -DBUILD_LIBRARIES=OFF -DBUILD_TESTING=OFF -DBUILD_TUTORIALS=OFF -DCMAKE_BUILD_TYPE=Release
     cmake --build "$cache/build" --target thrift-compiler --parallel 2
-    "$cache/build/compiler/cpp/bin/thrift" --version
+    just benchmark-tools-check "$cache/build/compiler/cpp/bin/thrift"
+
+# Reject a compiler that is not the pinned version or cannot generate the benchmark corpus.
+[positional-arguments]
+benchmark-tools-check compiler:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    compiler="$1"
+    if [[ ! -f "$compiler" || ! -x "$compiler" ]]; then
+        printf 'Benchmark compiler is not an executable file: %s\n' "$compiler" >&2
+        exit 1
+    fi
+    actual=$("$compiler" --version)
+    if [[ "$actual" != 'Thrift version {{benchmark_thrift_version}}' ]]; then
+        printf 'Benchmark generation requires Thrift {{benchmark_thrift_version}}; got %s\n' "$actual" >&2
+        exit 1
+    fi
+    output=$(mktemp -d)
+    trap 'rm -rf "$output"' EXIT
+    "$compiler" --gen java:generated_annotations=suppress -out "$output" src/benchmark/thrift/benchmark.thrift
+    if [[ -z "$(find "$output" -name '*.java' -type f -print -quit)" ]]; then
+        printf 'Benchmark compiler generated no Java sources: %s\n' "$compiler" >&2
+        exit 1
+    fi
+    printf '%s\n' "$actual"
+
+# Print the CI cache key suffix for a compiler that benchmark-tools would build on this host.
+[private]
+benchmark-tools-identity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+        Linux) release=$(. /etc/os-release && printf '%s-%s' "$ID" "$VERSION_ID") ;;
+        Darwin) release="macos-$(sw_vers -productVersion)" ;;
+        *) printf 'Unsupported benchmark compiler host: %s\n' "$(uname -s)" >&2; exit 1 ;;
+    esac
+    digest() { shasum -a 256 | cut -c 1-16; }
+    recipe=$(just --justfile '{{justfile()}}' --show benchmark-tools | digest)
+    toolchain=$("${CXX:-c++}" --version | digest)
+    printf 'thrift-%s-%s-recipe-%s-%s-%s-cxx-%s\n' '{{benchmark_thrift_version}}' "$(printf %s '{{benchmark_thrift_sha256}}' | cut -c 1-16)" "$recipe" "$release" "$(uname -m)" "$toolchain"
 
 # Correctness and short JMH probes; no timing thresholds.
 benchmark-smoke version major output:
