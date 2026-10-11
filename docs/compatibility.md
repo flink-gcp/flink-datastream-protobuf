@@ -28,7 +28,9 @@ Milestone upgrade checks use fixed development artifacts and fixtures with exact
 
 ## Development builds before 1.0.0
 
-The current source version is `0.1.0-SNAPSHOT`; compatibility between arbitrary development builds is not implied.
+The current source version is `0.2.0-SNAPSHOT`, a development build that still implements the 0.1.0 unchanged-schema contract.
+Compatibility between arbitrary development builds is not implied.
+Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by the tests added under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks.
 The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
 Each development milestone must document its actual breaks, supported upgrade paths, and migration or fresh-state/replay requirements before completion.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.

@@ -18,7 +18,7 @@ limitations under the License.
 
 These fixtures were written by the unpublished 0.1.0-SNAPSHOT implementation of issue #10.
 They preserve the format baseline; they are not evidence from a released Maven artifact or a Flink savepoint.
-Issue #11 owns the existing runtime savepoints; #40 prepares [fixed development bundles](../../../../../docs/validation/development-baselines.md) for later milestone checks.
+Issue #11 owns the existing runtime savepoints; #40 prepared [fixed development bundles](../../../../../docs/validation/development-baselines.md) for later milestone checks.
 Issue #13 must add fixtures from both published artifact lines for the first 1.0.0 release.
 Do not overwrite these files with later writers and describe them as the original writer's output.
 
@@ -44,6 +44,7 @@ Tests also reject lowering either limit from each saved fixture's settings.
 
 Run from the repository root on JDK 17 at the 2.2.1 compile floor.
 Copy the Java listing below to `/tmp/SnapshotFixtureWriter.java`; keep the generator outside the repository.
+The listing records these fixtures' `0.1.0-SNAPSHOT` writer coordinates; when running it from a later version, set `writer.artifact` to that version and never replace these files with its output.
 Use a clean build for each runtime/gencode pair, retaining both outputs in the same temporary directory:
 
 ```sh

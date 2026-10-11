@@ -19,13 +19,13 @@ limitations under the License.
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.github.flink-gcp.examples</groupId>
     <artifactId>protobuf-datastream-example</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <name>Protobuf DataStream example</name>
     <description>Standalone consumer of the native Protobuf DataStream library.</description>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
-        <protobuf.integration.version>0.1.0-SNAPSHOT</protobuf.integration.version>
+        <protobuf.integration.version>0.2.0-SNAPSHOT</protobuf.integration.version>
         <flink.version>2.2.1</flink.version>
         <protobuf.version>3.25.9</protobuf.version>
         <example.mainClass>io.github.flink.gcp.protobuf.examples.ExplicitExample</example.mainClass>

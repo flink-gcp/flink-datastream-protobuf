@@ -20,10 +20,9 @@ limitations under the License.
 
 # Development artifact bundles
 
-Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) prepares fixed development inputs for the state and API checks in #16 and #17.
-The capture and reader tooling is implemented separately from the final v0.1.0 milestone capture.
-Complete #12, #19, and #41 before selecting the final integrated source revision.
-The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful rehearsal does not close #40 or #6.
+Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) prepared fixed development inputs for the state and API checks in #16 and #17.
+The final v0.1.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline).
+The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
 
 ## Capture
@@ -42,7 +41,7 @@ mise x -- just baseline-capture flink1 4 /tmp/baseline-flink1-pb4
 
 The two artifact lines and two paired Protobuf profiles produce four independent bundles.
 The 2.x jar is compiled at 2.2.1 and also used unchanged at 2.3.0; the LTS jar is compiled at 1.20.4.
-Both retain the actual development POM version, currently `0.1.0-SNAPSHOT`, with the adapter line identified separately in the manifest.
+Both retain the development POM version of the captured source, such as `0.1.0-SNAPSHOT` in the v0.1.0 baseline, with the adapter line identified separately in the manifest.
 They are not renamed to imply published release coordinates.
 Capture keeps the source archive and revision, effective Maven model, exact command arguments, resolved dependency tree and jars, JDK identity, and protoc version and executable checksum.
 The application jars contain the original and changed schemas; neither application is on the parent classpath of the isolated recovery jobs.
@@ -85,17 +84,38 @@ These fixtures use aligned checkpoints and local filesystem storage without entr
 Cross-Flink state upgrades, cross-Protobuf restore, backend migration, rescaling, unaligned or incremental checkpoint portability, and universal development-version compatibility are outside this evidence.
 The current companion jars include platform-specific runtime dependencies; recreate a rehearsal on another operating system or architecture rather than assuming portability of native dependencies.
 
-## Retention and final capture
+## Retained v0.1.0 baseline
+
+The [`v0.1.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.1.0) is the durable shared copy of the final v0.1.0 development baseline.
+Its source is annotated tag `v0.1.0`, commit `f5063f784bdf6799250c521c39a47701900133ea`.
+The release assets are:
+
+| Asset | Content |
+| --- | --- |
+| `v0.1.0-flink2-pb3.tar.gz`, `v0.1.0-flink2-pb4.tar.gz` | 2.x bundles, compiled at Flink 2.2.1 and read at 2.2.1 and 2.3.0 on JDK 17 and 21 |
+| `v0.1.0-flink1-pb3.tar.gz`, `v0.1.0-flink1-pb4.tar.gz` | LTS bundles, compiled and read at Flink 1.20.4 on JDK 17 |
+| `FINAL-BASELINE.json` | Final designation: source revision, tag object, bundle asset checksums, embedded manifests, inner inventory hashes, and reader results |
+| `INVENTORY.json` | Per-file inventory of every bundle |
+| `SHA256SUMS` | SHA-256 checksums of the other release assets |
+| `README.md` | Download, inspection, and reader instructions |
+| `v0.1.0-verification.tar.gz` | Reader results, logs, publication inventory review, and the final CI job inventory |
+
+The embedded manifests keep `milestone.final=false` and the Maven version `0.1.0-SNAPSHOT`.
+`FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #40 select these exact bundles as the milestone baseline.
+Do not rename, re-tag, or replace these assets.
+Verify downloaded assets against `SHA256SUMS` before extraction, then run `baseline-check` on each extracted bundle; the release `README.md` lists the commands.
+Retrieval and verification for #16 and #17 are tracked in [#61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61).
+
+## Retention
 
 A failed capture leaves an incomplete destination without a successful checksum inventory; retry in a new directory.
 Never repair historical provenance or replace files inside a completed bundle.
 Ordinary verification continues to read the existing checked-in snapshot/savepoint fixtures and does not regenerate them.
 The new bundles are separate inputs and do not supersede those earlier format baselines.
 
-Keep bundles in an access-controlled external directory, backed up outside temporary build and worktree cleanup locations when retaining them for future work.
+Keep unreviewed bundles in an access-controlled external directory, backed up outside temporary build and worktree cleanup locations when retaining them for future work.
 Do not use an expiring CI artifact or `/tmp` as the sole long-term copy.
 CI rehearsals stay in runner temporary storage and are not uploaded by this workflow.
-Long-term storage placement and the final milestone inventory remain part of #40 after its prerequisites are integrated.
 
 Command records and build/runtime logs preserve exact local paths and may contain machine-identifying information.
 Before copying any bundle to shared storage, inspect the exact inventory, archive members, source content, commands, and logs; keep credentials and raw JVM diagnostics out of capture processes.
