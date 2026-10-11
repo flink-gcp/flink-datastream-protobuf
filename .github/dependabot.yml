@@ -17,6 +17,11 @@ updates:
       # Match the SLF4J API major supplied by the supported Flink runtimes.
       - dependency-name: org.slf4j:slf4j-simple
         update-types: [version-update:semver-major]
+      # Keep benchmark Avro on the exact flink-avro pin of the supported Flink runtimes.
+      - dependency-name: org.apache.avro:*
+      # Keep jackson-databind on the pinned Avro release's Jackson line; Avro's schema parser needs a matching jackson-core.
+      - dependency-name: com.fasterxml.jackson.core:*
+        update-types: [version-update:semver-major, version-update:semver-minor]
   - package-ecosystem: github-actions
     directory: /
     schedule:
