@@ -23,6 +23,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-09-12
 - Evidence content gate added: 2026-09-18, [issue #41](https://github.com/flink-gcp/flink-datastream-protobuf/issues/41)
+- Temporary GCE execution added: 2026-10-11, [issue #44](https://github.com/flink-gcp/flink-datastream-protobuf/issues/44)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -62,6 +63,9 @@ Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf
 Do not impose timing thresholds on shared runners.
 Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 17, and both supported Protobuf profiles.
 This baseline describes that machine and does not establish whole-job throughput or saved-state compatibility.
+Later development comparisons and release-candidate measurements run on temporary Compute Engine VMs, one Protobuf profile per VM, with every compared variant measured in the same plan.
+The operator process alone holds cloud credentials; benchmark VMs have no service account, and results pass the evidence gate before retention.
+A VM result is not compared causally with the Mac baseline or with another plan's machine.
 
 ## Evidence retention
 

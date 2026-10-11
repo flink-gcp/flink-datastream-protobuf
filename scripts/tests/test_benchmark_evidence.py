@@ -104,7 +104,9 @@ class EvidenceTest(unittest.TestCase):
                  ("manifest.properties", b"java.version=17\nsource.status=\n"),
                  ("PROTOBUF_CHILL-opened.properties", b"lane=PROTOBUF_CHILL\nstatus=unsupported\nreason=synthetic\n"),
                  ("measurement-source.patch", b"--- a/source\n+++ b/source\n"),
-                 ("console.log", b"Incomplete benchmark; synthetic failure\n")]
+                 ("console.log", b"Incomplete benchmark; synthetic failure\n"),
+                 ("vm-manifest.txt", b"gce.machine.type=c3-standard-8\n"),
+                 ("maintenance-events.log", b"2026-01-01T00:00:00Z NONE\n")]
         cases += [(name, (header + "\n").encode()) for name, header in gate.CSV_HEADERS.items()]
         inventory = gate.Inventory()
         inventory.archive(archive(cases))

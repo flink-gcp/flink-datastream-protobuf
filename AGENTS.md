@@ -26,10 +26,12 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just benchmark-tools-check <compiler>`: reject a compiler that is not the pinned version or cannot generate the benchmark corpus.
 - `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.
 - `just benchmark-run <version> <protobuf-major> <new-output>`: run the opt-in long measurements under ADR-0004 and the evidence-retention procedure in `docs/development.md`.
+- `just benchmark-build <version> <protobuf-major>` / `just benchmark-measure <mode> <version> <protobuf-major> <new-output>`: the two halves of those recipes, for runners that check host load between them.
 - `just benchmark-evidence-check <input> <new-output>`: validate retained benchmark bytes before upload; follow the human review procedure in `docs/development.md`.
 - `just benchmark-evidence-staged <new-output>`: validate the exact staged benchmark archives before an evidence commit.
 - `just benchmark-evidence-repository <new-output>`: inspect committed benchmark archives and retain member inventories without re-uploading the archives.
 - `just benchmark-evidence-test`: run synthetic content-gate tests without Maven or Thrift.
+- `just gce-benchmark plan|execute|status|collect|cleanup ...`: run benchmarks on temporary credential-free GCE VMs; `execute` requires `--approve` after the cost and ownership checks in `docs/development.md`, and `just gce-benchmark-test` runs its offline tests.
 - `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 

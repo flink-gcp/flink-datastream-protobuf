@@ -49,6 +49,8 @@ TEXT_NAMES = {
     "load-after-build.log", "load-before-build.log", "measurement-source.patch",
     "power-end.txt", "power-event-audit.txt", "power-events.log", "power-observations.log",
     "power-start.txt", "source-base.txt", "start-utc.txt",
+    # Temporary GCE runs: VM/toolchain identity and host-maintenance observations.
+    "vm-manifest.txt", "maintenance-events.log",
 }
 CSV_HEADERS = {
     "measurements.csv": "lane,workload,operation,deterministic,block,ns_per_op,derived_ops_per_second,allocated_bytes_per_op",
@@ -457,7 +459,7 @@ class Inventory:
 
 
 def report(inventory, source):
-    return {"formatVersion": 1, "policyVersion": 1,
+    return {"formatVersion": 1, "policyVersion": 2,
             "validatorSha256": digest(Path(__file__).read_bytes()),
             "automatedChecksPassed": True, "humanReviewRequired": True,
             "source": source, "members": sorted(inventory.members, key=lambda m: m["path"])}

@@ -113,13 +113,44 @@ benchmark-check version major output:
 benchmark-execute mode version major output:
     #!/usr/bin/env bash
     set -euo pipefail
-    mode="$1"; version="$2"; major="$3"; output="$4"
-    if [[ "$major" != 3 && "$major" != 4 ]]; then
-        printf 'Unsupported benchmark Protobuf major: %s\n' "$major" >&2
+    if [[ -e "$4" ]]; then
+        printf 'Benchmark output already exists; choose a new directory: %s\n' "$4" >&2
         exit 1
     fi
+    just benchmark-build "$2" "$3"
+    just benchmark-measure "$1" "$2" "$3" "$4"
+
+# Clean, generate, package, and run the benchmark contract tests without measuring.
+[positional-arguments]
+benchmark-build version major:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    declaration=$(just benchmark-arguments "$1" "$2")
+    eval "$declaration"
+    ./mvnw -ntp clean "${args[@]}" -Dtest=BenchmarkContractTest package
+
+# Measure a previously built tree; GCE runs gate host load between the two steps.
+[positional-arguments]
+benchmark-measure mode version major output:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mode="$1"; output="$4"
     if [[ -e "$output" ]]; then
         printf 'Benchmark output already exists; choose a new directory: %s\n' "$output" >&2
+        exit 1
+    fi
+    declaration=$(just benchmark-arguments "$2" "$3")
+    eval "$declaration"
+    ./mvnw -ntp "${args[@]}" "-Dbenchmark.mode=$mode" "-Dbenchmark.output=$output" exec:exec@run-benchmarks
+
+[private]
+[positional-arguments]
+benchmark-arguments version major:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="$1"; major="$2"
+    if [[ "$major" != 3 && "$major" != 4 ]]; then
+        printf 'Unsupported benchmark Protobuf major: %s\n' "$major" >&2
         exit 1
     fi
     case "$version" in
@@ -128,8 +159,7 @@ benchmark-execute mode version major output:
         *) printf 'Unsupported benchmark Flink version: %s\n' "$version" >&2; exit 1 ;;
     esac
     args=(-Pbenchmarks "-Pprotobuf$major" "-Dflink.compat=$adapter" "-Dflink.version=$version" "-Dbenchmark.thrift.compiler={{benchmark_thrift}}")
-    ./mvnw -ntp clean "${args[@]}" -Dtest=BenchmarkContractTest package
-    ./mvnw -ntp "${args[@]}" "-Dbenchmark.mode=$mode" "-Dbenchmark.output=$output" exec:exec@run-benchmarks
+    declare -p args
 
 # Validate a directory or normalized tar.gz and retain the exact checked copy and inventory.
 [positional-arguments]
@@ -149,3 +179,12 @@ benchmark-evidence-staged output:
 # Exercise the content gate with synthetic safe and unsafe inputs only.
 benchmark-evidence-test:
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_benchmark_evidence.py' -v
+
+# Operator-side temporary GCE runs; read the GCE section of docs/development.md before provisioning.
+[positional-arguments]
+gce-benchmark *args:
+    @python3 scripts/gce_benchmark.py "$@"
+
+# Exercise the GCE operator tooling against a recording gcloud double, without cloud access.
+gce-benchmark-test:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_gce_benchmark.py' -v
