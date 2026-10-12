@@ -27,6 +27,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just benchmark-check <version> <protobuf-major> <new-output>` / `just benchmark-smoke <version> <protobuf-major> <new-output>`: validate the benchmark corpus, with short JMH forks in smoke mode.
 - `just benchmark-run <version> <protobuf-major> <new-output>`: run the opt-in long measurements under ADR-0004 and the evidence-retention procedure in `docs/development.md`.
 - `just benchmark-build <version> <protobuf-major>` / `just benchmark-measure <mode> <version> <protobuf-major> <new-output>`: the two halves of those recipes, for runners that check host load between them.
+- `just benchmark-pair <version> <protobuf-major> <new-output>`: run the same long protocol for only the native/Chill Protobuf pair when comparing native serializer changes.
 - `just benchmark-evidence-check <input> <new-output>`: validate retained benchmark bytes before upload; follow the human review procedure in `docs/development.md`.
 - `just benchmark-evidence-staged <new-output>`: validate the exact staged benchmark archives before an evidence commit.
 - `just benchmark-evidence-repository <new-output>`: inspect committed benchmark archives and retain member inventories without re-uploading the archives.

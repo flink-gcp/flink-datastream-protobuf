@@ -38,7 +38,12 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.regex.Pattern;
 
-/** Opt-in entry point: correctness gates, bounded smoke, or reproducible independent forks. */
+/**
+ * Opt-in entry point: correctness gates, bounded smoke, or reproducible independent forks.
+ *
+ * <p>The {@code pair} mode measures only the native/Chill Protobuf pair with the long-run block
+ * contract, for controlled comparisons of native serializer changes.
+ */
 public final class BenchmarkSuite {
     static final List<String> OPERATIONS =
             List.of(
@@ -54,9 +59,9 @@ public final class BenchmarkSuite {
     private BenchmarkSuite() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2 || !List.of("check", "smoke", "run").contains(args[0])) {
+        if (args.length != 2 || !List.of("check", "smoke", "run", "pair").contains(args[0])) {
             throw new IllegalArgumentException(
-                    "Usage: BenchmarkSuite <check|smoke|run> <new-output-directory>");
+                    "Usage: BenchmarkSuite <check|smoke|run|pair> <new-output-directory>");
         }
         Path directory = Path.of(args[1]).toAbsolutePath();
         Lane.require(!Files.exists(directory), "Output already exists: " + directory);
@@ -92,6 +97,10 @@ public final class BenchmarkSuite {
             return;
         }
         boolean smoke = args[0].equals("smoke");
+        boolean pairOnly = args[0].equals("pair");
+        Lane.require(
+                !pairOnly || supported.contains(Lane.PROTOBUF_CHILL),
+                "Paired measurement requires the Chill Protobuf lane");
         List<String> workloads = smoke ? List.of("collections") : Corpus.WORKLOADS;
         int forks = smoke ? 1 : 5;
         List<String> expected = new ArrayList<>();
@@ -101,7 +110,9 @@ public final class BenchmarkSuite {
                     // Alternate all representations by block; keep the Protobuf pair adjacent.
                     List<List<Lane>> groups = new ArrayList<>();
                     for (Lane lane : supported) {
-                        if (lane != Lane.PROTOBUF_NATIVE && lane != Lane.PROTOBUF_CHILL) {
+                        if (!pairOnly
+                                && lane != Lane.PROTOBUF_NATIVE
+                                && lane != Lane.PROTOBUF_CHILL) {
                             groups.add(List.of(lane));
                         }
                     }

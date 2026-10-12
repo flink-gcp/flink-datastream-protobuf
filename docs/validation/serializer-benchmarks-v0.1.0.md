@@ -320,7 +320,7 @@ Worker-thread allocation samples include byte arrays allocated by `CodedOutputSt
 Execution samples also reach sizing traversal, identity maps, generated field access, and decoder refill paths.
 The retained allocation/execution event exports cover native/Chill scalar serialize/deserialize and native collection serialization; diagnostic timings are not included in the baseline.
 
-The source explains these sites: [serialization and deserialization](../../src/main/java/io/github/flink/gcp/protobuf/ProtobufTypeSerializer.java) create stream-based coded wrappers for each record, while [safe sizing](../../src/main/java/io/github/flink/gcp/protobuf/ProtobufMessageSize.java) builds per-call traversal metadata and reads populated fields.
+The measured source explains these sites: [serialization and deserialization](https://github.com/flink-gcp/flink-datastream-protobuf/blob/c2a1d2c2d923196df5394d2923d3c9438e8737c1/src/main/java/io/github/flink/gcp/protobuf/ProtobufTypeSerializer.java) create stream-based coded wrappers for each record, while [safe sizing](https://github.com/flink-gcp/flink-datastream-protobuf/blob/c2a1d2c2d923196df5394d2923d3c9438e8737c1/src/main/java/io/github/flink/gcp/protobuf/ProtobufMessageSize.java) builds per-call traversal metadata and reads populated fields.
 Protobuf 4.33.6's `CodedOutputStream.newInstance(OutputStream)` and `CodedInputStream.newInstance(InputStream)` use 4,096-byte default buffers; Chill's adapter uses `toByteArray` for writing and parses a payload array when reading.
 The pinned Protobuf source locations are `CodedOutputStream.DEFAULT_BUFFER_SIZE`, `CodedInputStream.StreamDecoder`, and `AbstractMessageLite.toByteArray`; dependency identities are in the classpath manifest.
 JFR supports identifying exercised allocation sites, but sampling weights do not quantify each site's contribution to the baseline time gap.
@@ -329,6 +329,7 @@ No controlled ablation was performed.
 The first optimization candidates are reducing fixed per-record buffers for small frames and reducing sizing traversal allocations while preserving overflow, depth, size, framing, classloading, and concurrency guarantees.
 Construction benchmarks and collection-heavy messages must remain separate acceptance cases when evaluating such changes.
 This issue establishes the baseline and investigation; it makes no production optimization or fastest-serializer claim.
+The [buffer-allocation report](serializer-buffer-allocation.md) measures the later small-frame buffer change separately, on a different machine.
 
 ## Benchmark remeasurement for 1.0.0
 

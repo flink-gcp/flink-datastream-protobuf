@@ -24,6 +24,7 @@ limitations under the License.
 - Date: 2026-09-12
 - Evidence content gate added: 2026-09-18, [issue #41](https://github.com/flink-gcp/flink-datastream-protobuf/issues/41)
 - Temporary GCE execution added: 2026-10-11, [issue #44](https://github.com/flink-gcp/flink-datastream-protobuf/issues/44)
+- Paired native/Chill mode added: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -62,6 +63,9 @@ There is no simultaneous confidence claim across all workload/operation cells.
 Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf matrix in CI.
 Do not impose timing thresholds on shared runners.
 Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 17, and both supported Protobuf profiles.
+A controlled comparison of native serializer changes may use a paired mode that runs only the native and Chill Protobuf lanes.
+It keeps the correctness gates, fork, warmup, measurement, and alternating block order of the long run, so each variant has its own native/Chill intervals.
+The paired mode does not produce cross-format results and does not replace a complete baseline.
 This baseline describes that machine and does not establish whole-job throughput or saved-state compatibility.
 Later development comparisons and release-candidate measurements run on temporary Compute Engine VMs, one Protobuf profile per VM, with every compared variant measured in the same plan.
 The operator process alone holds cloud credentials; benchmark VMs have no service account, and results pass the evidence gate before retention.

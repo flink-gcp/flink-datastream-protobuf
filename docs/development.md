@@ -61,6 +61,7 @@ mise x -- just --list
 | `just benchmark-check <version> <major> <output>` | Validate every benchmark lane without timing; output must be new |
 | `just benchmark-smoke <version> <major> <output>` | Validate the corpus and run short JMH harness checks |
 | `just benchmark-run <version> <major> <output>` | Collect the five-block benchmark baseline and parity report |
+| `just benchmark-pair <version> <major> <output>` | Collect the same five-block parity report for only the native/Chill Protobuf lanes |
 | `just benchmark-evidence-check <input> <new-output>` | Validate a benchmark directory or normalized `.tar.gz`; retain checked bytes and their inventory |
 | `just benchmark-evidence-staged <new-output>` | Validate retained benchmark archives from the Git index before committing |
 | `just benchmark-evidence-repository <new-output>` | Validate retained benchmark archives from HEAD and retain inspection inventories |
@@ -217,26 +218,31 @@ The key restriction tests retain both inferred and explicit keyBy bypass control
 Those controls document unsupported message-key use; they are not a promise that the library rejects every such use.
 See the [construction and configuration examples](usage.md) for registration timing, defaults, and explicit type settings.
 
-The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without materializing the serialized message in a payload array.
+The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without allocating a payload array for each record.
+Payloads of at most 4 KiB are encoded into a lazily allocated 4 KiB array that the serializer instance retains; larger payloads stream through Protobuf's per-call coded-output buffer.
 Before writing the prefix, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget.
 It uses a traversal stack and per-call identity-based summaries for shared child values.
 Ordinary values are encoded once; ambiguous proto2 strings additionally count generated root output to preserve retained invalid UTF-8 bytes without guessing Java getter names.
 The whole graph is validated before this single counting pass, including when several nested strings are ambiguous; its cost is measured separately.
 Sizing allocates traversal metadata for each distinct message or unknown-field set visited.
-The output wrapper rejects writes beyond the calculated length and checks the actual byte count after flushing.
+The streaming output wrapper rejects writes beyond the calculated length as they happen and checks the byte count after flushing.
+The array encoder is bounded only by its 4 KiB array, so its remaining space is checked after encoding and before a small frame is written, reporting both overruns and short output.
 Tests compare the calculated lengths with actual Protobuf output for scalar and packed encodings, Unicode and retained proto2 string bytes, and unknown fields.
 A separate shared-data test verifies rejection before encoding when the logical size exceeds 4 GiB and the runtime's integer size calculation overflows.
 The limits constrain accepted inputs; they do not promise a bound on total heap usage or sufficient stack capacity for arbitrarily high configured recursion limits.
 
 Reading validates the prefix before allocating from its value and bounds underlying reads to the current frame.
+A payload of at most 4 KiB is read completely into the same retained array and parsed by an array decoder without aliasing; larger payloads stream through Protobuf's per-call coded-input buffer.
+Tests overwrite that array after decoding and check that bytes, strings, unknown fields, and nested values are unchanged.
 Object copy returns the immutable input instance; stream copy preserves frame bytes and checks length and truncation without parsing payload semantics or nesting.
-Stream copy lazily allocates and reuses a private 4 KiB buffer so Flink memory output views can grow as needed.
+Stream copy reuses the same 4 KiB array in chunks so Flink memory output views can grow as needed.
 Malformed input and I/O failures may leave partial input consumption or output; no resynchronization or transactional output is promised.
 The tests also cover parser reconstruction after Java serialization with an isolated generated-message classloader.
 Validated defaults, parsers, and normalized schemas are reused through `ClassValue`, keyed by the exact application class rather than its name.
 Protobuf's generated accessor tables already retain reflective field methods; the library adds no per-record method lookup or duplicate field-method cache.
-Serializer-local copy buffers remain independent, and record size/depth summaries live for one sizing call only.
+Each duplicate owns its scratch array, so instances remain thread-confined, and record size/depth summaries live for one sizing call only.
 The [local performance comparison](validation/serializer-performance.md) measures warm construction and representative serialization paths before and after these changes, including the raw-string counting path.
+The [buffer-allocation report](validation/serializer-buffer-allocation.md) separates the effect of the small-frame scratch array on writes and reads with controlled variants measured on temporary GCE VMs.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
 `snapshotConfiguration()` returns an internal version-1 `ProtobufTypeSerializerSnapshot`.
@@ -277,6 +283,7 @@ Paths below are relative to the repository root.
 | `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
 | `src/benchmark/{java,test,proto,avro,thrift}/` | Opt-in harness, negative tests, and equivalent corpus schemas | The `benchmarks` profile compiles these as test inputs and generates sources under `target`; none enter the production jar |
 | `docs/validation/data/serializer-benchmarks-v0.1.0/` | Fixed measurement and diagnostic evidence with source provenance | The [data inventory](validation/data/serializer-benchmarks-v0.1.0/README.md) records checksums and supported contents; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
+| `docs/validation/data/serializer-buffer-allocation-v0.2.0/` | Paired native/Chill measurements of the #42 buffer variants with GCE run records | The [data inventory](validation/data/serializer-buffer-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
 Its `ControlledSource`, `RuntimeJob`, and `CommonTypesRuntimeJob` run inside the MiniCluster jobs started by the integration tests.
@@ -427,6 +434,8 @@ Generation requires the Thrift compiler pinned in `benchmarks.just`; `just bench
 On macOS, put a modern Bison ahead of `/usr/bin/bison`, which is too old (Homebrew's `bison` is keg-only, so prepend `$(brew --prefix bison)/bin` to `PATH`); after fixing `PATH`, rerun with the same cache without deleting `<cache>/build`.
 Set `BENCHMARK_THRIFT_COMPILER` to `<cache>/build/compiler/cpp/bin/thrift`; otherwise generation uses `thrift` from `PATH` and rejects any other version.
 The [0.1.0 benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the corpus, operation semantics, matrices, and evidence format.
+`just benchmark-pair` keeps the long-run fork, warmup, measurement, and block-order settings but measures only the native and Chill Protobuf lanes.
+Use it for controlled comparisons of native serializer changes; it does not replace a complete cross-format baseline.
 These recipes do not replace ordinary native verification or binary compatibility checks.
 Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
 The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
