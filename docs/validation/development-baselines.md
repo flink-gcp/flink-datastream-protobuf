@@ -44,7 +44,8 @@ The 2.x jar is compiled at 2.2.1 and also used unchanged at 2.3.0; the LTS jar i
 Both retain the development POM version of the captured source, such as `0.1.0-SNAPSHOT` in the v0.1.0 baseline, with the adapter line identified separately in the manifest.
 They are not renamed to imply published release coordinates.
 Capture keeps the source archive and revision, effective Maven model, exact command arguments, resolved dependency tree and jars, JDK identity, and protoc version and executable checksum.
-The application jars contain the original and changed schemas; neither application is on the parent classpath of the isolated recovery jobs.
+The v0.1.0 application jars contain the original and changed schemas; capture from the current source also retains the reserved, incompatible, and enum-pair schemas described in [runtime state recovery](runtime-recovery.md#schema-changes).
+No application is on the parent classpath of the isolated recovery jobs.
 
 The source archive includes the schemas/imports and the reader and consumer sources.
 The companion `tools.jar` contains compiled test instruments, test messages, and test resources including the existing fixed fixtures; it is never attached as a Maven publication artifact.
@@ -75,6 +76,7 @@ State manifests record settings, scalar-keyed ValueState/MapState and operator L
 The retained application sources define the expected nested runtime values.
 Capture archives state before closing the writer, deletes the writer's original state storage, and restores the relocated archives before checking continued processing.
 It also checks checkpoint failure/replay and savepoint rejection for a schema change and a decreased size limit.
+The rejected schema change is the field addition in the v0.1.0 bundles and the `count` type change in capture from the current source, which accepts the field addition.
 Incomplete archives cannot pass by finding files in the original writer directories.
 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.

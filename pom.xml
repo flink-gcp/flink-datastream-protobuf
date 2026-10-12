@@ -29,7 +29,7 @@ limitations under the License.
     <artifactId>flink-datastream-protobuf</artifactId>
     <version>0.2.0-SNAPSHOT</version>
     <name>Flink DataStream Protobuf</name>
-    <description>Native Protocol Buffers type integration for Apache Flink DataStream, with explicit type information, factory registration, and versioned descriptor snapshots for unchanged-schema serializer restoration.</description>
+    <description>Native Protocol Buffers type integration for Apache Flink DataStream, with explicit type information, factory registration, and versioned descriptor snapshots for serializer restoration across unchanged and supported changed schemas.</description>
     <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>
     <inceptionYear>2026</inceptionYear>
     <licenses>
@@ -104,6 +104,22 @@ limitations under the License.
                         <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/changed/generated</compileSourceRoot></compileSourceRoots>
                         <outputDirectory>${project.build.directory}/runtime-app/changed/classes</outputDirectory>
                     </configuration></execution>
+                    <execution><id>compile-runtime-reserved</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/reserved/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/reserved/classes</outputDirectory>
+                    </configuration></execution>
+                    <execution><id>compile-runtime-incompatible</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/incompatible/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/incompatible/classes</outputDirectory>
+                    </configuration></execution>
+                    <execution><id>compile-runtime-enum-original</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/enum-original/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/enum-original/classes</outputDirectory>
+                    </configuration></execution>
+                    <execution><id>compile-runtime-enum-added</id><phase>test-compile</phase><goals><goal>testCompile</goal></goals><configuration>
+                        <compileSourceRoots><compileSourceRoot>${project.basedir}/src/test/runtime-app/java</compileSourceRoot><compileSourceRoot>${project.build.directory}/runtime-app/enum-added/generated</compileSourceRoot></compileSourceRoots>
+                        <outputDirectory>${project.build.directory}/runtime-app/enum-added/classes</outputDirectory>
+                    </configuration></execution>
                 </executions>
             </plugin>
             <plugin>
@@ -173,6 +189,30 @@ limitations under the License.
                         <outputDirectory>${project.build.directory}/runtime-app/changed/generated</outputDirectory>
                         <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
                         <outputDescriptorFile>${project.build.directory}/runtime-app/changed/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution>
+                    <execution><id>generate-runtime-reserved</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/reserved</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/reserved/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/reserved/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution>
+                    <execution><id>generate-runtime-incompatible</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/incompatible</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/incompatible/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/incompatible/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution>
+                    <execution><id>generate-runtime-enum-original</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/enum-original</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/enum-original/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/enum-original/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                    </configuration></execution>
+                    <execution><id>generate-runtime-enum-added</id><goals><goal>generate-test</goal></goals><configuration>
+                        <sourceDirectories><sourceDirectory>${project.basedir}/src/test/runtime-app/proto/enum-added</sourceDirectory></sourceDirectories>
+                        <outputDirectory>${project.build.directory}/runtime-app/enum-added/generated</outputDirectory>
+                        <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
+                        <outputDescriptorFile>${project.build.directory}/runtime-app/enum-added/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
                     </configuration></execution></executions>
             </plugin>
             <!-- Use this project's complete notices rather than an ASF resource bundle. -->
@@ -183,6 +223,10 @@ limitations under the License.
                 <executions><execution><id>package-runtime-applications</id><phase>process-test-classes</phase><goals><goal>run</goal></goals><configuration><skip>${maven.test.skip}</skip><target>
                     <jar destfile="${project.build.directory}/runtime-app/application-original.jar" basedir="${project.build.directory}/runtime-app/original/classes"/>
                     <jar destfile="${project.build.directory}/runtime-app/application-changed.jar" basedir="${project.build.directory}/runtime-app/changed/classes"/>
+                    <jar destfile="${project.build.directory}/runtime-app/application-reserved.jar" basedir="${project.build.directory}/runtime-app/reserved/classes"/>
+                    <jar destfile="${project.build.directory}/runtime-app/application-incompatible.jar" basedir="${project.build.directory}/runtime-app/incompatible/classes"/>
+                    <jar destfile="${project.build.directory}/runtime-app/application-enum-original.jar" basedir="${project.build.directory}/runtime-app/enum-original/classes"/>
+                    <jar destfile="${project.build.directory}/runtime-app/application-enum-added.jar" basedir="${project.build.directory}/runtime-app/enum-added/classes"/>
                     <jar destfile="${project.build.directory}/baseline/tools.jar" basedir="${project.build.testOutputDirectory}"/>
                 </target></configuration></execution></executions>
             </plugin>

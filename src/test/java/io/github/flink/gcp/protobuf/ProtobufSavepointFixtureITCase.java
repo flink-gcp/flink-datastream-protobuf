@@ -120,7 +120,7 @@ class ProtobufSavepointFixtureITCase {
                             "all",
                             settings,
                             relocated.toUri().toString(),
-                            false,
+                            "original",
                             false)) {
                 reader.assertRestored(0, 8);
                 reader.process(8, 16, 0);
@@ -145,7 +145,7 @@ class ProtobufSavepointFixtureITCase {
         String identity = backend + "-" + settings.deterministic();
         Path writerDirectory = temporary.resolve(identity + "-writer");
         try (var writer =
-                harness.start(writerDirectory, backend, "all", settings, null, false, false)) {
+                harness.start(writerDirectory, backend, "all", settings, null, "original", false)) {
             writer.process(0, 8, 0);
             saved = Path.of(URI.create(writer.savepoint(temporary.resolve(identity + "-saved"))));
         }

@@ -20,17 +20,18 @@ limitations under the License.
 
 # Protobuf updates and state compatibility
 
-Adding a field can preserve Protobuf binary compatibility, but the current library rejects restoring state with that changed schema.
-The implemented 0.1.0 contract accepts unchanged schemas; supported schema evolution is planned for 0.2.0.
+Adding a field can preserve Protobuf binary compatibility, and the current development library restores state across that change.
+It accepts unchanged schemas and the [supported schema changes](#schema-changes), and it rejects other changes to the declarations that saved values reach when the job restores its state.
 No library release has been published yet.
 The 0.x versions denote development milestones; 1.0.0 is the planned first Maven Central release.
 Milestone upgrade checks use fixed development artifacts and fixtures with exact source/checksum provenance.
 
 ## Development builds before 1.0.0
 
-The current source version is `0.2.0-SNAPSHOT`, a development build that still implements the 0.1.0 unchanged-schema contract.
+The current source version is `0.2.0-SNAPSHOT`, a development build that restores supported schema changes.
+The 0.1.0 milestone accepted unchanged schemas only.
 Compatibility between arbitrary development builds is not implied.
-Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by the tests added under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks.
+Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by the tests that [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) adds for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks; see [verified coverage](#verified-coverage-and-upgrade-procedure) for the state that the current tests restore.
 The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
 Each development milestone must document its actual breaks, supported upgrade paths, and migration or fresh-state/replay requirements before completion.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
@@ -71,26 +72,37 @@ An old parser treats the new field as unknown; binary message parsing and serial
 These are Protobuf binary-format properties, not this library's state-restore policy.
 See the [Protobuf schema-update rules](https://protobuf.dev/programming-guides/proto3/#updating).
 
-The current state-restore results below assume supported snapshot formats, unchanged Java/message names, and nondecreasing size/depth limits.
+The state-restore results below assume supported snapshot formats, unchanged Java/message names, and nondecreasing size/depth limits.
 Deterministic-writing mode may change in either direction.
+They describe the forward direction: the saved state was written with the old schema and is restored by an application containing only the new generated classes.
 
 | Schema change | Protobuf binary-format rule | Current library state restore |
 |---|---|---|
-| Complete normalized schema unchanged | Same schema | Accepted by the serializer compatibility check |
-| Add a proto3 field with a fresh number | Wire-safe; new code must handle the field being absent in old data | Rejected because the saved and new descriptors differ |
-| Remove a field and reserve its number | Wire-safe when the number is not reused | Rejected |
-| Add an enum value | Wire-safe; application source code may still need changes | Rejected |
+| Complete normalized schema unchanged | Same schema | Accepted |
+| Add a proto3 field with a fresh number | Wire-safe; new code must handle the field being absent in old data | Accepted when neither the number nor the name is a saved field or reservation, the number is not a saved extension number, and the field is not required |
+| Remove a field and reserve its number | Wire-safe when the number is not reused | Accepted; a removal without reserving the number is rejected |
+| Add an enum value | Wire-safe; application source code may still need changes | Accepted when the name and number are new and unreserved, the number is not an alias of a saved value, the first value stays first, and saved values keep their order |
+| Remove an enum value | Saved values may carry the removed number | Rejected, even when the number is reserved |
 | Renumber an existing field | Wire-unsafe | Rejected |
 | Change `int32` to `int64` | Conditionally safe; values written later can exceed an old reader's range | Rejected |
 
 The binary classifications follow the [proto3 guide](https://protobuf.dev/programming-guides/proto3/#updating); ProtoJSON has different rules.
-The current library compares the complete normalized descriptor content, including transitive imports, options, and declarations elsewhere in those files.
-Only source-location/comment metadata (`SourceCodeInfo`) is removed; declaration order and other metadata changes can therefore cause rejection even when payload bytes remain readable.
-Runtime or protoc updates can affect these descriptors without an edit to the application's own `.proto` file.
+The library applies the [directional evaluator](adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) to the complete saved descriptors.
+It compares the messages and enums that saved bytes can reach from the root message through retained fields, together with their enclosing messages and declaring files.
+Within those declarations, every difference other than the supported changes above and added reservations or oneofs is rejected, including options, defaults, presence, oneof membership, and the order of retained fields or enum values.
+Declarations that saved bytes cannot reach, such as unrelated messages in the same file, do not affect the decision.
+Descriptor normalization removes only source-location/comment metadata (`SourceCodeInfo`), so runtime or protoc updates can still change a reached declaration without an edit to the application's own `.proto` file.
 The Protobuf version number itself is not a field in the serializer compatibility decision.
 
-This restriction is deliberate in the [0.1.0 contract](adr/0001-native-protobuf-type-integration.md#unchanged-schema-restore-in-010).
-The [runtime recovery test](../src/test/java/io/github/flink/gcp/protobuf/ProtobufRecoveryITCase.java) verifies rejection of a field addition for ValueState, MapState values, and operator ListState on HashMap and RocksDB.
+Restoring with the older schema is a different direction, and it is often rejected: the old schema removes the added field without reserving its number, or removes the added enum value.
+A rejected restore fails the job with a message that names the first incompatibility, for example:
+
+```text
+Cannot restore Protobuf serializer for io.example.Events$Event (example.Event): supply a supported generated class that can read the saved schema through Flink's user-code classloader. Cause: Generated class cannot read the saved Protobuf schema: Field 2 (count) of example.Event changes type from INT32 to SINT32
+```
+
+A decreased size or depth limit fails with Flink's `StateMigrationException`, which does not name the limit.
+The [schema-evolution test](../src/test/java/io/github/flink/gcp/protobuf/ProtobufSchemaEvolutionITCase.java) verifies the accepted and rejected changes in separate jobs for ValueState, MapState values, and operator ListState on HashMap and RocksDB.
 
 ## Java runtime version updates
 
@@ -118,6 +130,12 @@ The [runtime suite](validation/runtime-recovery.md) restores complete savepoints
 It does not yet verify a complete savepoint written by one Protobuf version and restored by another, including patch and minor updates.
 Separate fixture directories record each tested environment; they do not indicate that cross-version restore was attempted and failed.
 
+The schema-evolution tests write and restore state with the same development build.
+They check the restored values, continued processing, and a second restore from a savepoint that the new application wrote.
+A field removed with a reservation remains in restored values as an unknown field, and the new application's savepoints keep it; the test reads the value back with the original schema.
+Restoring state written by the [retained 0.1.0 artifact](validation/development-baselines.md#retained-v010-baseline) with these changes is tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) and not yet verified.
+The retained 0.1.0 runtime schema declares no enum, so enum-value addition is verified only with state written by 0.2.0 development builds.
+
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 
 1. Write a savepoint with the old application and retain its exact application/library jars, schemas, settings, operator UIDs, state names, and runtime versions.
@@ -129,17 +147,14 @@ For a validated compatible update, stop the old job with a savepoint and resume 
 See [Flink's savepoint operations](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/ops/state/savepoints/#stopping-a-job-with-savepoint).
 An intermediate run without restoring state does not convert old state or make an incompatible schema compatible.
 If restoration is rejected, retain the old deployment or explicitly choose a documented migration or fresh-state/replay procedure.
-Starting fresh requires an explicit decision about rebuilding state and replaying input; the current library provides no changed-schema migration path.
+Starting fresh requires an explicit decision about rebuilding state and replaying input; the library has no state-migration step and provides no migration path for rejected schema changes.
 The [development guide](development.md#test-resources-and-version-updates) contains the capture commands and dependency-update checks.
 
-## Planned schema evolution
+## Preparing schema changes
 
-The [0.2.0 design](adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) adds a directional evaluator for supported field additions, removals/reservations, and enum additions, including referenced types.
-The evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented and tested with descriptor pairs, but snapshot restore does not use it yet.
-Connecting it to restore and verifying restoration from retained 0.1.0 development state are tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16); until then, the current library rejects every schema change listed above.
-The design remains conservative about conditional numeric conversions and other unsupported changes; parsing success alone does not prove that values retain their meaning.
+The evaluator stays conservative about conditional numeric conversions and other unsupported changes; parsing success alone does not prove that values retain their meaning.
 
-Prepare schema changes for that evaluator by reserving the number of every removed field, for example `reserved 2;`.
+Reserve the number of every removed field, for example `reserved 2;`.
 The evaluator rejects a removal without a reservation, and it rejects a later change that removes a reservation to reuse the number.
 Protobuf parsing keeps old values of a removed field as unknown fields, so an unreserved number could later be parsed as an unrelated declaration.
 No descriptor comparison can detect a field that keeps its number, name, and type but changes its meaning, so keep a removed number reserved instead of reusing it.

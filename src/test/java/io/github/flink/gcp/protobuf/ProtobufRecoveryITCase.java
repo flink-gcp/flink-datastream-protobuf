@@ -25,7 +25,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 import static io.github.flink.gcp.protobuf.RuntimeRecoveryHarness.BASELINE;
@@ -60,7 +59,8 @@ class ProtobufRecoveryITCase {
     @ValueSource(strings = {"hashmap", "rocksdb"})
     void completedCheckpointRestoresAllStateAndReplaysUnsavedUpdates(String backend)
             throws Exception {
-        try (var job = harness.start(directory(), backend, "all", BASELINE, null, false, true)) {
+        try (var job =
+                harness.start(directory(), backend, "all", BASELINE, null, "original", true)) {
             job.process(0, 8, 0);
             job.checkpoint();
             job.process(8, 12, 0);
@@ -85,7 +85,8 @@ class ProtobufRecoveryITCase {
         for (var settings : transitions) {
             String next;
             try (var job =
-                    harness.start(directory(), backend, "all", settings, original, false, false)) {
+                    harness.start(
+                            directory(), backend, "all", settings, original, "original", false)) {
                 job.assertRestored(0, 8);
                 if (settings.size() > BASELINE.size()) {
                     command(job.directory, "large", "true");
@@ -97,7 +98,7 @@ class ProtobufRecoveryITCase {
                 next = job.savepoint(directory());
             }
             try (var restored =
-                    harness.start(directory(), backend, "all", settings, next, false, false)) {
+                    harness.start(directory(), backend, "all", settings, next, "original", false)) {
                 restored.assertRestored(0, 12);
                 restored.process(12, 20, 0);
             }
@@ -105,7 +106,8 @@ class ProtobufRecoveryITCase {
         String deterministic =
                 saved(backend, "all", new RuntimeRecoveryHarness.Settings(true, 1024, 4));
         try (var job =
-                harness.start(directory(), backend, "all", BASELINE, deterministic, false, false)) {
+                harness.start(
+                        directory(), backend, "all", BASELINE, deterministic, "original", false)) {
             job.assertRestored(0, 8);
             job.process(8, 12, 0);
         }
@@ -113,7 +115,7 @@ class ProtobufRecoveryITCase {
 
     @ParameterizedTest
     @ValueSource(strings = {"hashmap", "rocksdb"})
-    void eachStateKindRejectsDecreasedLimitsAndChangedSchema(String backend) throws Exception {
+    void eachStateKindRejectsDecreasedLimits(String backend) throws Exception {
         for (String kind : List.of("value", "map", "operator")) {
             String original = saved(backend, kind, BASELINE);
             for (var reduced :
@@ -122,60 +124,38 @@ class ProtobufRecoveryITCase {
                             new RuntimeRecoveryHarness.Settings(false, 1024, 3),
                             new RuntimeRecoveryHarness.Settings(true, 512, 8),
                             new RuntimeRecoveryHarness.Settings(true, 2048, 3))) {
-                rejected(backend, kind, reduced, original, false);
+                rejected(backend, kind, reduced, original);
             }
-            rejected(backend, kind, BASELINE, original, true);
             String raised;
             try (var job =
-                    harness.start(directory(), backend, kind, RAISED, original, false, false)) {
+                    harness.start(
+                            directory(), backend, kind, RAISED, original, "original", false)) {
                 job.assertRestored(0, 8);
                 job.process(8, 12, 0);
                 raised = job.savepoint(directory());
             }
-            rejected(
-                    backend,
-                    kind,
-                    new RuntimeRecoveryHarness.Settings(true, 1024, 8),
-                    raised,
-                    false);
-            rejected(
-                    backend,
-                    kind,
-                    new RuntimeRecoveryHarness.Settings(true, 2048, 4),
-                    raised,
-                    false);
+            rejected(backend, kind, new RuntimeRecoveryHarness.Settings(true, 1024, 8), raised);
+            rejected(backend, kind, new RuntimeRecoveryHarness.Settings(true, 2048, 4), raised);
         }
     }
 
     private String saved(String backend, String kind, RuntimeRecoveryHarness.Settings settings)
             throws Exception {
-        try (var job = harness.start(directory(), backend, kind, settings, null, false, false)) {
+        try (var job =
+                harness.start(directory(), backend, kind, settings, null, "original", false)) {
             job.process(0, 8, 0);
             return job.savepoint(directory());
         }
     }
 
     private void rejected(
-            String backend,
-            String kind,
-            RuntimeRecoveryHarness.Settings settings,
-            String savepoint,
-            boolean changed)
+            String backend, String kind, RuntimeRecoveryHarness.Settings settings, String savepoint)
             throws Exception {
         try (var job =
-                harness.start(directory(), backend, kind, settings, savepoint, changed, false)) {
-            Throwable failure = job.failure();
-            List<String> causes = new ArrayList<>();
-            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-                causes.add(cause.getClass().getName() + ": " + cause.getMessage());
-            }
-            assertThat(String.join("\n", causes))
-                    .containsAnyOf("StateMigrationException", "different Protobuf schema");
-            assertThat(String.join("\n", causes))
-                    .containsAnyOf("incompatible", "different Protobuf schema");
-            if (changed) {
-                assertThat(String.join("\n", causes)).contains(RuntimeRecoveryHarness.MESSAGE);
-            }
+                harness.start(directory(), backend, kind, settings, savepoint, "original", false)) {
+            assertThat(job.failure())
+                    .hasStackTraceContaining("StateMigrationException")
+                    .hasStackTraceContaining("incompatible");
         }
     }
 }
