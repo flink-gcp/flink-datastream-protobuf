@@ -22,7 +22,7 @@ limitations under the License.
 
 ## Toolchain
 
-The Maven Wrapper pins Maven 3.9.16; all Maven recipes in just invoke the wrapper.
+The Maven Wrapper pins Maven 3.10.0; all Maven recipes in just invoke the wrapper.
 The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, uv, Hugo Extended 0.164.0, and Go 1.26.5.
@@ -553,6 +553,7 @@ The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inhe
 
 Dependabot checks Maven and GitHub Actions weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
 During dependency maintenance, also check the `protobuf4` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
+Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.
 Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.
 Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including new exact-version fixtures and matrix checks.
 Keep each Protobuf runtime and protoc pair together.
