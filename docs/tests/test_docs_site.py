@@ -100,10 +100,44 @@ def test_invalid_retention_is_rejected(helper, count):
 
 def test_no_stable_release_and_zero_series_allow_development_only(helper):
     assert helper.select_releases([], 2) == []
-    assert (
-        helper.select_releases([release("v0.1.0"), release("v1.0.0", draft=True)], 2)
-        == []
-    )
+    assert helper.select_milestones([]) == []
+    releases = [
+        release("v0.1.0"),
+        release("v0.2.0", prerelease=True),
+        release("v1.0.0", draft=True),
+    ]
+    assert helper.select_releases(releases, 2) == []
+
+
+def test_milestones_keep_latest_patch_of_each_zero_minor_prerelease(helper):
+    releases = [
+        release(tag, prerelease=True)
+        for tag in ("v0.1.0", "v0.10.0", "v0.2.1", "v0.1.1", "v0.2.0")
+    ]
+    releases += [
+        release("v0.3.0"),
+        release("v0.4.0", prerelease=True, draft=True),
+        release("v0.5.0", prerelease=True, published_at=None),
+        release("v0.6.0-rc1", prerelease=True),
+        release("v1.1.0", prerelease=True),
+    ]
+    assert helper.select_milestones(releases) == [(0, 10, 0), (0, 2, 1), (0, 1, 1)]
+    assert helper.select_milestones(list(reversed(releases))) == [
+        (0, 10, 0),
+        (0, 2, 1),
+        (0, 1, 1),
+    ]
+    assert helper.select_releases(releases, 2) == []
+
+
+def test_milestones_leave_with_the_first_stable_release(helper):
+    milestones = [release(tag, prerelease=True) for tag in ("v0.1.0", "v0.2.0")]
+    assert helper.select_milestones(
+        milestones + [release("v1.0.0", prerelease=True), release("v1.0.0", draft=True)]
+    ) == [(0, 2, 0), (0, 1, 0)]
+    stable = milestones + [release("v1.0.0")]
+    assert helper.select_milestones(stable) == []
+    assert helper.select_releases(stable, 2) == [(1, 0, 0)]
 
 
 @pytest.mark.parametrize(
@@ -128,10 +162,23 @@ def manifest():
         "controller_sha": "c" * 40,
         "current": "1.2",
         "versions": [
-            {"id": "1.2", "label": "1.2.3", "ref": "v1.2.3", "sha": "a" * 40},
-            {"id": "1.1", "label": "1.1.9", "ref": "v1.1.9", "sha": "b" * 40},
+            {
+                "id": "1.2",
+                "kind": "release",
+                "label": "1.2.3",
+                "ref": "v1.2.3",
+                "sha": "a" * 40,
+            },
+            {
+                "id": "1.1",
+                "kind": "release",
+                "label": "1.1.9",
+                "ref": "v1.1.9",
+                "sha": "b" * 40,
+            },
             {
                 "id": "development",
+                "kind": "development",
                 "label": "Development",
                 "ref": "main",
                 "sha": "c" * 40,
@@ -161,15 +208,7 @@ def html_page(body="<p>Example</p>"):
     return f"<!doctype html><html><head><title>Test</title></head><body>{body}</body></html>"
 
 
-@pytest.fixture
-def lines(tmp_path, manifest, helper, monkeypatch):
-    controller = tmp_path / "controller"
-    assets = controller / "docs/versioning"
-    assets.mkdir(parents=True)
-    for name in ("docs-version.css", "docs-version.js"):
-        (assets / name).write_text("/* fixture */")
-    monkeypatch.setattr(helper, "ROOT", controller)
-    inputs = tmp_path / "lines"
+def write_lines(inputs, manifest):
     for version in manifest["versions"]:
         line = inputs / version["id"]
         for page in (
@@ -195,6 +234,22 @@ def lines(tmp_path, manifest, helper, monkeypatch):
         )
         (line / "docs-build.json").write_text(json.dumps(version))
     return inputs
+
+
+@pytest.fixture
+def controller(tmp_path, helper, monkeypatch):
+    controller = tmp_path / "controller"
+    assets = controller / "docs/versioning"
+    assets.mkdir(parents=True)
+    for name in ("docs-version.css", "docs-version.js"):
+        (assets / name).write_text("/* fixture */")
+    monkeypatch.setattr(helper, "ROOT", controller)
+    return controller
+
+
+@pytest.fixture
+def lines(tmp_path, manifest, controller):
+    return write_lines(tmp_path / "lines", manifest)
 
 
 def test_assembly_contains_exact_lines_sources_and_searches(
@@ -410,6 +465,11 @@ def test_plan_reads_every_release_page_and_pins_git_objects(
     plan = json.loads((tmp_path / "plan.json").read_text())
     assert plan["current"] == "1.1"
     assert [v["sha"] for v in plan["versions"]] == ["b" * 40, "a" * 40, "c" * 40]
+    assert [v["kind"] for v in plan["versions"]] == [
+        "release",
+        "release",
+        "development",
+    ]
     assert "controller_sha=" + "c" * 40 in (tmp_path / "output").read_text()
 
 
@@ -478,6 +538,85 @@ def test_development_only_plan_and_assembly(helper, tmp_path, monkeypatch, relea
     assert "/development/" in (tmp_path / "site/index.html").read_text()
     assert "(latest)" not in (tmp_path / "site/development/index.html").read_text()
     helper.check_site(manifest, (tmp_path / "site").resolve())
+
+
+def test_milestones_are_labelled_unindexed_and_never_current(
+    helper, tmp_path, monkeypatch, controller
+):
+    (controller / "docs/versions.toml").write_text("retained_minor_lines = 2\n")
+    (controller / "docs/hugo.toml").write_text(
+        'baseURL = "https://example.org/project/"\n'
+    )
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    releases = [
+        release(tag, prerelease=True) for tag in ("v0.1.0", "v0.2.0", "v0.2.1")
+    ]
+
+    def fake_run(*args, **kwargs):
+        if args[:2] == ("gh", "repo"):
+            return "example/connector"
+        if args[:2] == ("gh", "api"):
+            return json.dumps([releases])
+        return {
+            "refs/tags/v0.1.0^{commit}": "a" * 40,
+            "refs/tags/v0.2.1^{commit}": "b" * 40,
+            "HEAD": "c" * 40,
+        }[args[-1]]
+
+    monkeypatch.setattr(helper, "run", fake_run)
+    helper.plan(tmp_path / "plan.json")
+    manifest = json.loads((tmp_path / "plan.json").read_text())
+    assert manifest["current"] == "development"
+    assert manifest["versions"] == [
+        {
+            "id": "0.2",
+            "kind": "milestone",
+            "label": "0.2 (development milestone)",
+            "ref": "v0.2.1",
+            "sha": "b" * 40,
+        },
+        {
+            "id": "0.1",
+            "kind": "milestone",
+            "label": "0.1 (development milestone)",
+            "ref": "v0.1.0",
+            "sha": "a" * 40,
+        },
+        {
+            "id": "development",
+            "kind": "development",
+            "label": "Development",
+            "ref": "main",
+            "sha": "c" * 40,
+        },
+    ]
+    output = (tmp_path / "output").read_text()
+    assert "matrix=" + json.dumps({"include": manifest["versions"]}) in output
+
+    site = tmp_path / "site"
+    helper.assemble(manifest, write_lines(tmp_path / "lines", manifest), site)
+    assert json.loads((site / "versions.json").read_text()) == manifest
+    assert Links((site / "index.html").read_text()).links[0]["href"] == (
+        "/project/development/"
+    )
+    for version in manifest["versions"]:
+        page = Links((site / version["id"] / "docs/shared/index.html").read_text())
+        assert {"name": "robots", "content": "noindex, nofollow"} in page.meta
+        assert [link.get("href") for link in page.links if "href" in link][:4] == [
+            f"/project/{version['id']}/api/java/",
+            "/project/0.2/docs/shared/",
+            "/project/0.1/docs/shared/",
+            "/project/development/docs/shared/",
+        ]
+        api = (site / version["id"] / "api/java/example/Type.html").read_text()
+        assert f"<strong>{version['label']}</strong>" in api
+    page = (site / "0.1/docs/shared/index.html").read_text()
+    assert ">0.1 (development milestone)</option>" in page
+    assert ">Development</option>" in page
+    assert "(latest)" not in page
+    assert "/tree/" + "a" * 40 in page
+    assert "<sitemap>" not in (site / "sitemap.xml").read_text()
+    helper.check_site(manifest, site.resolve())
 
 
 def test_release_api_failure_never_becomes_an_empty_plan(helper, tmp_path, monkeypatch):

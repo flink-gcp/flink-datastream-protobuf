@@ -182,12 +182,12 @@ Real Hugo fixtures verify that source changes appear without editing Markdown, m
 | `just docs-site assemble <manifest> <inputs> <output>` | Combine every planned version into a fresh output directory |
 | `just docs-site check <manifest> <output>` | Check local page, asset and anchor destinations in the combined site |
 
-Version IDs are `development` or a minor such as `1.0`.
+Version IDs are `development` or a minor such as `1.0` or the `0.1` development milestone; each manifest entry records its `kind` as `release`, `milestone`, or `development`.
 Planning requires `gh` authentication and locally fetched tags; an API error or unresolved tag fails instead of silently omitting releases.
 Run `plan` from the controller checkout whose HEAD should supply Development.
 Create separate detached source worktrees at the manifest SHAs, run `build` for each ID with a shared new external output directory, then `assemble` and `check` into another new external directory.
 Generated HTML, Python environments, Hugo caches and temporary application repositories are not committed.
-The [version policy](versions.md) retains two released minor series and Development; zero eligible releases is a valid Development-only site.
+The [version policy](versions.md) retains two released minor series and Development, and 0.x development milestones until the first stable release; zero eligible releases is a valid Development-only site.
 
 The CI orchestrator freezes the source revision before calling Verify, Lint and Docs.
 PRs build the same retained-version Pages artifact without deploying.
@@ -199,6 +199,7 @@ Standalone Verify retains its scheduled and manual runs; it does not deploy.
 Issue #13 must name its release workflow `Release`, trigger real publication by tag push, validate the release, and publish a stable `vX.Y.Z` GitHub Release before successful completion.
 The CI `workflow_run` hook then rebuilds the selected release sources and current main; failed runs and manual dry runs do not deploy documentation.
 A bare tag without a published GitHub Release is not a documentation version.
+Development milestone pre-releases are created outside the `Release` workflow, so the hook does not see them; run CI manually on `main` afterwards, or wait for the next main push, to add the milestone to the site.
 The hook is prepared here; Maven Central publication remains owned by #13.
 
 GitHub Pages uses GitHub Actions as the build source, and the initial main deployment is live.
