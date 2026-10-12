@@ -25,6 +25,7 @@ limitations under the License.
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Dependency update policy amended: 2026-09-12
 - Benchmark Avro and Jackson update exclusions amended: 2026-10-11
+- Benchmark Avro and Jackson convergence check amended: 2026-10-12, [issue #84](https://github.com/flink-gcp/flink-datastream-protobuf/issues/84)
 - Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
 - CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
@@ -65,7 +66,7 @@ Flink major/minor changes follow ADR-0003, and Protobuf major changes require an
 JUnit major upgrades follow the supported Flink floor: adopt JUnit 6 when that upstream Flink release's root POM (`flink-parent`) pins it, then verify the complete supported matrix, including LTS.
 This uses the adoption condition recorded in [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906); minor and patch updates within JUnit 5 remain reviewable.
 Keep the test logging binding on the SLF4J API major supplied by Flink and exclude independent binding major updates.
-Hold the benchmark Avro dependency on the supported Flink runtimes' exact Avro version and its Jackson result reader on that Avro release's Jackson line, excluding those Dependabot updates.
+Hold the benchmark Avro dependency on the supported Flink runtimes' exact Avro version and its Jackson result reader on that Avro release's exact Jackson version, excluding those Dependabot updates and failing the benchmark build when either diverges from the selected runtime's dependency graph.
 Revisit these exclusions when changing the supported Flink window or when a security alert requires an excluded upgrade.
 Keep Dependabot alerts and security-update PRs enabled in repository settings; security updates still require review and verification before merge.
 Ignore conditions can also prevent security-update PRs, so alerts requiring an excluded upgrade need manual review and preparation.
