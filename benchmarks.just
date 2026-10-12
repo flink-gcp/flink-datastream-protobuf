@@ -148,4 +148,4 @@ benchmark-evidence-staged output:
 
 # Exercise the content gate with synthetic safe and unsafe inputs only.
 benchmark-evidence-test:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -v
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_benchmark_evidence.py' -v

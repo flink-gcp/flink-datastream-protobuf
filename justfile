@@ -59,6 +59,16 @@ baseline-capture line major output:
 baseline-check bundle:
     java -cp "$1/tools.jar" io.github.flink.gcp.protobuf.BaselineTool check "$1"
 
+# Download, verify, and extract retained release bundles into a new directory outside the repository.
+# Arguments after the output are bundle names and an optional --archives <directory>.
+[positional-arguments]
+baseline-fetch tag output *args:
+    python3 scripts/baseline_fetch.py fetch "$@"
+
+# Exercise baseline retrieval with synthetic releases only.
+baseline-fetch-test:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_baseline_fetch.py' -v
+
 # Run retained bytecode and state under the selected runtime and the current JDK.
 [positional-arguments]
 baseline-read bundle version output:

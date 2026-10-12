@@ -29,6 +29,7 @@ limitations under the License.
 - Maven dependency graph submission amended: 2026-10-12, [issue #82](https://github.com/flink-gcp/flink-datastream-protobuf/issues/82)
 - Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
 - CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
+- Retained baseline retrieval amended: 2026-10-11, [issue #61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -122,6 +123,7 @@ Issue #40's test-only development bundle tooling retains packaged writers, compi
 The capture workflow builds each artifact/profile once and reruns its retained inputs on the supported JDK/Flink combinations without compilation.
 CI exercises these as disposable rehearsals.
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are stored with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release, as described in the [retained baseline](../validation/development-baselines.md#retained-v010-baseline).
+Milestone checks obtain them through a verified retrieval that checks a `SHA256SUMS` digest pinned in the repository and every extracted file, without rebuilding the old tree; CI caches each archive by its checksum and verifies it again on every run.
 Milestone-to-milestone API checks are added for 0.2.0 against the fixed 0.1.0 development baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
 Retain those checks in 0.3.0 and extend them to the fixed 0.2.0 development baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
 Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.

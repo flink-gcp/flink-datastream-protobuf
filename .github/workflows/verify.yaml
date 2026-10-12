@@ -225,3 +225,27 @@ jobs:
               find "$directory" -name '*.log' -type f -exec tail -n 60 {} +
             fi
           done
+  retained-baseline:
+    name: Retained v0.1.0 bundle / ${{ matrix.bundle }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        bundle: [flink2-pb3, flink2-pb4, flink1-pb3, flink1-pb4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
+      - name: Fetch and check the retained bundle
+        uses: ./.github/actions/baseline-fetch
+        with:
+          tag: v0.1.0
+          bundle: ${{ matrix.bundle }}
+          output: ${{ runner.temp }}/retained-baseline

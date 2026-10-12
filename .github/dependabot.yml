@@ -22,6 +22,7 @@ updates:
       # Keep jackson-databind on the pinned Avro release's exact Jackson version; the benchmark convergence rule rejects any other.
       - dependency-name: com.fasterxml.jackson.core:*
   - package-ecosystem: github-actions
-    directory: /
+    # Keep the composite action's pins aligned with the workflows.
+    directories: [/, /.github/actions/*]
     schedule:
       interval: weekly
