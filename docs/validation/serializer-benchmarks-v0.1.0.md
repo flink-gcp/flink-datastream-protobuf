@@ -27,6 +27,7 @@ The measurement contract is [ADR-0004](../adr/0004-serializer-benchmarks.md).
 ## Reproduce
 
 The ordinary build does not require benchmark tools.
+Run these commands from the `v0.1.0` tag, whose benchmark pins differ from later revisions, with a compiler cache directory that has not built another Thrift version.
 For opt-in generation, install CMake, Flex, Bison 3.8 or newer, and a C++ compiler; build the pinned Thrift 0.23.0 compiler in an external cache:
 
 ```sh

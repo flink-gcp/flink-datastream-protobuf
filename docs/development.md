@@ -418,7 +418,10 @@ Adding such a guarantee requires an explicit old-writer/new-reader recovery scen
 
 The optional `benchmarks` profile adds comparison-only test sources, generated schemas, and JMH instrumentation.
 Use `just benchmark-smoke <flink-version> <protobuf-major> <new-output-directory>` for correctness and short harness verification, or `just benchmark-run` with the same arguments for long measurements.
-The [benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the pinned compiler prerequisite, corpus, operation semantics, matrices, and evidence format.
+Generation requires the Thrift compiler pinned in `benchmarks.just`; `just benchmark-tools <cache>` builds it with CMake, Flex, Bison 3.8 or newer, and a C++ compiler.
+On macOS, put a modern Bison ahead of `/usr/bin/bison`, which is too old.
+Set `BENCHMARK_THRIFT_COMPILER` to `<cache>/build/compiler/cpp/bin/thrift`; otherwise generation uses `thrift` from `PATH` and rejects any other version.
+The [0.1.0 benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the corpus, operation semantics, matrices, and evidence format.
 These recipes do not replace ordinary native verification or binary compatibility checks.
 Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
 The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
