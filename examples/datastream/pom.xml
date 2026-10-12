@@ -51,7 +51,7 @@ limitations under the License.
                 <configuration><reuseForks>false</reuseForks><failIfNoTests>true</failIfNoTests></configuration>
                 <executions><execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution></executions>
             </plugin>
-            <plugin><groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><version>5.1.8</version>
+            <plugin><groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><version>5.1.11</version>
                 <configuration><protoc>${protobuf.version}</protoc></configuration>
                 <executions><execution><goals><goal>generate</goal></goals></execution></executions>
             </plugin>
