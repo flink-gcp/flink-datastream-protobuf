@@ -41,7 +41,10 @@ benchmark-tools cache:
         tar -xf "$archive" -C "$cache"
         touch "$cache/thrift-$version/.benchmark-extracted"
     fi
-    cmake_args=()
+    # Pass the generators on PATH each time; CMake otherwise keeps the ones an earlier configure found.
+    bison=$(command -v bison) || { printf 'Benchmark compiler build requires bison on PATH\n' >&2; exit 1; }
+    flex=$(command -v flex) || { printf 'Benchmark compiler build requires flex on PATH\n' >&2; exit 1; }
+    cmake_args=("-DBISON_EXECUTABLE=$bison" "-DFLEX_EXECUTABLE=$flex")
     if [[ "$(uname -s)" == Darwin ]]; then
         sdk=$(xcrun --show-sdk-path)
         cmake_args+=("-DCMAKE_OSX_SYSROOT=$sdk" "-DCMAKE_CXX_FLAGS=-isystem $sdk/usr/include/c++/v1")
