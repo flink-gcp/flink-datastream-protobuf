@@ -383,7 +383,7 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
 | Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, not on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
@@ -594,6 +594,14 @@ Dependabot alerts and security-update PRs are repository settings, separate from
 Keep both enabled and review security-update PRs through the same verification and review flow.
 GitHub also applies [ignore conditions to security updates](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated#ignoring-specific-dependencies), so enabling them does not guarantee a PR for every alert.
 Review alerts even when no PR appears, and prepare an excluded upgrade manually when needed; an ignore rule is not a vulnerability assessment.
+
+Alerts and security updates depend on the repository's dependency graph, which must stay enabled.
+GitHub's static `pom.xml` parsing records only direct dependencies and plugins, leaves versions set by profile properties (such as the `benchmarks` pins) unresolved, and omits transitive dependencies, so alerts cannot match them.
+The `Dependency submission` workflow therefore submits the resolved Maven graph from `main` on every push, weekly, and on demand, one snapshot each for the floor with Protobuf 3 and 4, the `FLINK_CEILING` runtime, the LTS runtime, and the `benchmarks` profile at the floor.
+GitHub [prefers submitted data](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-graph-data) over static parsing for the same manifest, so the root `pom.xml` graph no longer lists build plugins: an advisory against a plugin raises no alert, and plugins other than `avro-maven-plugin` (held with `benchmark.avro.version`) stay current only through Dependabot version updates.
+Test-scoped dependencies, including the whole benchmark graph, are submitted with the development scope.
+The standalone example is not submitted, because it resolves the unpublished development library, and keeps its static entry.
+A failed job appears in the Actions tab and notifies the user who triggered it (for the weekly run, the user who last changed its cron line); an HTTP error from the snapshot API fails the job, but a response whose result is neither `SUCCESS` nor `ACCEPTED` is only logged as an error in a passing job, so check the run log when an expected alert is missing.
 
 ## Agent tooling
 

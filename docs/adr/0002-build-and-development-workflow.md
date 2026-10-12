@@ -26,6 +26,7 @@ limitations under the License.
 - Dependency update policy amended: 2026-09-12
 - Benchmark Avro and Jackson update exclusions amended: 2026-10-11
 - Benchmark Avro and Jackson convergence check amended: 2026-10-12, [issue #84](https://github.com/flink-gcp/flink-datastream-protobuf/issues/84)
+- Maven dependency graph submission amended: 2026-10-12, [issue #82](https://github.com/flink-gcp/flink-datastream-protobuf/issues/82)
 - Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
 - CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
@@ -45,12 +46,12 @@ Generate test messages under target and keep test instruments out of the jar.
 Run each test class in a fresh JVM to isolate Flink's static factory registry.
 The current probes require no Docker, cloud credentials, or module-opening flags.
 
-CI calls the same just recipes used locally.
+CI calls the same just recipes used locally; the `Dependency submission` workflow runs only from `main`, outside the `CI passed` gate, and calls its GitHub action directly.
 The CI orchestrator has no path filter and requires source selection, Verify, Lint and Docs to succeed through one `CI passed` gate.
 It freezes the source SHA before calling each reusable workflow, on PRs and trusted publication events.
 An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
-Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven.
+Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven, except the dependency-graph plugin that the submission action pins.
 
 Verify reuses the pinned benchmark compiler through an exact-key Actions cache rather than rebuilding it in every matrix job.
 The key identifies the Thrift version, source checksum, build recipe, distribution release, architecture, and C++ compiler.
@@ -70,6 +71,9 @@ Hold the benchmark Avro dependency on the supported Flink runtimes' exact Avro v
 Revisit these exclusions when changing the supported Flink window or when a security alert requires an excluded upgrade.
 Keep Dependabot alerts and security-update PRs enabled in repository settings; security updates still require review and verification before merge.
 Ignore conditions can also prevent security-update PRs, so alerts requiring an excluded upgrade need manual review and preparation.
+Submit the resolved Maven dependency graph for each supported runtime and the `benchmarks` profile from `main`, because static `pom.xml` parsing omits transitive and profile-pinned dependencies and alerts cannot match them otherwise.
+The submission replaces the static root `pom.xml` entry, so build plugins leave the graph: plugin advisories raise no alert, and plugins rely on Dependabot version updates.
+GitHub's automatic dependency submission was rejected because it resolves only the default profile and would miss Protobuf 4, the ceiling, LTS, and `benchmarks`.
 
 All changes after the initial empty main commit use a dedicated worktree and a Draft PR with the WHAT/WHY template.
 Require two distinct self-review rounds, an independent reviewer that did not author the change, and current aggregate CI before Ready.
