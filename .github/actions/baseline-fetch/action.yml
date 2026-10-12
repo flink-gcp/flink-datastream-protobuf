@@ -1,5 +1,5 @@
 name: Fetch a retained development bundle
-description: Verify and extract one retained baseline bundle, reusing its archive from a cache keyed by the archive checksum.
+description: Verify and extract one retained baseline bundle, reusing its archive from a cache keyed by the archive checksum. Requires uv on PATH.
 inputs:
   tag:
     description: Release tag with a pinned retained baseline, such as v0.1.0
@@ -29,10 +29,10 @@ runs:
         BUNDLE: ${{ inputs.bundle }}
         ACTION: ${{ github.action_path }}
       run: |
-        script=$(cd "$ACTION/../../.." && pwd)/scripts/baseline_fetch.py
-        sha256=$(python3 "$script" asset "$TAG" "$BUNDLE")
+        root=$(cd "$ACTION/../../.." && pwd)
+        sha256=$(uv run --project "$root" --locked --isolated --no-dev python "$root/scripts/baseline_fetch.py" asset "$TAG" "$BUNDLE")
         {
-          echo "script=$script"
+          echo "root=$root"
           echo "key=development-baseline-$TAG-$BUNDLE-$sha256"
           echo "archives=$RUNNER_TEMP/development-baseline-archives-$TAG-$BUNDLE"
         } >> "$GITHUB_OUTPUT"
@@ -53,11 +53,11 @@ runs:
         ARCHIVES: ${{ steps.asset.outputs.archives }}
         KEY: ${{ steps.asset.outputs.key }}
         RESTORED: ${{ steps.cache.outputs.cache-hit }}
-        SCRIPT: ${{ steps.asset.outputs.script }}
+        ROOT: ${{ steps.asset.outputs.root }}
       run: |
         restored=()
         if [[ "$RESTORED" == true ]]; then restored=(--restored); fi
-        if ! python3 "$SCRIPT" fetch "$TAG" "$OUTPUT" "$BUNDLE" --archives "$ARCHIVES" "${restored[@]}"; then
+        if ! uv run --project "$ROOT" --locked --isolated --no-dev python "$ROOT/scripts/baseline_fetch.py" fetch "$TAG" "$OUTPUT" "$BUNDLE" --archives "$ARCHIVES" "${restored[@]}"; then
           if [[ "$RESTORED" == true ]]; then
             echo "::error::Fetching failed with a restored archive; if the cached copy is missing or does not match, delete cache entry $KEY with gh cache delete."
           fi

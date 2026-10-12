@@ -26,8 +26,8 @@ The 0.x versions are development milestones; 1.0.0 is the planned first public r
 
 ## Build the development artifact
 
-Install [mise](https://mise.jdx.dev/) and Python 3.9 or newer, then clone this repository.
-The recipe uses Python's standard library; `mise install` does not install Python.
+Install [mise](https://mise.jdx.dev/), then clone this repository.
+`mise install` provides uv, which supplies the pinned Python for the recipe's standard-library checks.
 Run these commands from its root with JDK 17:
 
 ```sh

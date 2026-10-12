@@ -164,27 +164,25 @@ benchmark-arguments version major:
 # Validate a directory or normalized tar.gz and retain the exact checked copy and inventory.
 [positional-arguments]
 benchmark-evidence-check input output:
-    python3 scripts/benchmark_evidence.py check "$1" "$2"
+    {{ python }} scripts/benchmark_evidence.py check "$1" "$2"
 
 # Inspect retained evidence from HEAD without copying the original archives to upload paths.
 [positional-arguments]
 benchmark-evidence-repository output:
-    python3 scripts/benchmark_evidence.py repository "$1"
+    {{ python }} scripts/benchmark_evidence.py repository "$1"
 
 # Inspect the exact staged evidence blobs immediately before an evidence commit.
 [positional-arguments]
 benchmark-evidence-staged output:
-    python3 scripts/benchmark_evidence.py staged "$1"
+    {{ python }} scripts/benchmark_evidence.py staged "$1"
 
 # Exercise the content gate with synthetic safe and unsafe inputs only.
-benchmark-evidence-test:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_benchmark_evidence.py' -v
+benchmark-evidence-test: (test-scripts "scripts/tests/test_benchmark_evidence.py")
 
 # Operator-side temporary GCE runs; read the GCE section of docs/development.md before provisioning.
 [positional-arguments]
 gce-benchmark *args:
-    @python3 scripts/gce_benchmark.py "$@"
+    @{{ python }} scripts/gce_benchmark.py "$@"
 
 # Exercise the GCE operator tooling against a recording gcloud double, without cloud access.
-gce-benchmark-test:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_gce_benchmark.py' -v
+gce-benchmark-test: (test-scripts "scripts/tests/test_gce_benchmark.py")
