@@ -29,6 +29,8 @@ jobs:
         run: just benchmark-evidence-test
       - name: Test retained baseline retrieval with synthetic releases
         run: just baseline-fetch-test
+      - name: Test the GCE benchmark tooling offline
+        run: just gce-benchmark-test
       - name: Inspect retained benchmark evidence
         run: just benchmark-evidence-repository "$RUNNER_TEMP/evidence-inventories"
       - name: Retain inspection inventories without the existing evidence archives
