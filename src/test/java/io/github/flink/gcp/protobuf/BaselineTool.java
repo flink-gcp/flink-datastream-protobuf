@@ -160,7 +160,15 @@ public final class BaselineTool {
                 Path.of("target/flink-datastream-protobuf-" + artifactVersion + ".jar"),
                 bundle.resolve("library.jar"));
         copy(Path.of("target/baseline/tools.jar"), bundle.resolve("tools.jar"));
-        for (String variant : List.of("original", "changed")) {
+        // Name every variant that pom.xml packages so that a missing jar fails the capture.
+        for (String variant :
+                List.of(
+                        "original",
+                        "changed",
+                        "reserved",
+                        "incompatible",
+                        "enum-original",
+                        "enum-added")) {
             copy(
                     Path.of("target/runtime-app/application-" + variant + ".jar"),
                     bundle.resolve("apps/application-" + variant + ".jar"));

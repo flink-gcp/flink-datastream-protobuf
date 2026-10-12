@@ -128,7 +128,7 @@ public final class BaselineRuntime {
                                         "all",
                                         settings,
                                         null,
-                                        false,
+                                        "original",
                                         true)) {
                             writer.process(0, 8, 0);
                             saved =
@@ -183,7 +183,7 @@ public final class BaselineRuntime {
                                         "all",
                                         settings,
                                         relocated.toUri().toString(),
-                                        false,
+                                        "original",
                                         false)) {
                             reader.assertRestored(0, 8);
                             reader.process(8, 16, 0);
@@ -204,13 +204,21 @@ public final class BaselineRuntime {
                                                 "all",
                                                 rejectedSettings,
                                                 relocated.toUri().toString(),
-                                                changed,
+                                                changed ? "incompatible" : "original",
                                                 false)) {
                                     assertThat(rejected.failure())
                                             .hasStackTraceContaining(
                                                     changed
-                                                            ? "different Protobuf schema"
-                                                            : "StateMigrationException");
+                                                            ? "cannot read the saved Protobuf schema:"
+                                                                    + " Field 2 (count) of"
+                                                                    + " flink.protobuf.runtime.Entry"
+                                                                    + " changes type from INT32 to"
+                                                                    + " SINT32"
+                                                            : "StateMigrationException")
+                                            .hasStackTraceContaining(
+                                                    changed
+                                                            ? RuntimeRecoveryHarness.MESSAGE
+                                                            : "incompatible");
                                 }
                             }
                         }

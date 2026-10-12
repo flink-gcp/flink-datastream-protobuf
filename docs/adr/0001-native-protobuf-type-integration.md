@@ -24,7 +24,7 @@ limitations under the License.
 - Date: 2026-09-06
 - Publication policy amended: 2026-09-13; 0.x versions are unpublished development milestones and 1.0.0 is the first Maven Central release
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests; the 0.2.0 descriptor evaluator is implemented and tested with descriptor pairs, but snapshot restore does not use it until [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes written by the same development build; restore from retained 0.1.0 state remains in [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -46,7 +46,7 @@ Consequently, failure of that configuration is not a premise of this design.
 The maintainer amended the incremental release plan on 2026-09-13: 0.1.0, 0.2.0, and 0.3.0 are development milestones, with no Maven Central publication.
 The descriptor-based design remains the target, with its compatibility evaluator delivered after basic generated-message integration.
 Version 1.0.0 is the first Maven Central release, after design stabilization and release validation.
-These are development acceptance requirements; the serializer, application-facing type integration, and unchanged-schema descriptor snapshots are implemented, and MiniCluster tests cover unchanged-schema runtime checkpoint/savepoint recovery.
+These are development acceptance requirements; the serializer, application-facing type integration, and descriptor snapshots with the directional evaluator are implemented, and MiniCluster tests cover runtime checkpoint/savepoint recovery with unchanged schemas and supported schema changes.
 
 | Milestone | Required outcome |
 |---|---|
@@ -66,7 +66,7 @@ public static <T extends Message> Builder<T> newBuilder(Class<T> messageClass);
 
 The public static nested `Builder<T extends Message>` provides `deterministicSerialization(boolean)`, `maxMessageSize(int)`, and `recursionLimit(int)`, each returning the same builder, and `build()` returning a new immutable `ProtobufTypeInformation<T>`.
 For supported message classes, `of(messageClass)` is equivalent to `newBuilder(messageClass).build()` with the defaults below.
-The construction API, descriptor snapshots, and unchanged-schema managed-state acceptance tests are implemented.
+The construction API, descriptor snapshots, and managed-state acceptance tests for unchanged and supported changed schemas are implemented.
 
 During issue #9 implementation, compilation showed that the originally declared `<T extends Message> of(Class<T>)` clashes by erasure with Flink's inherited `<T> TypeInformation<T> of(Class<T>)`.
 The implemented `ProtobufTypeInformation<T>` and `of` therefore use an unbounded type parameter, preserving the documented method name and concrete return type.
@@ -231,7 +231,7 @@ Snapshot read/write failures use `IOException` with a useful condition; no fallb
 Compatibility is resolved by the new snapshot against the old snapshot.
 `restoreSerializer` resolves the stored Java binary name using that supplied classloader and validates the resulting class, descriptor identity, and settings before constructing a reader.
 Missing, unsupported, or mismatched classes fail with an actionable restore error.
-In 0.1.0 the restored class must satisfy the unchanged-schema contract; 0.2.0 may use its supported directional evaluator for value serializers.
+In 0.1.0 the restored class must satisfy the unchanged-schema contract; 0.2.0 uses its supported directional evaluator for value serializers.
 Neither release relies on retaining the old generated class in the application jar.
 
 ### Unchanged-schema restore in 0.1.0
@@ -267,7 +267,7 @@ Reject message or Java class renames, detected field-number reuse, required-fiel
 Treat numeric type changes classed as conditionally safe by Protobuf conservatively as incompatible; parsing alone does not establish preservation of values.
 Descriptor pairs cannot prove that a reused number with an indistinguishable declaration still has the same business meaning, so reserving removed numbers remains an application schema obligation.
 Reject changes outside the evaluator's explicitly supported rules and apply the directional setting rules above; message keys remain unsupported.
-The planned 0.2.0 path retains the 0.1.0 snapshot reader, normalization definition, framing, and defaults, adding the evaluator without rewriting saved state or requiring an old class.
+The 0.2.0 path retains the 0.1.0 snapshot reader, normalization definition, framing, and defaults, adding the evaluator without rewriting saved state or requiring an old class.
 An intentional departure from that path requires the documented 0.x breaking-change process below; it must not be reported as compatible restore.
 The evaluator must consume the complete retained descriptors, including unknown fields and metadata, rather than a reduced 0.1.0 schema summary.
 Any wrapper compatibility does not validate the opaque schema of its payload.
@@ -276,6 +276,11 @@ The implemented evaluator ([issue #15](https://github.com/flink-gcp/flink-datast
 It reads no snapshot bytes and loads no generated class, and it returns either `compatibleAsIs` or `incompatible` with a diagnostic naming the first incompatible message, field, enum value, file, or setting.
 An invalid descriptor closure, or one without the named root, throws `IllegalArgumentException` instead of producing a result.
 It checks names and the directional setting rules first, then normalizes both descriptor sets; equal normalized content is compatible, and no fingerprint takes part in the decision.
+
+Snapshot integration ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)) calls the evaluator from both decision points.
+`resolveSchemaCompatibility` evaluates the saved snapshot against the new snapshot and maps the result to `compatibleAsIs` or `incompatible`.
+`restoreSerializer` evaluates the saved metadata against the class resolved through the user-code classloader, keeping the saved settings, so only the message name and schema can differ there.
+Flink's `incompatible` result carries no reason, so the evaluator's diagnostic reaches the user through the restore exception; the [runtime evidence](../validation/runtime-recovery.md#schema-changes) records where it appears.
 
 Otherwise, the evaluator pairs types by their resolved full names, starting at the root and following each field number present in both schemas.
 Only these reached messages and enums are compared, together with their enclosing messages and declaring files, because saved bytes cannot select any other declaration.

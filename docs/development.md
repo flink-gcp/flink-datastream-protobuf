@@ -243,13 +243,14 @@ These tests do not establish checkpoint/savepoint recovery or packaged-artifact 
 It stores both names, framing/normalization versions, all three settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
 The snapshot class/version envelope is written by Flink; the payload follows ADR-0001 exactly, including the independent 64 MiB descriptor limit.
 Reading validates metadata without resolving the saved generated class.
-Restoration resolves the class through the supplied user-code classloader and checks the complete schema before constructing a serializer with the recorded settings.
+Restoration resolves the class through the supplied user-code classloader and checks that it can read the saved schema before constructing a serializer with the recorded settings.
 
-Compatibility compares decoded normalized descriptor content, never just bytes or fingerprints.
-An unchanged schema permits equal or increased size/depth limits and either deterministic-mode transition; any decreased limit is incompatible.
-New snapshots record the new settings, so a later decrease remains incompatible after an earlier successful increase.
+Both compatibility resolution and restoration delegate to the package-private `ProtobufSchemaCompatibility` evaluator, which compares decoded normalized descriptor content, never just bytes or fingerprints.
+It accepts unchanged schemas and the supported changes in ADR-0001, together with equal or increased size/depth limits and either deterministic-mode transition; any decreased limit is incompatible.
+New snapshots record the new generated class's schema, and the new settings for state that the new job registers, so a later reverse schema change or limit decrease remains incompatible after an earlier successful restore.
 No migration or reconfigured serializer result is provided.
-Unsupported formats, corrupt data, and invalid descriptors fail during reading; missing, unsupported, or changed generated classes fail explicitly during restoration.
+Flink's compatibility result carries no reason, so restoration reports the evaluator's first incompatibility in its exception.
+Unsupported formats, corrupt data, and invalid descriptors fail during reading; missing or unsupported generated classes, and classes that cannot read the saved schema, fail explicitly during restoration.
 
 The [format fixtures](../src/test/resources/snapshots/v1/README.md) retain fixed development snapshot/message bytes and writer provenance.
 Tests verify the Flink envelope, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
@@ -259,7 +260,7 @@ Issue #13 and the 1.0.0 milestone own published-artifact fixture capture, consum
 ## Test resources and version updates
 
 For application upgrade decisions, read [Protobuf updates and state compatibility](compatibility.md).
-It distinguishes binary-format rules, Java runtime version guarantees, and this library's current rejection of changed schemas, including field additions.
+It distinguishes binary-format rules, Java runtime version guarantees, and the schema changes this library restores.
 The procedures below describe how to maintain and verify the test resources.
 
 ### Resource inventory
@@ -270,8 +271,8 @@ Paths below are relative to the repository root.
 | Resource | Purpose | How it is produced or consumed |
 |---|---|---|
 | `src/test/proto/` | Schemas for serializer, snapshot, and transport tests | Maven runs the selected protoc; generated Java goes under `target/generated-test-sources/protobuf` and compiles with the ordinary tests |
-| `src/test/runtime-app/java/` and `src/test/runtime-app/proto/{original,changed}/` | Controllable Flink jobs and two runtime schemas with the same generated class/message names; the changed schema adds a field for rejection tests | Maven builds each variant separately under `target/runtime-app/{original,changed}/`; `RuntimeJob` uses isolated runtime gencode, while `CommonTypesRuntimeJob` uses WKT and ordinary test messages from the parent classpath |
-| `target/runtime-app/application-{original,changed}.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
+| `src/test/runtime-app/java/` and `src/test/runtime-app/proto/<variant>/` | Controllable Flink jobs and six runtime schemas with the same generated class/message names: `original`, `changed`, `reserved`, `incompatible`, `enum-original`, and `enum-added` ([schema changes](validation/runtime-recovery.md#schema-changes)) | Maven builds each variant separately under `target/runtime-app/<variant>/`; `RuntimeJob` uses isolated runtime gencode and reaches fields that only some variants declare through descriptors, while `CommonTypesRuntimeJob` uses WKT and ordinary test messages from the parent classpath |
+| `target/runtime-app/application-<variant>.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
 | `target/baseline/tools.jar` | Retained test instruments, messages, and resources | Built during `process-test-classes`; never attached as a Maven publication artifact |
 | `src/test/resources/snapshots/v1/*.properties` | Four fixed serializer snapshot/message fixtures, including checksums and writer provenance | `ProtobufSnapshotFixtureTest` reads all four in each Protobuf profile and checks restoration and current writer bytes; generation is a separate [format-fixture procedure](../src/test/resources/snapshots/v1/README.md) |
 | `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
@@ -287,23 +288,24 @@ The fixture copies of `runtime.proto` and `schema.pb` record writer inputs; Mave
 `just verify` invokes `./mvnw -ntp verify`.
 The relevant build and test sequence is:
 
-1. The Protobuf plugin generates ordinary test messages and both runtime application variants with the selected `protoc.version`.
+1. The Protobuf plugin generates ordinary test messages and every runtime application variant with the selected `protoc.version`.
    Each runtime variant also gets a `schema.pb` descriptor set including imports.
 2. During `test-compile`, Maven compiles the ordinary tests and separately compiles the shared runtime application Java with each generated variant.
-   The runtime outputs are `target/runtime-app/original/classes` and `target/runtime-app/changed/classes`.
-3. During `process-test-classes`, the Ant jar tasks package the two application jars and the development bundle companion jar.
+   The runtime outputs are `target/runtime-app/<variant>/classes`.
+3. During `process-test-classes`, the Ant jar tasks package the application jars and the development bundle companion jar.
 4. During `test`, Surefire runs `*Test`, including `ProtobufSnapshotFixtureTest`.
 5. During `integration-test`, the parent POM's Surefire execution runs `*ITCase`, including the runtime recovery suites below.
    The `verify` lifecycle includes this phase; no separate runtime-test command is needed.
 
 | Test | State source | What it verifies |
 |---|---|---|
-| `ProtobufRecoveryITCase` | Checkpoints and savepoints created during the current run | Checkpoint restart and replay; separate-job savepoint restore; settings transitions and schema rejection for HashMap/RocksDB |
+| `ProtobufRecoveryITCase` | Checkpoints and savepoints created during the current run | Checkpoint restart and replay; separate-job savepoint restore; settings transitions and rejection of decreased limits for HashMap/RocksDB |
+| `ProtobufSchemaEvolutionITCase` | Savepoints created during the current run | Restored values, continued processing, and a second restore across supported schema changes; rejection with the first incompatibility for unsupported changes; HashMap/RocksDB |
 | `ProtobufSavepointFixtureITCase` | Committed savepoint archives during ordinary verification | Archive hashes, recorded settings, restoration through a fresh application loader, expected state values, and continued processing for HashMap/RocksDB |
 | `CommonTypesRecoveryITCase` | Checkpoints and savepoints created during the current run | WKT/OTel values, changing Struct keys and AnyValue variants, and continued processing for HashMap/RocksDB |
 
 These suites use `RuntimeRecoveryHarness` to start jobs from the attached application jars.
-The original variant serves successful restores; the changed variant exercises schema incompatibility in `ProtobufRecoveryITCase`.
+The original variant serves the unchanged-schema restores; `ProtobufSchemaEvolutionITCase` pairs the other variants with it or with each other.
 The common-types job uses the original jar's entry point and source, with WKT classes from protobuf-java and OTel/envelope classes from the ordinary test classpath.
 Its [coverage](common-types.md#verification-boundaries) complements the isolated generated-class tests without modifying the existing savepoint fixtures.
 The [runtime evidence](validation/runtime-recovery.md) describes the state assertions and compatibility boundaries.
@@ -385,7 +387,7 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | Protobuf 4 runtime | Change `protobuf.version` in the `protobuf4` profile and the explicit runtime override in `docs/quickstart.md` |
 | Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
-| Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
+| Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Changing `original` or `changed` also changes their relationship to the retained v0.1.0 schemas and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
 | Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, not on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
@@ -733,7 +735,7 @@ The development sequence and current implementation status are:
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
 4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
-6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests; integrate supported schema evolution and restore from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
+6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16); verify restore from retained 0.1.0 development state in #16, and add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
 8. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
@@ -742,7 +744,7 @@ Define further 0.x work when needed; prepare 1.0.0 only when the design and comp
 The 1.0.0 milestone tracks first publication, with no calendar deadline.
 
 Implementation PRs update documentation for behavior they actually deliver.
-Construction and registration examples describe implemented APIs; the runtime acceptance suite verifies unchanged-schema checkpoint/savepoint recovery.
+Construction and registration examples describe implemented APIs; the runtime acceptance suite verifies checkpoint/savepoint recovery with unchanged and supported changed schemas.
 The README distinguishes current transport support from the remaining release requirements.
 The optional Chill probe is not a production fallback or a release acceptance substitute.
 
@@ -756,7 +758,7 @@ The following scenarios are obligations for the linked implementation issues, no
 | Framing and limits | Empty and adjacent frames; negative, excessive, overflow-prone, and truncated lengths; malformed/uninitialized payloads; size/depth boundaries on write and read; nested/map/unknown-group recursion; no read-ahead into the next frame; exact stream copy | #8 |
 | Native selection | Generic types disabled; explicit and AbstractMessage registration; fresh-JVM missing-registration and Message-interface controls; top-level/POJO/tuple transport; explicitly typed Row/List paths | #9, #11 |
 | Snapshot and normalization | Version-1 round trips; unsupported/corrupt data and flags; missing/conflicting imports; recursive message graphs; deterministic dependency ordering; SourceCodeInfo ignored but options/declaration order/unknown content retained; same fingerprint with differing descriptor content cannot establish compatibility | #10 |
-| Unchanged-schema restore | Changed fields, names, imported descriptors and framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11 |
+| 0.1.0 unchanged-schema restore | Changed fields, names, imported descriptors and framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11 |
 | Runtime values and types | Continued processing and restored values in scalar-keyed and operator state, including MapState values with scalar user keys; unknown fields; nested WKT/OTel values; Any payload bytes kept opaque; negative controls show both inferred and explicitly typed keyBy bypass the non-key declaration and equal message bytes can hash into different groups across isolated classloaders | #9, #11, #18 |
 | Published release baseline | Attributable message/snapshot bytes and complete savepoints from the published artifact, expected values, settings, schemas/imports, job/state identity, generation commands, and exact source/artifact/toolchain provenance; retain fixtures without overwriting them with newer writers | #13 (1.0.0) |
 | 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported fixed 0.1.0 development fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
@@ -767,5 +769,5 @@ Compatibility across changed built-in descriptors is not implied by supporting b
 Single-JVM MiniCluster success does not prove cross-process key hashing; the supported keyed scenarios extract scalar keys and do not use generated messages as keys.
 
 The current matrix covers the production serializer and type integration as well as separate feasibility probes in each combination.
-It also covers unchanged-schema saved-state recovery within each pinned Flink/Protobuf combination.
+It also covers saved-state recovery with unchanged and supported changed schemas within each pinned Flink/Protobuf combination.
 It does not prove compatibility of one production library jar across Protobuf majors or saved-state upgrades between Flink versions.

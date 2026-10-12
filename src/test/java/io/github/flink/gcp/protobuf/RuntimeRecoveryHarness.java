@@ -82,7 +82,7 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             String kind,
             Settings settings,
             String savepoint,
-            boolean changed,
+            String variant,
             boolean restart)
             throws Exception {
         Files.createDirectories(directory);
@@ -91,7 +91,7 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             assertThatThrownBy(() -> Class.forName(name, false, parent))
                     .isInstanceOf(ClassNotFoundException.class);
         }
-        Path jar = apps().resolve("application-" + (changed ? "changed" : "original") + ".jar");
+        Path jar = apps().resolve("application-" + variant + ".jar");
         assertThat(jar).isRegularFile();
         try (URLClassLoader loader = new URLClassLoader(new URL[] {jar.toUri().toURL()}, parent)) {
             Class<?> application = loader.loadClass(APPLICATION);
@@ -125,6 +125,16 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             cluster.submitJob(graph).get(60, TimeUnit.SECONDS);
             return new Job(directory, graph, kind);
         }
+    }
+
+    /** Builds the runtime message descriptor of a variant without loading its generated class. */
+    static Descriptors.Descriptor descriptor(String variant) throws Exception {
+        FileDescriptorSet schema =
+                FileDescriptorSet.parseFrom(
+                        Files.readAllBytes(apps().resolve(variant + "/schema.pb")));
+        return Descriptors.FileDescriptor.buildFrom(
+                        schema.getFile(0), new Descriptors.FileDescriptor[0])
+                .findMessageTypeByName("Entry");
     }
 
     static Path apps() {
@@ -241,28 +251,14 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
 
         void assertRestored(int attempt, int expectedCount) throws Exception {
             List<Integer> restored = new ArrayList<>();
-            FileDescriptorSet schema =
-                    FileDescriptorSet.parseFrom(
-                            Files.readAllBytes(apps().resolve("original/schema.pb")));
-            Descriptors.Descriptor descriptor =
-                    Descriptors.FileDescriptor.buildFrom(
-                                    schema.getFile(0), new Descriptors.FileDescriptor[0])
-                            .findMessageTypeByName("Entry");
-            for (int subtask = 0; subtask < 2; subtask++) {
-                Path observation = directory.resolve("restore-" + attempt + "-" + subtask);
-                await(() -> Files.exists(observation));
-                List<String> lines = Files.readAllLines(observation);
-                assertThat(lines.get(0)).isEqualTo("true");
-                for (String line : lines.subList(1, lines.size())) {
-                    DynamicMessage message =
-                            DynamicMessage.parseFrom(descriptor, Base64.getDecoder().decode(line));
-                    restored.add((Integer) message.getField(descriptor.findFieldByName("ordinal")));
-                    assertThat(message.getUnknownFields().getField(100).getVarintList())
-                            .containsExactly(99L);
-                    assertThat(message.hasField(descriptor.findFieldByName("child"))).isTrue();
-                    assertThat(message.getField(descriptor.findFieldByName("payload")))
-                            .isInstanceOf(String.class);
-                }
+            Descriptors.Descriptor descriptor = descriptor("original");
+            for (DynamicMessage message : restored(attempt, descriptor)) {
+                restored.add((Integer) message.getField(descriptor.findFieldByName("ordinal")));
+                assertThat(message.getUnknownFields().getField(100).getVarintList())
+                        .containsExactly(99L);
+                assertThat(message.hasField(descriptor.findFieldByName("child"))).isTrue();
+                assertThat(message.getField(descriptor.findFieldByName("payload")))
+                        .isInstanceOf(String.class);
             }
             assertThat(restored)
                     .containsExactlyInAnyOrderElementsOf(
@@ -271,6 +267,49 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
                                             .boxed()
                                             .toList()
                                     : List.of());
+        }
+
+        /**
+         * Decodes the operator-state values that each subtask re-serialized after restoring.
+         *
+         * @param descriptor runtime message descriptor that interprets the bytes
+         */
+        List<DynamicMessage> restored(int attempt, Descriptors.Descriptor descriptor)
+                throws Exception {
+            List<DynamicMessage> messages = new ArrayList<>();
+            for (int subtask = 0; subtask < 2; subtask++) {
+                Path observation = directory.resolve("restore-" + attempt + "-" + subtask);
+                await(() -> Files.exists(observation));
+                List<String> lines = Files.readAllLines(observation);
+                assertThat(lines.get(0)).isEqualTo("true");
+                for (String line : lines.subList(1, lines.size())) {
+                    messages.add(
+                            DynamicMessage.parseFrom(descriptor, Base64.getDecoder().decode(line)));
+                }
+            }
+            return messages;
+        }
+
+        /**
+         * Decodes the ValueState and MapState values that an input replaced, ValueState first.
+         *
+         * @param descriptor runtime message descriptor that interprets the bytes
+         * @return the replaced values that existed
+         */
+        List<DynamicMessage> replaced(int attempt, int ordinal, Descriptors.Descriptor descriptor)
+                throws Exception {
+            String[] fields =
+                    Files.readString(directory.resolve("value-" + attempt + "-" + ordinal))
+                            .split(",", -1);
+            List<DynamicMessage> values = new ArrayList<>();
+            for (String value : List.of(fields[4], fields[5])) {
+                if (!value.isEmpty()) {
+                    values.add(
+                            DynamicMessage.parseFrom(
+                                    descriptor, Base64.getDecoder().decode(value)));
+                }
+            }
+            return values;
         }
 
         String checkpoint() throws Exception {
@@ -309,6 +348,16 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
         }
 
         Throwable failure() throws Exception {
+            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+            while (!cluster.getJobStatus(graph.getJobID())
+                    .get(10, TimeUnit.SECONDS)
+                    .isGloballyTerminalState()) {
+                if (System.nanoTime() >= deadline) {
+                    throw new AssertionError(
+                            "Job is still running; its restore unexpectedly succeeded");
+                }
+                Thread.sleep(20);
+            }
             var result = cluster.requestJobResult(graph.getJobID()).get(60, TimeUnit.SECONDS);
             assertThat(result.isSuccess()).isFalse();
             return result.getSerializedThrowable()
