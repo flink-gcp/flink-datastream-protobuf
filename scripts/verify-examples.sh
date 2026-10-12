@@ -21,7 +21,9 @@ case "$version" in
   *) echo 'Expected Flink 1.20.x or 2.x' >&2; exit 1 ;;
 esac
 test "$major" = 3 || test "$major" = 4
-repository=$(python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]).resolve(); r=Path.cwd().resolve(); sys.exit("Use an external Maven repository") if p == r or r in p.parents else print(p)' "$3")
+# The checks use the standard library of the locked interpreter, without test packages.
+python=(uv run --locked --isolated --no-dev python)
+repository=$("${python[@]}" -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]).resolve(); r=Path.cwd().resolve(); sys.exit("Use an external Maven repository") if p == r or r in p.parents else print(p)' "$3")
 mkdir -p "$repository"
 identity="$compat-protobuf$major"
 marker="$repository/.protobuf-example-build"
@@ -30,8 +32,8 @@ if [[ -f "$marker" && "$(cat "$marker")" != "$identity" ]]; then
   exit 1
 fi
 printf '%s\n' "$identity" > "$marker"
-library_version=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}version"))')
-protobuf_version=$(python3 -c 'import xml.etree.ElementTree as E, sys; r=E.parse("pom.xml").getroot(); print(r.findtext("{*}properties/{*}protobuf.version") if sys.argv[1]=="3" else next(p.findtext("{*}properties/{*}protobuf.version") for p in r.findall("{*}profiles/{*}profile") if p.findtext("{*}id")=="protobuf4"))' "$major")
+library_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}version"))')
+protobuf_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E, sys; r=E.parse("pom.xml").getroot(); print(r.findtext("{*}properties/{*}protobuf.version") if sys.argv[1]=="3" else next(p.findtext("{*}properties/{*}protobuf.version") for p in r.findall("{*}profiles/{*}profile") if p.findtext("{*}id")=="protobuf4"))' "$major")
 # The 2.x library is always compiled at the floor, including a ceiling consumer run.
 ./mvnw -ntp "-Pprotobuf$major" "-Dflink.compat=$compat" -DskipTests clean package
 ./mvnw -ntp org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file "-Dfile=target/flink-datastream-protobuf-$library_version.jar" -DpomFile=pom.xml "-DlocalRepositoryPath=$repository"
