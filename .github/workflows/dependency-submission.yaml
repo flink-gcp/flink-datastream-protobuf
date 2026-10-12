@@ -1,0 +1,82 @@
+name: Dependency submission
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+# Static pom.xml parsing misses transitive and profile-pinned dependencies; see docs/development.md.
+# Snapshots from one detector are merged across correlators, so keep the action's default detector.
+jobs:
+  submit:
+    name: Submit ${{ matrix.name }}
+    # A dispatch from another branch would submit that branch under main's correlators.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: floor / Protobuf 3
+            id: floor-protobuf3
+          - name: floor / Protobuf 4
+            id: floor-protobuf4
+          - name: ceiling
+            id: ceiling
+          - name: lts
+            id: lts
+          - name: benchmarks
+            id: benchmarks
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Resolve the Maven arguments
+        id: args
+        env:
+          ID: ${{ matrix.id }}
+        run: |
+          case "$ID" in
+            floor-protobuf3) args='' ;;
+            floor-protobuf4) args='-Pprotobuf4' ;;
+            ceiling)
+              # Verify owns the ceiling version.
+              ceiling=$(sed -n "s/^  FLINK_CEILING: '\(.*\)'$/\1/p" .github/workflows/verify.yaml)
+              if [[ -z "$ceiling" ]]; then
+                echo '::error::FLINK_CEILING was not found in .github/workflows/verify.yaml'
+                exit 1
+              fi
+              args="-Dflink.version=$ceiling" ;;
+            lts) args='-Dflink.compat=flink1' ;;
+            benchmarks) args='-Pbenchmarks' ;;
+            *) exit 1 ;;
+          esac
+          echo "value=$args" >> "$GITHUB_OUTPUT"
+      - uses: advanced-security/maven-dependency-submission-action@a64327a7329c9939cf675e458452febe1894a70c # v6.0.1
+        with:
+          maven-args: -ntp ${{ steps.args.outputs.value }}
+          correlator: ${{ github.job }}-${{ matrix.id }}
+      # The action submits an empty snapshot without failing when it cannot read the graph;
+      # this cannot undo that submission, but it makes the failure visible.
+      - name: Check that the submitted graph was resolved
+        run: |
+          graph=target/maven-dependency-submission-action-depgraph.json
+          count=$(jq '.artifacts | length' "$graph")
+          echo "Resolved $count artifacts"
+          if (( count < 2 )); then
+            echo "::error::$graph lists no dependencies"
+            exit 1
+          fi
