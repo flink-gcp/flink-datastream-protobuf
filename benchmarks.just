@@ -104,6 +104,10 @@ benchmark-smoke version major output:
 benchmark-run version major output:
     @just benchmark-execute run '{{version}}' '{{major}}' '{{output}}'
 
+# The long-run block contract for only the native/Chill Protobuf pair.
+benchmark-pair version major output:
+    @just benchmark-execute pair '{{version}}' '{{major}}' '{{output}}'
+
 # Full corpus correctness without JMH measurements.
 benchmark-check version major output:
     @just benchmark-execute check '{{version}}' '{{major}}' '{{output}}'

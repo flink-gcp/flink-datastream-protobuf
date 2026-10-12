@@ -24,6 +24,7 @@ limitations under the License.
 - Date: 2026-09-06
 - Publication policy amended: 2026-09-13; 0.x versions are unpublished development milestones and 1.0.0 is the first Maven Central release
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
+- Frame buffering amended: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests; the 0.2.0 descriptor evaluator is implemented and tested with descriptor pairs, but snapshot restore does not use it until [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -145,12 +146,15 @@ The length excludes its own four bytes; zero is valid for a message whose valid 
 There is no null sentinel, per-record class name, per-record version, or Protobuf varint-delimited outer envelope.
 Null and uninitialized messages are invalid inputs.
 Reject them with `IOException` before writing the length prefix.
-Write the payload without an intermediate payload byte array, enabling `CodedOutputStream.useDeterministicSerialization()` only when configured.
+Do not allocate a payload byte array for each record.
+A payload of at most 4 KiB may be encoded into one 4 KiB array that the serializer instance retains and reuses, then written after its exact size is confirmed; larger payloads are written incrementally to the target.
+Enable `CodedOutputStream.useDeterministicSerialization()` only when configured.
 Framing version 1 identifies this representation in the snapshot, independently of the snapshot format version.
 
 Check serialized size without integer-overflow arithmetic and enforce the configured size and recursion limits before emitting a frame.
 The write-side depth check must match the configured parser budget, including nested message/map-entry payloads and unknown groups, so an accepted value is not written beyond its own reader's limits.
 On reading, reject negative or excessive lengths before allocating storage from the length, use a stream bounded to that frame, and require complete valid parsing within it.
+A payload of at most 4 KiB may be read completely into the same retained array and parsed without aliasing, so decoded values never refer to reused storage.
 A parser buffer must not consume a subsequent frame; `CodedInputStream.pushLimit` alone does not bound reads from the underlying stream.
 Negative lengths, oversized/deep messages, malformed payloads, and truncated frames fail with `IOException` identifying the condition.
 No resynchronization after malformed input is promised.

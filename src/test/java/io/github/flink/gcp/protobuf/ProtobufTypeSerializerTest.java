@@ -55,11 +55,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
+import static io.github.flink.gcp.protobuf.ProtobufTypeSerializer.SCRATCH_SIZE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -214,19 +220,177 @@ class ProtobufTypeSerializerTest {
     }
 
     @Test
+    void scratchBoundaryFramesMatchRuntimeBytesThroughEveryView() throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        List<ScalarMessage> values = new ArrayList<>();
+        values.add(ScalarMessage.getDefaultInstance());
+        for (int size :
+                List.of(3, SCRATCH_SIZE - 1, SCRATCH_SIZE, SCRATCH_SIZE + 1, 5 * SCRATCH_SIZE)) {
+            values.add(payloadOfSize(size));
+        }
+        ByteArrayOutputStream expected = new ByteArrayOutputStream();
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        DataOutputSerializer memory = new DataOutputSerializer(1);
+        for (ScalarMessage value : values) {
+            new DataOutputViewStreamWrapper(expected).writeInt(value.getSerializedSize());
+            expected.write(value.toByteArray());
+            serializer.serialize(value, new DataOutputViewStreamWrapper(stream));
+            serializer.serialize(value, memory);
+        }
+        assertThat(stream.toByteArray()).isEqualTo(expected.toByteArray());
+        assertThat(memory.getCopyOfBuffer()).isEqualTo(expected.toByteArray());
+
+        byte[] frames = concat(expected.toByteArray(), new byte[] {42});
+        DataInputViewStreamWrapper streamInput = input(frames);
+        DataInputDeserializer memoryInput = new DataInputDeserializer(frames);
+        for (ScalarMessage value : values) {
+            assertThat(serializer.deserialize(streamInput)).isEqualTo(value);
+            assertThat(serializer.deserialize(memoryInput)).isEqualTo(value);
+        }
+        assertThat(streamInput.readByte()).isEqualTo((byte) 42);
+        assertThat(memoryInput.readByte()).isEqualTo((byte) 42);
+    }
+
+    @Test
+    void freshAndRepeatedlyEncodedMessagesWriteIdenticalFrames() throws Exception {
+        for (boolean deterministic : List.of(false, true)) {
+            ProtobufTypeSerializer<RecursiveMessage> serializer =
+                    configured(RecursiveMessage.class, deterministic, 64 * 1024 * 1024, 100);
+            for (int bytes : List.of(16, 2 * SCRATCH_SIZE)) {
+                // Generated writers memoize nested sizes during the first write of a fresh value.
+                RecursiveMessage fresh = nestedPayload(bytes);
+                byte[] first = encode(serializer, fresh);
+                byte[] repeated = encode(serializer, fresh);
+                byte[] independent = encode(serializer, nestedPayload(bytes));
+
+                ByteArrayOutputStream runtime = new ByteArrayOutputStream();
+                CodedOutputStream output = CodedOutputStream.newInstance(runtime);
+                if (deterministic) {
+                    output.useDeterministicSerialization();
+                }
+                fresh.writeTo(output);
+                output.flush();
+                assertThat(Arrays.copyOfRange(first, 4, first.length))
+                        .isEqualTo(runtime.toByteArray());
+                assertThat(repeated).isEqualTo(first);
+                assertThat(independent).isEqualTo(first);
+                assertThat(serializer.deserialize(input(first))).isEqualTo(fresh);
+            }
+        }
+    }
+
+    @Test
+    void decodedValuesDoNotReferToTheReusedScratchArray() throws Exception {
+        ScalarMessage scalar =
+                ScalarMessage.newBuilder()
+                        .setStringValue("first é 中 😀")
+                        .setBytesValue(randomBytes(512, 1))
+                        .addBlobs(randomBytes(64, 2))
+                        .addStrings("listed")
+                        .setSelectedMessage(
+                                ScalarMessage.newBuilder().setBytesValue(randomBytes(32, 3)))
+                        .setUnknownFields(
+                                UnknownFieldSet.newBuilder()
+                                        .addField(
+                                                200,
+                                                UnknownFieldSet.Field.newBuilder()
+                                                        .addLengthDelimited(randomBytes(48, 4))
+                                                        .addGroup(unknownGroups(2))
+                                                        .build())
+                                        .build())
+                        .build();
+        assertDecodedValueSurvivesScratchReuse(
+                new ProtobufTypeSerializer<>(ScalarMessage.class),
+                scalar,
+                ScalarMessage.newBuilder().setBytesValue(filledBytes(SCRATCH_SIZE - 3)).build());
+        LazyMessage lazy =
+                LazyMessage.newBuilder()
+                        .setChild(RequiredMessage.newBuilder().setValue("lazy child"))
+                        .setUnchecked(RequiredMessage.newBuilder().setValue("unverified"))
+                        .build();
+        assertDecodedValueSurvivesScratchReuse(
+                new ProtobufTypeSerializer<>(LazyMessage.class),
+                lazy,
+                LazyMessage.newBuilder()
+                        .setChild(
+                                RequiredMessage.newBuilder()
+                                        .setValue("x".repeat(SCRATCH_SIZE - 16)))
+                        .build());
+    }
+
+    @Test
+    void duplicatesKeepIndependentScratchStorageAcrossThreads() throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> original =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<?>> tasks = new ArrayList<>();
+            for (int thread = 0; thread < 4; thread++) {
+                ProtobufTypeSerializer<ScalarMessage> serializer = original.duplicate();
+                List<ScalarMessage> values =
+                        List.of(
+                                ScalarMessage.newBuilder()
+                                        .setInt32Value(thread)
+                                        .setBytesValue(randomBytes(1000, thread))
+                                        .build(),
+                                ScalarMessage.newBuilder()
+                                        .setInt32Value(thread)
+                                        .setBytesValue(randomBytes(3 * SCRATCH_SIZE, thread))
+                                        .build());
+                tasks.add(
+                        executor.submit(
+                                () -> {
+                                    for (int i = 0; i < 500; i++) {
+                                        ScalarMessage value = values.get(i % values.size());
+                                        byte[] frame = encode(serializer, value);
+                                        DataOutputSerializer copy = new DataOutputSerializer(1);
+                                        serializer.copy(input(frame), copy);
+                                        assertThat(copy.getCopyOfBuffer()).isEqualTo(frame);
+                                        assertThat(serializer.deserialize(input(frame)))
+                                                .isEqualTo(value);
+                                    }
+                                    return null;
+                                }));
+            }
+            for (Future<?> task : tasks) {
+                task.get();
+            }
+        } finally {
+            executor.shutdownNow();
+            // Let a failed task's siblings stop before later tests run in this JVM.
+            assertThat(executor.awaitTermination(1, TimeUnit.MINUTES)).isTrue();
+        }
+    }
+
+    @Test
     void mismatchedGeneratedWriterCannotCompleteACorruptFrame() {
         ProtobufTypeSerializer<BrokenWriter> serializer =
                 new ProtobufTypeSerializer<>(BrokenWriter.class);
-        for (int count : List.of(0, 3)) {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            assertThatThrownBy(
-                            () ->
-                                    serializer.serialize(
-                                            new BrokenWriter(count),
-                                            new DataOutputViewStreamWrapper(bytes)))
-                    .isInstanceOf(IOException.class)
-                    .hasMessageContaining("calculated payload size");
-            assertThat(bytes.size()).isLessThanOrEqualTo(6);
+        // Declared bytes-field lengths giving payloads of 2, 4096 (the last array-encoded size),
+        // 4097 (the first streamed size), and 8195 bytes.
+        for (int declared : List.of(0, SCRATCH_SIZE - 3, SCRATCH_SIZE - 2, 2 * SCRATCH_SIZE)) {
+            int size =
+                    CodedOutputStream.computeBytesSize(10, ByteString.copyFrom(new byte[declared]));
+            for (int count : List.of(0, size - 1, size + 1)) {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                assertThatThrownBy(
+                                () ->
+                                        serializer.serialize(
+                                                new BrokenWriter(declared, count),
+                                                new DataOutputViewStreamWrapper(bytes)))
+                        .isInstanceOf(IOException.class)
+                        .hasMessageContaining(
+                                count > size
+                                        ? "exceeds calculated payload size"
+                                        : "shorter than calculated payload size");
+                if (size <= SCRATCH_SIZE) {
+                    // Small frames are completed in scratch storage before any target write.
+                    assertThat(bytes.size()).isZero();
+                } else {
+                    assertThat(bytes.size()).isLessThanOrEqualTo(4 + size);
+                }
+            }
         }
     }
 
@@ -429,10 +593,17 @@ class ProtobufTypeSerializerTest {
     void zeroByteReadAtExhaustionStillReportsTruncationAsIOException() throws Exception {
         ProtobufTypeSerializer<ScalarMessage> serializer =
                 new ProtobufTypeSerializer<>(ScalarMessage.class);
+        for (byte[] truncated : List.of(frame(3, 40, 1), frame(SCRATCH_SIZE + 1, 40, 1))) {
+            assertZeroByteExhaustionIsTruncation(serializer, truncated);
+        }
+    }
+
+    private static void assertZeroByteExhaustionIsTruncation(
+            ProtobufTypeSerializer<ScalarMessage> serializer, byte[] truncated) {
         // Flink 2.3.0 NonSpanningWrapper returns zero, rather than -1, when exhausted.
         DataInputViewStreamWrapper source =
                 new DataInputViewStreamWrapper(
-                        new ByteArrayInputStream(frame(3, 40, 1)) {
+                        new ByteArrayInputStream(truncated) {
                             @Override
                             public synchronized int read() {
                                 if (available() == 0) {
@@ -681,6 +852,58 @@ class ProtobufTypeSerializerTest {
                 type, new ProtobufSerializerSettings(deterministic, size, depth));
     }
 
+    /** Returns a single bytes-field message whose payload has exactly the requested size. */
+    private static ScalarMessage payloadOfSize(int size) {
+        for (int length = size - 2; length > 0; length--) {
+            ScalarMessage value =
+                    ScalarMessage.newBuilder().setBytesValue(randomBytes(length, size)).build();
+            if (value.getSerializedSize() == size) {
+                return value;
+            }
+        }
+        throw new AssertionError("No bytes-field payload of size " + size);
+    }
+
+    /** Builds new nested values, maps, and repeated bytes without computing any serialized size. */
+    private static RecursiveMessage nestedPayload(int bytes) {
+        RecursiveMessage leaf =
+                RecursiveMessage.newBuilder().setPayload(randomBytes(bytes, 5)).build();
+        return RecursiveMessage.newBuilder()
+                .setChild(RecursiveMessage.newBuilder().setChild(leaf))
+                .addChildren(leaf)
+                .putNodes("z", leaf)
+                .putNodes("a", RecursiveMessage.getDefaultInstance())
+                .putCounts("z", 1)
+                .putCounts("a", 2)
+                .addChunks(randomBytes(bytes / 2, 6))
+                .build();
+    }
+
+    private static ByteString randomBytes(int length, long seed) {
+        byte[] bytes = new byte[length];
+        new Random(seed).nextBytes(bytes);
+        return ByteString.copyFrom(bytes);
+    }
+
+    private static ByteString filledBytes(int length) {
+        byte[] bytes = new byte[length];
+        Arrays.fill(bytes, (byte) 0x55);
+        return ByteString.copyFrom(bytes);
+    }
+
+    /** Overwrites the serializer's scratch array through every operation that uses it. */
+    private static <T extends Message> void assertDecodedValueSurvivesScratchReuse(
+            ProtobufTypeSerializer<T> serializer, T value, T overwrite) throws Exception {
+        byte[] expected = value.toByteArray();
+        T decoded = serializer.deserialize(input(encode(serializer, value)));
+        byte[] overwriteFrame = encode(serializer, overwrite);
+        assertThat(overwriteFrame.length - 4).isLessThanOrEqualTo(SCRATCH_SIZE);
+        assertThat(serializer.deserialize(input(overwriteFrame))).isEqualTo(overwrite);
+        serializer.copy(input(overwriteFrame), new DataOutputSerializer(1));
+        assertThat(decoded).isEqualTo(value);
+        assertThat(decoded.toByteArray()).isEqualTo(expected);
+    }
+
     private static <T extends Message> byte[] encode(
             ProtobufTypeSerializer<T> serializer, T message) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -808,14 +1031,16 @@ class ProtobufTypeSerializerTest {
 
     /** Deliberately inconsistent writer for testing the final frame-length guard. */
     public static final class BrokenWriter extends InvalidGenerated {
+        private final ByteString declared;
         private final int writtenSize;
 
-        private BrokenWriter(int writtenSize) {
+        private BrokenWriter(int declaredBytes, int writtenSize) {
+            this.declared = ByteString.copyFrom(new byte[declaredBytes]);
             this.writtenSize = writtenSize;
         }
 
         public static BrokenWriter getDefaultInstance() {
-            return new BrokenWriter(2);
+            return new BrokenWriter(0, 2);
         }
 
         @Override
@@ -831,7 +1056,7 @@ class ProtobufTypeSerializerTest {
 
         @Override
         public Map<FieldDescriptor, Object> getAllFields() {
-            return Map.of(ScalarMessage.getDescriptor().findFieldByName("int32_value"), 1);
+            return Map.of(ScalarMessage.getDescriptor().findFieldByName("bytes_value"), declared);
         }
 
         @Override
