@@ -135,6 +135,14 @@ The [development guide](development.md#test-resources-and-version-updates) conta
 ## Planned schema evolution
 
 The [0.2.0 design](adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) adds a directional evaluator for supported field additions, removals/reservations, and enum additions, including referenced types.
-Its evaluator is tracked in [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), and restoration from retained 0.1.0 development state in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16).
-Those capabilities are planned and are not implemented by the current unchanged-schema tests.
+The evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented and tested with descriptor pairs, but snapshot restore does not use it yet.
+Connecting it to restore and verifying restoration from retained 0.1.0 development state are tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16); until then, the current library rejects every schema change listed above.
 The design remains conservative about conditional numeric conversions and other unsupported changes; parsing success alone does not prove that values retain their meaning.
+
+Prepare schema changes for that evaluator by reserving the number of every removed field, for example `reserved 2;`.
+The evaluator rejects a removal without a reservation, and it rejects a later change that removes a reservation to reuse the number.
+Protobuf parsing keeps old values of a removed field as unknown fields, so an unreserved number could later be parsed as an unrelated declaration.
+No descriptor comparison can detect a field that keeps its number, name, and type but changes its meaning, so keep a removed number reserved instead of reusing it.
+Reserving does not make removals of enum values acceptable; the evaluator rejects them.
+Before adding a field, also check that saved values cannot carry an unknown field with its number, for example from input written with a newer schema; the new parser would read that retained value as the added field, and descriptors cannot reveal it.
+The evaluator checks only messages that saved bytes reach through retained fields, so it does not check message types packed in an `Any` payload; reserve removed numbers in those types as well.

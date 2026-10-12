@@ -24,7 +24,7 @@ limitations under the License.
 - Date: 2026-09-06
 - Publication policy amended: 2026-09-13; 0.x versions are unpublished development milestones and 1.0.0 is the first Maven Central release
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
-- Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; unchanged-schema runtime recovery verified by MiniCluster tests; the 0.2.0 descriptor evaluator is implemented and tested with descriptor pairs, but snapshot restore does not use it until [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -272,6 +272,40 @@ An intentional departure from that path requires the documented 0.x breaking-cha
 The evaluator must consume the complete retained descriptors, including unknown fields and metadata, rather than a reduced 0.1.0 schema summary.
 Any wrapper compatibility does not validate the opaque schema of its payload.
 
+The implemented evaluator ([issue #15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15)) is a package-private function over the saved and new class name, message full name, settings, and normalized descriptor closure.
+It reads no snapshot bytes and loads no generated class, and it returns either `compatibleAsIs` or `incompatible` with a diagnostic naming the first incompatible message, field, enum value, file, or setting.
+An invalid descriptor closure, or one without the named root, throws `IllegalArgumentException` instead of producing a result.
+It checks names and the directional setting rules first, then normalizes both descriptor sets; equal normalized content is compatible, and no fingerprint takes part in the decision.
+
+Otherwise, the evaluator pairs types by their resolved full names, starting at the root and following each field number present in both schemas.
+Only these reached messages and enums are compared, together with their enclosing messages and declaring files, because saved bytes cannot select any other declaration.
+A declaration that only a removed or newly added field references is therefore not compared, and neither is an unrelated declaration, service, or import change.
+The declared type of an Any payload is selected by data, so the evaluator never reaches it.
+Within the reached declarations, everything must match except the following supported differences:
+
+| Supported difference | Condition |
+|---|---|
+| Field addition | The number is not a saved field, reservation, or extension number, the name is not a saved field's name or reservation, and the field is not required |
+| Field removal | The new message reserves the removed number; reserving the name is optional |
+| Added reservation | Saved number and name reservations remain covered, even if ranges are split or merged |
+| Enum value addition | The name and number are new and unreserved, the number is not an alias of a saved value, the first declared value stays first, and saved values keep their relative order |
+| Oneof addition or extension | Every member of a new oneof, and every new member of an existing oneof, is an added field |
+
+Every other difference in reached declarations is incompatible, including renames, renumbering, type or cardinality changes, presence changes, moves into, out of, or between oneofs, defaults, JSON names, options, reordering of retained fields, oneofs, or enum values, and unknown descriptor content.
+Declaring-file syntax, edition, package, options, and unknown content must also match, because they determine inherited features such as presence, packing, enum openness, and UTF-8 validation.
+A type that moves to another file or enclosing scope is rejected even when its full name is unchanged.
+The descriptor set's own unknown content must be equal.
+
+Requiring a reservation on removal makes later reuse of that number detectable: a new field with that number must remove the reservation, which the evaluator rejects.
+A number removed without reservation could later return with a different declaration, and values preserved as unknown fields would then be parsed as that declaration.
+The evaluator still cannot detect a field whose number, name, type, and options are unchanged but whose meaning has changed; that remains the application's schema obligation.
+
+A descriptor pair also cannot show which unknown fields the saved values carry.
+Binary parsing preserves unknown fields, so saved values can contain a number that the saved descriptor does not declare: from an earlier removal without reservation, or from input that was parsed from bytes written with a different schema.
+When an added field uses such a number, the new parser reads the retained value as that field.
+On 2026-10-11, a probe with Protobuf 3.25.9 generated classes confirmed the three outcomes: a value with the same wire type becomes the field's value, a different wire type stays unknown, and invalid UTF-8 retained under a new proto3 `string` field makes parsing fail.
+Accepting a field addition therefore assumes that no saved value carries an unknown field with that number; the evaluator cannot verify that assumption.
+
 ### Compatibility policy before 1.0.0
 
 The unpublished 0.x milestones are an initial development period; public APIs, defaults, supported dependency combinations, message framing, snapshot formats, and supported restore paths may change incompatibly.
@@ -297,7 +331,7 @@ Track direct and sequential upgrade outcomes rather than assuming transitive com
 
 | Candidate development upgrade path | Required decision and evidence |
 |---|---|
-| 0.1.0 to 0.2.0 | The planned evaluator restores supported 0.1.0 state; verify that path, or document and test an intentional breaking change with its replacement procedure |
+| 0.1.0 to 0.2.0 | The 0.2.0 restore path from [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), using the evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15), restores supported 0.1.0 state; verify that path, or document and test an intentional breaking change with its replacement procedure |
 | 0.1.0 directly to 0.3.0 | State whether direct upgrade works, requires an intermediate version or migration, or is unsupported; test the claimed result |
 | 0.2.0 to 0.3.0 | Assess generated-message applications as well as dynamic additions, including state written after supported 0.2.0 schema evolution |
 | 0.1.0 through 0.2.0 to 0.3.0 | If offered, test each step with newly emitted snapshots and the resulting schema/settings; direct-path success does not prove this path |

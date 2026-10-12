@@ -121,7 +121,15 @@ final class ProtobufSchema {
         return files;
     }
 
-    private static Descriptor resolveRootMessage(FileDescriptorSet ordered, String fullName) {
+    /**
+     * Builds dependency-ordered descriptor content and finds the declared root message.
+     *
+     * @param ordered files with each dependency before its importers
+     * @param fullName fully qualified root message name, including enclosing message names
+     * @return the resolved root message
+     * @throws IllegalArgumentException if descriptors are invalid or the root is missing/ambiguous
+     */
+    static Descriptor resolveRootMessage(FileDescriptorSet ordered, String fullName) {
         Map<String, FileDescriptor> resolved = new HashMap<>();
         Descriptor root = null;
         try {
