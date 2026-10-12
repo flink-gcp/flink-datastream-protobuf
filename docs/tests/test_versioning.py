@@ -37,8 +37,17 @@ class ScriptLinks(HTMLParser):
             self.sources.append(dict(attrs)["src"])
 
 
-@pytest.mark.parametrize("line", ["1.1", "1.2"])
-def test_build_scopes_the_real_theme_search_to_its_version(tmp_path, monkeypatch, line):
+@pytest.mark.parametrize(
+    "line,kind,label",
+    [
+        ("1.1", "release", "1.1.0"),
+        ("1.2", "release", "1.2.0"),
+        ("0.1", "milestone", "0.1 (development milestone)"),
+    ],
+)
+def test_build_scopes_the_real_theme_search_to_its_version(
+    tmp_path, monkeypatch, line, kind, label
+):
     spec = importlib.util.spec_from_file_location(
         "docs_site", ROOT / "scripts/docs-site.py"
     )
@@ -47,7 +56,9 @@ def test_build_scopes_the_real_theme_search_to_its_version(tmp_path, monkeypatch
     source = tmp_path / "source"
     docs = source / "docs"
     (docs / "content/docs").mkdir(parents=True)
-    (docs / "content/_index.md").write_text("---\ntitle: Home\n---\nHome\n")
+    (docs / "content/_index.md").write_text(
+        "---\ntitle: Home\n---\nThis is **{{< param DocsVersion >}}** documentation.\n"
+    )
     (docs / "content/docs/page.md").write_text(
         f"---\ntitle: Version {line}\n---\nSearch content for {line}.\n"
     )
@@ -83,7 +94,8 @@ def test_build_scopes_the_real_theme_search_to_its_version(tmp_path, monkeypatch
     monkeypatch.setattr(helper, "run", run)
     version = {
         "id": line,
-        "label": line + ".0",
+        "kind": kind,
+        "label": label,
         "ref": "v" + line + ".0",
         "sha": "a" * 40,
     }
@@ -91,6 +103,8 @@ def test_build_scopes_the_real_theme_search_to_its_version(tmp_path, monkeypatch
     helper.build(manifest, line, source, tmp_path / "output")
     public = tmp_path / "output" / line
     prefix = "/project/" + line + "/"
+    home = (public / "index.html").read_text()
+    assert f"<strong>{label}</strong>" in home
     text = (public / "docs/page/index.html").read_text()
     assert "/edit/main/" not in text
     scripts = [url for url in ScriptLinks(text).sources if ".search." in url]
