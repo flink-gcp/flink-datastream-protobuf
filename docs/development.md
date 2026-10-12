@@ -382,9 +382,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/{original,changed}/runtime.proto`; preserve the intended positive/rejection relationship. An incompatible schema change requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just` |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just` |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands |
+| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; recheck `benchmark.avro.version` against the new release under [Dependency updates](#dependency-updates) |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` and the accepted version in `benchmarks.just`; recheck `benchmark.avro.version` against the new release under [Dependency updates](#dependency-updates) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands; recheck `benchmark.avro.version` against the new release under [Dependency updates](#dependency-updates) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -572,9 +572,18 @@ Keep historical measurements distinct from results for the new dependency versio
 
 Update `benchmark.thrift.version` together with `benchmark_thrift_version` and `benchmark_thrift_sha256` in `benchmarks.just`; both values enter the CI compiler cache identity.
 The same property pins `libthrift` and the required compiler version; updating only the Maven runtime pin makes benchmark initialization reject the older compiler.
-Check `benchmark.avro.version` against the `flink-avro` dependency pins for every supported Flink runtime before accepting an update; validate any intentional difference explicitly.
-For either update, regenerate the benchmark schemas, run both Protobuf profiles across the ADR-0003 smoke matrix, and retain new provenance separately from the fixed baseline.
-Review Dependabot proposals for these coordinated changes; a Maven-only version bump is not sufficient.
+
+Keep `benchmark.avro.version` on the Avro version of every supported Flink runtime, so the Avro comparison measures the dependency graph that applications run with; validate any intentional difference explicitly.
+Flink sets that version as `avro.version` in its root POM (`flink-parent`): the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L151), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L151), and [1.20.4](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L149) release POMs pin Avro 1.11.4, and a patch release can move it (1.20.0 pinned 1.11.3).
+Recheck it whenever the Flink floor, ceiling, or LTS version changes, including patch releases; the benchmark's direct Avro dependency overrides the version `flink-avro` brings, so CI does not report a difference.
+If the supported runtimes pin different Avro versions, record the chosen version and the lanes it differs from; Avro 1.12 also rejects the generated benchmark records until their package is trusted through `org.apache.avro.SERIALIZABLE_PACKAGES`.
+Keep `benchmark.jackson.version` on the Jackson line of the selected Avro release; Avro 1.11.4 imports [Jackson BOM 2.14.3](https://github.com/apache/avro/blob/6f119ef077e3a50382ba13164afecdf84408fc2f/lang/java/pom.xml#L41).
+Updating only `jackson-databind` resolves the older `jackson-core` through Avro, and Avro's schema parser then fails with a `NoClassDefFoundError` for `StreamConstraintsException`.
+If a security fix requires a newer Jackson, pin `jackson-core` together with `jackson-databind` and validate the Avro lanes explicitly.
+Dependabot ignores every `org.apache.avro:*` update, including patches, because Flink pins an exact Avro version, and major and minor `com.fasterxml.jackson.core:*` updates; revisit both rules when that pin moves.
+
+For a Thrift or Avro update, regenerate the benchmark schemas, run both Protobuf profiles across the ADR-0003 smoke matrix, and retain new provenance separately from the fixed baseline.
+Review Dependabot Thrift proposals as coordinated changes; a Maven-only version bump is not sufficient.
 
 Dependabot alerts and security-update PRs are repository settings, separate from the weekly version-update schedule in `.github/dependabot.yml`.
 Keep both enabled and review security-update PRs through the same verification and review flow.
