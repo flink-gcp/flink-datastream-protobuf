@@ -19,9 +19,8 @@ updates:
         update-types: [version-update:semver-major]
       # Keep benchmark Avro on the exact flink-avro pin of the supported Flink runtimes.
       - dependency-name: org.apache.avro:*
-      # Keep jackson-databind on the pinned Avro release's Jackson line; Avro's schema parser needs a matching jackson-core.
+      # Keep jackson-databind on the pinned Avro release's exact Jackson version; the benchmark convergence rule rejects any other.
       - dependency-name: com.fasterxml.jackson.core:*
-        update-types: [version-update:semver-major, version-update:semver-minor]
   - package-ecosystem: github-actions
     directory: /
     schedule:
