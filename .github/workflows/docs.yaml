@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: python3 scripts/docs-site.py plan "$RUNNER_TEMP/docs-plan.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-plan
           path: ${{ runner.temp }}/docs-plan.json
@@ -89,7 +89,7 @@ jobs:
         env:
           DOCS_VERSION: ${{ matrix.id }}
         run: just docs-site build "$RUNNER_TEMP/docs-plan.json" "$DOCS_VERSION" "$GITHUB_WORKSPACE/source" "$RUNNER_TEMP/line"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-line-${{ matrix.id }}
           path: ${{ runner.temp }}/line
