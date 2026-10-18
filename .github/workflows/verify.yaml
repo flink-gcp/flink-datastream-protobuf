@@ -37,7 +37,7 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just
       - name: Verify the library and native probes
@@ -161,7 +161,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just
       - name: Run the floor jar on the ceiling runtime without recompilation
@@ -187,7 +187,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just
       - name: Capture the development bundle once
