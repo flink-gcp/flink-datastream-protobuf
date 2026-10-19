@@ -21,6 +21,10 @@ dev_tools_revision := "c3784bce1f95dc75848b1fc2de0f370e5c0a09ea"
 
 mvn := "./mvnw -ntp"
 
+# The standard-library tools run in a temporary environment without the test dependencies.
+# Call uv from PATH: a nested `mise x` would replace the caller's JDK for Java subprocesses.
+python := "uv run --locked --isolated --no-dev python"
+
 # Show the available development commands.
 default:
     @just --list
@@ -47,7 +51,7 @@ verify-flink version major="3":
 # Run the unchanged floor jar and compiled test inventory on a newer 2.x runtime.
 [positional-arguments]
 binary-compat ceiling major="3":
-    python3 scripts/binary-compat.py "$1" "$2"
+    {{ python }} scripts/binary-compat.py "$1" "$2"
 
 # Capture an unpublished development bundle from a clean committed checkout on JDK 17.
 [positional-arguments]
@@ -63,11 +67,10 @@ baseline-check bundle:
 # Arguments after the output are bundle names and an optional --archives <directory>.
 [positional-arguments]
 baseline-fetch tag output *args:
-    python3 scripts/baseline_fetch.py fetch "$@"
+    {{ python }} scripts/baseline_fetch.py fetch "$@"
 
 # Exercise baseline retrieval with synthetic releases only.
-baseline-fetch-test:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_baseline_fetch.py' -v
+baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
 
 # Run retained bytecode and state under the selected runtime and the current JDK.
 [positional-arguments]
@@ -77,6 +80,11 @@ baseline-read bundle version output:
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups= verify
+
+# Run the scripts/tests suite, or only the given test files, through the locked pytest.
+[positional-arguments]
+test-scripts *tests:
+    PYTHONDONTWRITEBYTECODE=1 uv run --locked pytest -v "$@"
 
 # Apply the Java formatter before committing.
 format:
@@ -105,7 +113,7 @@ docs-javadoc compat="flink2" major="3":
 # Render the existing Markdown with the pinned shared design.
 docs:
     mise x hugo-extended go -- hugo --source docs --cleanDestinationDir --gc --minify --panicOnWarning
-    mise x uv -- uv run --project docs --locked python scripts/docs-site.py check-sources docs/public
+    {{ python }} scripts/docs-site.py check-sources docs/public
 
 # Preview prose; run docs-validate first to include the generated API reference.
 docs-serve:
@@ -118,7 +126,7 @@ docs-validate:
     {{ mvn }} -Dtest=DocumentationExamplesTest test
     repository=$(mktemp -d)
     trap 'rm -rf "$repository"' EXIT
-    floor=$(python3 -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}properties/{*}flink.version"))')
+    floor=$({{ python }} -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}properties/{*}flink.version"))')
     just examples-verify "$floor" 3 "$repository"
     just docs-javadoc
     just docs-site prepare-api target/apidocs
@@ -126,9 +134,9 @@ docs-validate:
 
 # Check release selection, provenance, rendering and navigation.
 test-doc-versions:
-    mise x hugo-extended go node uv -- uv run --project docs --locked python -m pytest docs/tests
+    mise x hugo-extended go node python uv -- uv run --locked pytest docs/tests
 
 # Plan, build and assemble independently built documentation versions.
 [positional-arguments]
 docs-site +args:
-    mise x uv -- uv run --project docs --locked python scripts/docs-site.py "$@"
+    {{ python }} scripts/docs-site.py "$@"

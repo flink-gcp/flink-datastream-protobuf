@@ -11,12 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# The non-packaged root runs the repository's Python tools and their tests.
+# The tools use only the standard library; third-party packages are test-only.
 
 [project]
-name = "protobuf-docs-checks"
+name = "flink-datastream-protobuf"
 version = "0.0.0"
-requires-python = ">=3.11"
-dependencies = ["pytest==9.0.3", "pyyaml==6.0.3"]
+requires-python = "==3.14.*"
+dependencies = []
 
 [tool.uv]
 package = false
+# Use the Python 3.14 that mise.toml provides instead of a uv-managed or downloaded one.
+python-preference = "only-system"
+python-downloads = "never"
+
+[dependency-groups]
+dev = ["pytest==9.0.3", "pyyaml==6.0.3"]
+
+# Some documentation tests need Hugo and Node; `just test-doc-versions` runs them all.
+[tool.pytest.ini_options]
+testpaths = ["scripts/tests"]

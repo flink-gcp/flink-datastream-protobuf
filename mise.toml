@@ -8,7 +8,8 @@ node = "24"
 # Match the reviewed exception in the reference repository's toolchain.
 "npm:markdownlint-cli2" = { version = "0.23.2", trust_policy_excludes = ["fastq@1.20.2"] }
 pinact = "4"
-# Optional Serena integration in .mcp.json and .codex/config.toml.
+# Repository Python tools, and the optional Serena integration in .mcp.json and .codex/config.toml.
+python = "3.14"
 uv = "0.12.1"
 
 # Shared documentation design toolchain.

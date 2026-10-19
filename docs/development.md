@@ -25,11 +25,15 @@ limitations under the License.
 The Maven Wrapper pins Maven 3.10.0; all Maven recipes in just invoke the wrapper.
 The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
 Java output targets release 17.
-`mise.toml` supplies just, the workflow and Markdown linters, pinact, uv, Hugo Extended 0.164.0, and Go 1.26.5.
-The site tools use Python 3.11 or newer through uv; the application-example and binary recipes retain their Python 3.9 minimum.
+`mise.toml` supplies just, the workflow and Markdown linters, pinact, Python 3.14, uv, Hugo Extended 0.164.0, and Go 1.26.5.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
-The binary compatibility, application-example, baseline retrieval, and benchmark evidence recipes also need Python 3.9 or newer, using only its standard library.
-Install Python separately; `mise.toml` does not provide it.
+The repository's Python tools and their tests use the non-packaged uv project at the root.
+`mise.toml` provides Python 3.14, `requires-python = "==3.14.*"` in `pyproject.toml` limits uv to that minor, and `uv.lock` locks pytest and PyYAML as development dependencies.
+`pyproject.toml` sets `python-preference = "only-system"` and `python-downloads = "never"`, so uv takes Python 3.14 from PATH, where `mise x` and mise activation put the `mise.toml` interpreter, and fails rather than download one.
+An activated virtual environment or an existing `.venv` takes precedence over PATH; deactivate other environments and delete a `.venv` built from another interpreter.
+Manage Python with mise, including the global default, rather than `uv python install` or `uv python pin --global`; the repository has no `.python-version`, so a global uv pin can override the mise interpreter or make the recipes fail.
+Recipes run the tools with `uv run --locked --isolated --no-dev`: each run uses a temporary environment with only the standard library, and a stale lock fails instead of being rewritten.
+These recipes take `uv` from PATH, which `mise x -- just` or a mise-activated shell provides.
 
 ```sh
 mise trust
@@ -67,6 +71,7 @@ mise x -- just --list
 | `just benchmark-evidence-test` | Run the gate's synthetic positive and negative controls |
 | `just gce-benchmark <command> ...` | Plan, run, collect, and clean up temporary GCE benchmark VMs; see [Temporary GCE execution](#temporary-gce-execution) |
 | `just gce-benchmark-test` | Run the GCE operator tooling tests against a recording gcloud double, without cloud access |
+| `just test-scripts [test-file...]` | Run the `scripts/tests` suite through the locked pytest, or only the given files; the per-tool test recipes delegate to it |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
@@ -75,6 +80,7 @@ Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=Unregister
 Run the full `just verify` for this single-module library before pushing build or Java changes.
 CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.4 with JDK 17.
 It also runs the binary compatibility recipe for each Protobuf profile on JDK 17.
+Lint runs `just test-scripts` with the workflow and Markdown checks.
 These lanes run for each PR, main push, manual verification, and weekly schedule.
 The required checks above do not include a mutation-testing batch.
 Apply the shared review safeguards to any batch that is performed.
@@ -641,7 +647,8 @@ The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inhe
 
 ### Dependency updates
 
-Dependabot checks Maven and GitHub Actions weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
+Dependabot checks Maven, GitHub Actions, and the root uv project weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
+Update the Python minor by hand: change `python` in `mise.toml` and `requires-python` together, relock, and run `just test-scripts` and `just test-doc-versions`.
 During dependency maintenance, also check the `protobuf4` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
 Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.
 Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.

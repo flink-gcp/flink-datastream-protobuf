@@ -108,7 +108,7 @@ Obtain them with [`baseline-fetch`](#retrieve-the-retained-baseline); the releas
 ## Retrieve the retained baseline
 
 `baseline-fetch` downloads the designated release assets with `gh release download`, verifies them, and extracts the selected bundles into a new directory outside the repository.
-It needs an authenticated `gh`, Python 3.9 or newer, and JDK 17 or 21 for the final `baseline-check`.
+It needs an authenticated `gh`, Python and uv from `mise.toml`, and JDK 17 or 21 for the final `baseline-check`.
 Without bundle names it fetches all four bundles.
 Give absolute paths: just runs the recipe from the repository root, so a relative path resolves there and is rejected.
 
