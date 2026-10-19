@@ -40,7 +40,7 @@ The [usage and configuration guide](https://flink-gcp.github.io/flink-datastream
 The [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
 Browse the [API reference](https://flink-gcp.github.io/flink-datastream-protobuf/api/java/), or generate it locally with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
 The [documentation site](https://flink-gcp.github.io/flink-datastream-protobuf/) includes version selection and search.
-See [documentation versions](https://flink-gcp.github.io/flink-datastream-protobuf/docs/versions/) for the Development-only period and the release retention policy from 1.0.0.
+See [documentation versions](https://flink-gcp.github.io/flink-datastream-protobuf/docs/versions/) for the development milestones hosted before 1.0.0 and the release retention policy from 1.0.0.
 
 ## Common generated types
 

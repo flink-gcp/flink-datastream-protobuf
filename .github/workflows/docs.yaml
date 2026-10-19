@@ -75,6 +75,10 @@ jobs:
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: just
+      # The controller runs docs-site.py on its own pinned Python, which a
+      # milestone tag's toolchain above need not provide.
+      - name: Install the controller's Python
+        run: mise install python
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.HUGO_CACHEDIR }}
