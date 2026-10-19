@@ -19,18 +19,14 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          install_args: actionlint shellcheck node npm:markdownlint-cli2
+          install_args: actionlint shellcheck node npm:markdownlint-cli2 python uv
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: just
       - name: Lint workflows and documentation
         run: just lint
-      - name: Test the evidence content gate with synthetic inputs
-        run: just benchmark-evidence-test
-      - name: Test retained baseline retrieval with synthetic releases
-        run: just baseline-fetch-test
-      - name: Test the GCE benchmark tooling offline
-        run: just gce-benchmark-test
+      - name: Test the Python tools offline with synthetic inputs
+        run: just test-scripts
       - name: Inspect retained benchmark evidence
         run: just benchmark-evidence-repository "$RUNNER_TEMP/evidence-inventories"
       - name: Retain inspection inventories without the existing evidence archives

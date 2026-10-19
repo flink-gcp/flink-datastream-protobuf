@@ -17,7 +17,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.
-- `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application; requires Python 3.9 or newer.
+- `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application.
 - `just docs` / `just docs-serve`: build or preview the shared-design site.
 - `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.
 - `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `target/apidocs`.
@@ -32,6 +32,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just benchmark-evidence-repository <new-output>`: inspect committed benchmark archives and retain member inventories without re-uploading the archives.
 - `just benchmark-evidence-test`: run synthetic content-gate tests without Maven or Thrift.
 - `just gce-benchmark plan|execute|status|collect|cleanup ...`: run benchmarks on temporary credential-free GCE VMs; `execute` requires `--approve` after the cost and ownership checks in `docs/development.md`, and `just gce-benchmark-test` runs its offline tests.
+- `just test-scripts [test-file...]`: run the `scripts/tests` suite through the locked pytest; the per-tool test recipes delegate to it.
 - `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 
@@ -46,6 +47,7 @@ CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on F
 - Production packages use `io.github.flink.gcp.protobuf`; give production types the appropriate Flink API annotation and public/protected APIs Javadoc.
 - Use JUnit 5, AssertJ, and handwritten test doubles. Do not add Guava, Mockito, PowerMock, Lombok, or AutoValue.
 - Keep TypeInfoFactory registry controls in separate test JVMs. Native integration tests disable generic types and must not rely on `--add-opens`.
+- Keep repository Python tools on the standard library and run them with `uv run --locked --isolated --no-dev python`, as the justfile `python` variable does; add test-only packages to the root uv project's `dev` group.
 - Keep generated code under target. Do not promote the probe serializer or its wire format into a public API.
 - Keep current behavior in user documentation, decisions and alternatives in ADRs, and imperative development rules here or in skills.
 - Update documentation with behavior/API changes. Distinguish planned behavior from measured behavior; support claims with pinned source or tests.

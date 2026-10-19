@@ -30,6 +30,7 @@ limitations under the License.
 - Development bundle tooling amended: 2026-09-16, [issue #40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40)
 - CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
 - Retained baseline retrieval amended: 2026-10-11, [issue #61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61)
+- Python tooling through uv amended: 2026-10-12, [issue #96](https://github.com/flink-gcp/flink-datastream-protobuf/issues/96)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -54,6 +55,15 @@ An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven, except the dependency-graph plugin that the submission action pins.
 
+Repository Python tools and their tests run through one non-packaged uv project at the root, which limits uv to Python 3.14 and locks the test dependencies.
+mise.toml supplies that Python minor like the other tools, and the project settings stop uv from preferring uv-managed interpreters or downloading one.
+Recipes and workflows call `uv run --locked`, and no step depends on a system Python.
+The tools use only the standard library and run in a temporary environment without the test dependencies, so the evidence gate and baseline retrieval load no third-party code; a test imports every tool without site-packages.
+Recipes take uv from PATH rather than a nested `mise x`, which would replace a JDK selected for the command and move Java subprocesses off a JDK 21 lane.
+One pytest recipe runs the `scripts/tests` suite in Lint; the documentation tests, some of which need Hugo and Node, run in Docs.
+The documentation-site tool runs in the same project rather than a separate `docs` project or uv workspace member: neither is a package or has runtime dependencies, and one project gives one Python minor, one dependency lock, and one Dependabot entry.
+Add a workspace member when a tool needs its own runtime dependencies, as in flink-connector-gcp.
+
 Verify reuses the pinned benchmark compiler through an exact-key Actions cache rather than rebuilding it in every matrix job.
 The key identifies the Thrift version, source checksum, build recipe, distribution release, architecture, and C++ compiler.
 Each job checks a restored compiler before use and rebuilds the pinned source when the entry is missing or fails the check; only a job that missed the entry saves its newly built and checked compiler, before benchmark processes run.
@@ -63,7 +73,7 @@ Neither alternative changes the supported runtime matrix or the aggregate gate; 
 Job limits come from measured GitHub runner durations with at least twice the slowest successful run, and the smoke has a command limit so that a hung measurement fails before the job limit cancels evidence retention.
 Shared-runner durations never become benchmark pass/fail thresholds.
 
-Dependabot proposes individual weekly Maven and GitHub Actions updates.
+Dependabot proposes individual weekly Maven, GitHub Actions, and uv updates.
 Flink major/minor changes follow ADR-0003, and Protobuf major changes require an explicit compatibility decision.
 JUnit major upgrades follow the supported Flink floor: adopt JUnit 6 when that upstream Flink release's root POM (`flink-parent`) pins it, then verify the complete supported matrix, including LTS.
 This uses the adoption condition recorded in [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906); minor and patch updates within JUnit 5 remain reviewable.
