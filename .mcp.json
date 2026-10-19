@@ -9,9 +9,13 @@
       "command": "mise",
       "args": [
         "x",
+        "python@3.14",
         "uv",
         "--",
         "uvx",
+        "--no-python-downloads",
+        "--python",
+        "3.14",
         "--from",
         "serena-agent==1.7.0",
         "serena",
