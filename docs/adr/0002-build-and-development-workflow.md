@@ -31,6 +31,7 @@ limitations under the License.
 - CI compiler reuse and job budgets amended: 2026-10-11, [issue #46](https://github.com/flink-gcp/flink-datastream-protobuf/issues/46); evidence: [CI budget measurements](../validation/ci-budget.md)
 - Retained baseline retrieval amended: 2026-10-11, [issue #61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61)
 - Python tooling through uv amended: 2026-10-12, [issue #96](https://github.com/flink-gcp/flink-datastream-protobuf/issues/96)
+- Development milestone documentation amended: 2026-10-19, [issue #62](https://github.com/flink-gcp/flink-datastream-protobuf/issues/62)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -113,12 +114,16 @@ The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design, wi
 The consumer owns URLs, source links, version selection, Javadoc and publication; no Java runtime dependency on the connector or shared tooling is introduced.
 The bootstrap-only deferral of Hugo is complete.
 
-Documentation follows Development until the first 1.0.0 release, then retains the latest patch of the current and previous released minor series plus Development.
-Only published stable `vX.Y.Z` releases from 1.0.0 are eligible; the Flink 1.20 artifact suffix shares its release's documentation slot.
+From the first 1.0.0 release, documentation retains the latest patch of the current and previous released minor series plus Development.
+Only published stable `vX.Y.Z` releases from 1.0.0 are eligible for that window; the Flink 1.20 artifact suffix shares its release's documentation slot.
+Before the first stable release, the site hosts Development and the latest patch of each 0.x minor published as a GitHub pre-release, labelled as a development milestone.
+The 0.2.0 tracker [#14](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) and its upgrade guide [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) require attributable 0.1.0 documentation beside the 0.2.0 pages, and the original Development-only rule left tagged milestone pages reachable only as source.
+Milestones leave the site with the first stable release.
+Keeping them after 1.0.0 was rejected because they are unmaintained, unpublished APIs; the release archive retains their tagged sources.
 Each selected source is pinned to a commit and builds its own examples, dependencies and strict Javadoc.
 The controller checks provenance and assembles into a fresh output directory; it does not rewrite historical release content or retain generated HTML as an archive.
-Development is excluded from indexing, and source links identify the exact build commit.
-Version-free URLs point to Development before the first release and the current release afterwards.
+Development and milestones are excluded from indexing, and source links identify the exact build commit.
+Version-free URLs point to Development, never a milestone, before the first stable release and the current release afterwards.
 
 PRs validate and package the complete site without deploying.
 Trusted main and release-triggered runs publish only after the same frozen main source passes Verify, Lint and Docs.

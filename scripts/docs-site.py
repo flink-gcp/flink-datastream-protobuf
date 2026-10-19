@@ -44,26 +44,36 @@ def run(*args, cwd=ROOT, env=None, capture=False):
     return result.stdout.strip() if capture else None
 
 
-def select_releases(releases, retained):
-    if type(retained) is not int or retained < 1:
-        raise ValueError("retained_minor_lines must be a positive integer")
-    latest = {}
+def published(releases):
+    """Yield the version and pre-release flag of each published vX.Y.Z release."""
     for release in releases:
         match = RELEASE.fullmatch(release["tag_name"])
-        if (
-            not match
-            or release["draft"]
-            or release["prerelease"]
-            or not release["published_at"]
-        ):
-            continue
-        version = tuple(map(int, match.groups()))
-        if version[0] == 0:
-            continue
+        if match and not release["draft"] and release["published_at"]:
+            yield tuple(map(int, match.groups())), release["prerelease"]
+
+
+def latest_patches(versions):
+    latest = {}
+    for version in versions:
         line = version[:2]
         if line not in latest or version > latest[line]:
             latest[line] = version
-    return [latest[line] for line in sorted(latest, reverse=True)[:retained]]
+    return [latest[line] for line in sorted(latest, reverse=True)]
+
+
+def select_releases(releases, retained):
+    if type(retained) is not int or retained < 1:
+        raise ValueError("retained_minor_lines must be a positive integer")
+    stable = (v for v, prerelease in published(releases) if v[0] and not prerelease)
+    return latest_patches(stable)[:retained]
+
+
+def select_milestones(releases):
+    """Select 0.x pre-releases as development milestones until a stable release."""
+    if select_releases(releases, 1):
+        return []
+    zero = (v for v, prerelease in published(releases) if not v[0] and prerelease)
+    return latest_patches(zero)
 
 
 def site_base(value):
@@ -107,28 +117,38 @@ def plan(destination):
         )
     )
     releases = [release for page in pages for release in page]
+    selected = [
+        ("release", version)
+        for version in select_releases(releases, config["retained_minor_lines"])
+    ]
+    selected += [("milestone", version) for version in select_milestones(releases)]
     versions = []
-    for version in select_releases(releases, config["retained_minor_lines"]):
-        label = ".".join(map(str, version))
-        ref = f"v{label}"
+    for kind, version in selected:
+        number = ".".join(map(str, version))
+        line = ".".join(map(str, version[:2]))
+        label = f"{line} (development milestone)" if kind == "milestone" else number
+        ref = f"v{number}"
         sha = run("git", "rev-parse", f"refs/tags/{ref}^{{commit}}", capture=True)
         versions.append(
-            {
-                "id": ".".join(map(str, version[:2])),
-                "label": label,
-                "ref": ref,
-                "sha": sha,
-            }
+            {"id": line, "kind": kind, "label": label, "ref": ref, "sha": sha}
         )
     controller = run("git", "rev-parse", "HEAD", capture=True)
     versions.append(
-        {"id": "development", "label": "Development", "ref": "main", "sha": controller}
+        {
+            "id": "development",
+            "kind": "development",
+            "label": "Development",
+            "ref": "main",
+            "sha": controller,
+        }
     )
+    # Milestones are never the target of version-free URLs.
+    current = next(v["id"] for v in versions if v["kind"] != "milestone")
     manifest = {
         "base_url": base,
         "repository": repository,
         "controller_sha": controller,
-        "current": versions[0]["id"],
+        "current": current,
         "versions": versions,
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -171,7 +191,7 @@ def build(manifest, name, source, destination):
         HUGO_PARAMS_SOURCECOMMIT=version["sha"],
         HUGO_PARAMS_DOCSVERSION=version["label"],
     )
-    if name != "development":
+    if version["kind"] != "development":
         env["HUGO_PARAMS_BOOKEDITLINK"] = ""
     run("mise", "x", "java", "--", "just", "docs-validate", cwd=source, env=env)
     public = source / "docs/public"
@@ -207,7 +227,7 @@ def navigation(manifest, version, relative, inventories):
         same = ' data-same-page="true"' if target == relative else ""
         suffix = (
             " (latest)"
-            if other["id"] == manifest["current"] and other["id"] != "development"
+            if other["id"] == manifest["current"] and other["kind"] != "development"
             else ""
         )
         label = html.escape(other["label"] + suffix)
@@ -249,7 +269,7 @@ def decorate(text, manifest, version, relative, inventories):
     base = site_base(manifest["base_url"])
     extra = f'<link rel="stylesheet" href="{base}docs-version.css">'
     extra += f'<script defer src="{base}docs-version.js"></script>'
-    if version["id"] == "development":
+    if version["kind"] != "release":
         extra += '<meta name="robots" content="noindex, nofollow">'
     text, count = re.subn(
         r"</head>", lambda _: extra + "</head>", text, count=1, flags=re.IGNORECASE
@@ -272,7 +292,7 @@ def decorate(text, manifest, version, relative, inventories):
         raise ValueError(
             f"{version['id']}/{relative}: missing navigation insertion point"
         )
-    if version["id"] != "development":
+    if version["kind"] != "development":
         repository = f"https://github.com/{manifest['repository']}"
         for kind in ("blob", "tree"):
             text = text.replace(
@@ -352,14 +372,15 @@ def assemble(manifest, inputs, destination):
             f'<a href="https://github.com/{repository}/releases">Release archives</a></p></body></html>'
         )
         (staged / "versions.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        # Crawlers must fetch Development pages to see their noindex metadata.
+        # Crawlers must fetch Development and milestone pages to see their
+        # noindex metadata.
         (staged / "robots.txt").write_text(
             f"User-agent: *\nAllow: /\nSitemap: {manifest['base_url']}sitemap.xml\n"
         )
         maps = "".join(
             f"<sitemap><loc>{html.escape(manifest['base_url'] + v['id'] + '/sitemap.xml')}</loc></sitemap>"
             for v in manifest["versions"]
-            if v["id"] != "development"
+            if v["kind"] == "release"
         )
         (staged / "sitemap.xml").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>'
