@@ -32,6 +32,7 @@ limitations under the License.
 - Retained baseline retrieval amended: 2026-10-11, [issue #61](https://github.com/flink-gcp/flink-datastream-protobuf/issues/61)
 - Python tooling through uv amended: 2026-10-12, [issue #96](https://github.com/flink-gcp/flink-datastream-protobuf/issues/96)
 - Development milestone documentation amended: 2026-10-19, [issue #62](https://github.com/flink-gcp/flink-datastream-protobuf/issues/62)
+- Required `CI passed` ruleset amended: 2026-10-19
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -54,6 +55,8 @@ The CI orchestrator has no path filter and requires source selection, Verify, Li
 It freezes the source SHA before calling each reusable workflow, on PRs and trusted publication events.
 An unexpected skipped, failed, or cancelled dependency cannot satisfy that gate.
 Required-check policy can name this aggregate check without depending on individual matrix job names.
+A repository ruleset requires it on main without requiring an up-to-date branch, because requiring one would make each PR update and rerun the full matrix whenever main moves before it merges.
+CI on main then verifies the merged result; a newer main run replaces a pending one but not a running one, so a burst of merges can leave intermediate commits unverified.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven, except the dependency-graph plugin that the submission action pins.
 
 Repository Python tools and their tests run through one non-packaged uv project at the root, which limits uv to Python 3.14 and locks the test dependencies.
