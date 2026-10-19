@@ -180,6 +180,88 @@ class ProtobufTypeSerializerSnapshotTest {
     }
 
     @Test
+    void supportedSchemaChangesResolveAndRestoreWithTheNewGeneratedClass() throws Exception {
+        FileDescriptorSet current = payload().schema();
+        FileDescriptorProto root = current.getFile(1);
+        DescriptorProto message = root.getMessageType(0);
+        // The saved schema predates the id field, the READY value, and the nested text field.
+        DescriptorProto older =
+                message.toBuilder()
+                        .removeField(0)
+                        .setEnumType(0, message.getEnumType(0).toBuilder().removeValue(1))
+                        .setNestedType(0, message.getNestedType(0).toBuilder().clearField())
+                        .build();
+        Payload saved = payload();
+        saved.setSchema(
+                current.toBuilder().setFile(1, root.toBuilder().setMessageType(0, older)).build());
+        TypeSerializerSnapshot<Envelope> snapshot = read(saved, LOADER);
+        // Restore first: a rejection names the first incompatibility.
+        TypeSerializer<Envelope> restored = snapshot.restoreSerializer();
+        assertThat(restored).isEqualTo(serializer(DEFAULT));
+        assertThat(snapshot(DEFAULT).resolveSchemaCompatibility(snapshot).isCompatibleAsIs())
+                .isTrue();
+        // Bytes that the older schema can write keep their unknown fields on both read paths.
+        for (int size : List.of(16, ProtobufTypeSerializer.SCRATCH_SIZE + 1)) {
+            Envelope written =
+                    value().toBuilder()
+                            .clearId()
+                            .setKind(Envelope.Kind.UNKNOWN)
+                            .clearNested()
+                            .setUnknownFields(
+                                    UnknownFieldSet.newBuilder()
+                                            .addField(
+                                                    100,
+                                                    UnknownFieldSet.Field.newBuilder()
+                                                            .addLengthDelimited(
+                                                                    ByteString.copyFrom(
+                                                                            new byte[size]))
+                                                            .build())
+                                            .build())
+                            .build();
+            DataOutputSerializer bytes = new DataOutputSerializer(32);
+            serializer(DEFAULT).serialize(written, bytes);
+            Envelope read =
+                    restored.deserialize(new DataInputDeserializer(bytes.getCopyOfBuffer()));
+            assertThat(read).as("unknown field of %s bytes", size).isEqualTo(written);
+            DataOutputSerializer again = new DataOutputSerializer(32);
+            restored.serialize(read, again);
+            assertThat(again.getCopyOfBuffer()).isEqualTo(bytes.getCopyOfBuffer());
+        }
+    }
+
+    @Test
+    void unsafeSchemaChangesAreIncompatibleAndRestoreNamesTheFirstIncompatibility()
+            throws Exception {
+        DescriptorProto message = payload().schema().getFile(1).getMessageType(0);
+        FieldDescriptorProto id = message.getField(0);
+        assertRestoreRejects(
+                message.toBuilder().addField(id.toBuilder().setName("removed").setNumber(6)),
+                "Field 6 (removed) of flink.protobuf.snapshot.Envelope is removed without"
+                        + " reserving its number");
+        assertRestoreRejects(
+                message.toBuilder()
+                        .setField(0, id.toBuilder().setType(FieldDescriptorProto.Type.TYPE_INT64)),
+                "Field 1 (id) of flink.protobuf.snapshot.Envelope changes type from INT64 to"
+                        + " INT32");
+    }
+
+    private static void assertRestoreRejects(DescriptorProto.Builder savedMessage, String reason)
+            throws Exception {
+        Payload saved = payload();
+        FileDescriptorSet schema = saved.schema();
+        saved.setSchema(
+                schema.toBuilder()
+                        .setFile(1, schema.getFile(1).toBuilder().setMessageType(0, savedMessage))
+                        .build());
+        assertIncompatible(saved);
+        assertThatThrownBy(read(saved, LOADER)::restoreSerializer)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(Envelope.class.getName())
+                .hasMessageContaining("cannot read the saved Protobuf schema")
+                .hasMessageEndingWith(reason);
+    }
+
+    @Test
     void descriptorChangesIncludingImportedMetadataAreIncompatible() throws Exception {
         FileDescriptorSet original = payload().schema();
         FileDescriptorProto dependency = original.getFile(0);
@@ -209,13 +291,6 @@ class ProtobufTypeSerializerSnapshotTest {
                                                                                 .toBuilder()
                                                                                 .setName(
                                                                                         "renamed"))))
-                                .build(),
-                        original.toBuilder()
-                                .setFile(
-                                        1,
-                                        root.toBuilder()
-                                                .setMessageType(
-                                                        0, message.toBuilder().removeField(0)))
                                 .build(),
                         original.toBuilder()
                                 .setFile(
@@ -384,7 +459,8 @@ class ProtobufTypeSerializerSnapshotTest {
                         .build());
         assertThatThrownBy(read(changed, LOADER)::restoreSerializer)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("different Protobuf schema");
+                .hasMessageContaining("cannot read the saved Protobuf schema")
+                .hasMessageContaining("File snapshot_dependency.proto changes");
     }
 
     @Test

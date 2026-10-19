@@ -21,10 +21,10 @@
  * per-type settings, or register {@link io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
  * against AbstractMessage before type extraction. The factory registry is process-global. Disable
  * generic types to reject accidental fallback and extract stable scalar keys instead of message
- * keys. Versioned snapshots support unchanged-schema checkpoint/savepoint recovery, verified with
- * HashMap and RocksDB state backends in MiniCluster tests. Changed schemas are rejected in the
- * 0.1.0 development contract; schema evolution is planned for 0.2.0. No Maven Central release is
- * available yet. Connector boundary serialization schemas and Table/SQL formats are outside this
- * package.
+ * keys. Versioned snapshots support checkpoint/savepoint recovery with unchanged schemas and
+ * supported schema changes (field additions, field removals that reserve the number, and enum value
+ * additions), verified with HashMap and RocksDB state backends in MiniCluster tests. Unsupported
+ * schema changes and decreased reader limits fail at restore. No Maven Central release is available
+ * yet. Connector boundary serialization schemas and Table/SQL formats are outside this package.
  */
 package io.github.flink.gcp.protobuf;

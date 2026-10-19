@@ -151,7 +151,7 @@ The bounded example checks state updates during execution and may finish before 
 
 For a continuously running application using these types, enable periodic checkpointing with `env.enableCheckpointing(...)` and configure persistent checkpoint storage accessible to the cluster.
 Flink's configured restart strategy can then recover the job from a completed checkpoint.
-For an intentional stop and unchanged-schema restart, use Flink's savepoint operations on that running application:
+For an intentional stop and restart, including a restart with a supported schema change, use Flink's savepoint operations on that running application:
 
 ```sh
 "$FLINK_HOME/bin/flink" stop --savepointPath "$SAVEPOINT_DIRECTORY" "$JOB_ID"
@@ -159,20 +159,21 @@ For an intentional stop and unchanged-schema restart, use Flink's savepoint oper
 ```
 
 Here `Application` is the application's entrypoint, not the bounded demonstration job.
-Keep the generated Java class and Protobuf message names, complete normalized descriptors, operator UIDs, state names, and matching runtime/artifact line unchanged.
+Keep the generated Java class and Protobuf message names, operator UIDs, state names, and matching runtime/artifact line unchanged.
+The schema may stay the same or change as listed in [supported schema changes](compatibility.md#schema-changes); the restored job rejects other changes to the declarations that saved values reach.
 Reader size/depth limits may stay the same or increase; deterministic-writing mode may change in either direction.
 A successful Protobuf parse alone does not establish state compatibility.
 
 The [MiniCluster recovery suite](validation/runtime-recovery.md) verifies completed-checkpoint recovery and separate-job savepoint restoration for HashMap and RocksDB, including continued processing.
-It also verifies rejection of changed schemas and reduced reader limits.
+It also verifies restoration across supported schema changes and rejection of unsupported changes and reduced reader limits.
 It is separate from these application examples and the historical [Spike 0](validation/spike-0.md).
 Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require their own evidence and are not established by these examples.
 
 ## Development upgrades and API reference
 
-The 0.1.0 contract rejects schema changes, including otherwise wire-safe field additions.
-Current `0.2.0-SNAPSHOT` development builds still implement this contract; their compatibility with the retained 0.1.0 baseline is established only by the tests added under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks.
-Supported schema evolution is planned for 0.2.0, and descriptor-driven DynamicMessage support for 0.3.0.
+The 0.1.0 contract rejected schema changes, including otherwise wire-safe field additions.
+Current `0.2.0-SNAPSHOT` development builds restore the supported schema changes; their compatibility with the retained 0.1.0 baseline is established only by the tests that [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) adds for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks, and the retained-state tests are not complete yet.
+Descriptor-driven DynamicMessage support is planned for 0.3.0.
 Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.
 The unpublished 0.x milestones can break APIs, defaults, runtime requirements, and saved-state compatibility.
 Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.

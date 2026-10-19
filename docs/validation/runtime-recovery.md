@@ -38,11 +38,31 @@ Separate jobs restore canonical savepoints with fixed operator UIDs and state na
 The tests accept unchanged settings, increases in either or both reader limits, and both deterministic-mode transitions.
 Increased-limit jobs process values exceeding the old size or nesting budget, emit another savepoint, and restore that newly written state.
 Independent ValueState, MapState, and operator-state cases reject each limit decrease, mixed increase/decrease transitions, and decreases after an earlier increase and new snapshot emission.
-They also reject a wire-compatible field addition while retaining the Java class name and Protobuf full name.
-The [compatibility guide](../compatibility.md#schema-changes) explains why Protobuf binary compatibility does not make that addition restorable under the current library contract.
-Rejection assertions inspect the failure cause for incompatible state serializers or a changed Protobuf schema.
+Rejection assertions inspect the failure cause for Flink's incompatible state serializer exception.
 
-For `ProtobufRecoveryITCase` and `ProtobufSavepointFixtureITCase`, the application and generated classes live in separate test jars that are absent from the test runner's parent classpath.
+## Schema changes
+
+`ProtobufSchemaEvolutionITCase` restores savepoints into separate jobs whose application jar contains only the new generated classes.
+The runtime schemas keep the same Java class and Protobuf message names:
+
+| Schema | Change from its predecessor | Expected restore |
+|---|---|---|
+| `changed` | Adds `string added = 5` to `original` | Accepted |
+| `reserved` | Removes `payload = 3` from `original` and reserves its number and name | Accepted |
+| `enum-added` | Adds `KIND_SECOND` to the nested enum `Entry.Kind` of `enum-original`, which the nested `Detail` message uses | Accepted |
+| `incompatible` | Changes `count` from `int32` to `sint32` in `original` | Rejected |
+
+For each accepted change, the new job checks the restored operator values and continued processing, writes another savepoint, and restores it again.
+Each processed input also reports the ValueState and MapState values it replaced, and the test decodes them as well; for both state kinds, these include values written by the old schema and values written by the new application before its savepoint.
+Values written after the restore carry the new field or enum value, while restored values keep what the old schema wrote; an added field therefore has its default there.
+The `reserved` job keeps the removed payload as an unknown field, so its savepoint still contains the payload that the `original` schema reads back.
+The rejected cases restore `original` state with `incompatible` separately for ValueState, MapState values, and operator ListState, `changed` state with `original`, and `enum-added` state with `enum-original`.
+Each rejected job must fail, and its failure must name the generated class and the [first incompatibility](../compatibility.md#schema-changes).
+The `incompatible` case shows the diagnostic for each state kind on both backends; the two reverse-direction cases register all three state kinds, so the first state that fails reports it.
+A decreased limit fails with Flink's `StateMigrationException` alone.
+These tests write and restore state with the same development build; restoring state written by the retained 0.1.0 artifact is tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16).
+
+For `ProtobufRecoveryITCase`, `ProtobufSchemaEvolutionITCase`, and `ProtobufSavepointFixtureITCase`, the application and generated classes live in separate test jars that are absent from the test runner's parent classpath.
 Each job is constructed with a fresh application loader and submitted with its application jar attached.
 The application checks that recovered messages belong to its task-side application loader and retain nested values and unknown fields.
 The test runner checks that neither the application entry point nor its generated message can load through the parent.

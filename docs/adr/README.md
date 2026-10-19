@@ -29,5 +29,5 @@ limitations under the License.
 
 These records distinguish accepted design from implemented behavior.
 The native serializer, application-facing type integration, and versioned descriptor snapshots are implemented.
-MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
+MiniCluster tests verify checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends, including supported schema changes.
 A refinement updates its existing record; a reversal adds a new record and marks the old one as superseded.
