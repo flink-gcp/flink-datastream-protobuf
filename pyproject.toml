@@ -28,7 +28,7 @@ python-preference = "only-system"
 python-downloads = "never"
 
 [dependency-groups]
-dev = ["pytest==9.0.3", "pyyaml==6.0.3"]
+dev = ["pytest==9.1.1", "pyyaml==6.0.3"]
 
 # Some documentation tests need Hugo and Node; `just test-doc-versions` runs them all.
 [tool.pytest.ini_options]
