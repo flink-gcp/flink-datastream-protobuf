@@ -48,9 +48,13 @@ import java.util.Objects;
  * <p>Data views must honor their DataInput/DataOutput contracts. Runtime views that omit their own
  * bounds checks must be used through Flink's framing and exception-conversion wrappers.
  *
+ * <p>Payloads of at most 4 KiB are encoded and decoded through one lazily allocated 4 KiB array
+ * that each instance retains and also uses for stream copy. Larger payloads are streamed through
+ * per-record Protobuf coded-stream buffers without payload-sized storage in this serializer.
+ *
  * <p>Instances are not intended for concurrent use; call {@link #duplicate()} for independent
- * stream-copy buffers. Generated defaults, parsers, and descriptor metadata are shared by exact
- * message class through a ClassValue cache, including after Java deserialization.
+ * scratch storage. Generated defaults, parsers, and descriptor metadata are shared by exact message
+ * class through a ClassValue cache, including after Java deserialization.
  *
  * <p>Construction is internal to native type integration. Versioned snapshots support
  * unchanged-schema restoration with nondecreasing reader limits.
@@ -61,6 +65,9 @@ import java.util.Objects;
 public final class ProtobufTypeSerializer<T extends Message> extends TypeSerializer<T> {
     private static final long serialVersionUID = 1L;
     static final int FRAMING_VERSION = 1;
+
+    /** Largest payload handled through the retained scratch array; also the stream-copy chunk. */
+    static final int SCRATCH_SIZE = 4096;
 
     /**
      * The generated class represented by this instance.
@@ -79,7 +86,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     private transient ProtobufMessageType messageType;
     private transient Parser<? extends Message> parser;
     private transient ProtobufMessageSize messageSize;
-    private transient byte[] copyBuffer;
+    private transient byte[] scratch;
 
     /**
      * Creates an internal serializer with the default size, depth, and writing settings.
@@ -186,9 +193,12 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     /**
      * Writes one length-prefixed Protobuf payload after validating its type, size, and depth.
      *
-     * <p>Validation failures leave the target untouched. An I/O failure or inconsistent generated
-     * writer can leave a partial frame. No payload-sized temporary byte array is created by this
-     * serializer; generated runtime operations may allocate their own storage.
+     * <p>Validation failures leave the target untouched. A payload of at most 4 KiB is encoded into
+     * the retained scratch array before the frame is written, so an inconsistent generated writer
+     * also leaves the target untouched. Larger payloads are written incrementally, and an
+     * inconsistent generated writer can leave a partial frame. An I/O failure of the target can
+     * leave a partial frame for any payload. Generated runtime operations may allocate their own
+     * storage.
      *
      * @param value non-null initialized message of the exact configured class
      * @param target destination for the frame
@@ -204,22 +214,36 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         if (!value.isInitialized()) {
             throw new IOException("Uninitialized message: " + messageClass.getName());
         }
+        if (size <= SCRATCH_SIZE) {
+            byte[] payload = scratch();
+            CodedOutputStream output = CodedOutputStream.newInstance(payload, 0, size);
+            write(value, output);
+            // The array encoder is bounded by the 4 KiB array, not the payload size, so it can
+            // overrun a smaller payload without failing; negative remaining space reports that.
+            int remaining = output.spaceLeft();
+            if (remaining != 0) {
+                throw new IOException(
+                        remaining < 0
+                                ? "Protobuf output exceeds calculated payload size"
+                                : "Protobuf output is shorter than calculated payload size");
+            }
+            target.writeInt(size);
+            target.write(payload, 0, size);
+            return;
+        }
         target.writeInt(size);
         ViewOutputStream frame = new ViewOutputStream(target, size);
-        CodedOutputStream output = CodedOutputStream.newInstance(frame);
-        if (settings.deterministicSerialization()) {
-            output.useDeterministicSerialization();
-        }
-        value.writeTo(output);
-        output.flush();
+        write(value, CodedOutputStream.newInstance(frame));
         frame.checkComplete();
     }
 
     /**
      * Reads exactly one frame with an empty extension registry and configured size/depth limits.
      *
-     * <p>The bounded input prevents reading into an adjacent frame. A failed read may consume only
-     * part of the current frame; callers must not assume input resynchronization after failure.
+     * <p>The bounded input prevents reading into an adjacent frame. A payload of at most 4 KiB is
+     * read completely into the retained scratch array before parsing; parsed values copy their
+     * bytes and do not refer to that array. A failed read may consume only part of the current
+     * frame; callers must not assume input resynchronization after failure.
      *
      * @param source source positioned at a frame length prefix
      * @return an initialized message of the configured class
@@ -229,11 +253,19 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     @Override
     public T deserialize(DataInputView source) throws IOException {
         int size = readLength(source);
-        FrameInputStream frame = new FrameInputStream(source, size);
-        CodedInputStream input = CodedInputStream.newInstance(frame);
-        input.setSizeLimit(settings.maxMessageSize());
-        input.setRecursionLimit(settings.recursionLimit());
         try {
+            FrameInputStream frame = new FrameInputStream(source, size);
+            CodedInputStream input;
+            if (size <= SCRATCH_SIZE) {
+                byte[] payload = scratch();
+                frame.readPayload(payload);
+                // This factory never aliases its mutable input, so decoded values copy their bytes.
+                input = CodedInputStream.newInstance(payload, 0, size);
+            } else {
+                input = CodedInputStream.newInstance(frame);
+            }
+            input.setSizeLimit(settings.maxMessageSize());
+            input.setRecursionLimit(settings.recursionLimit());
             T result =
                     messageClass.cast(
                             parser.parseFrom(input, ExtensionRegistryLite.getEmptyRegistry()));
@@ -267,7 +299,8 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      *
      * <p>Length and truncation are checked; payload semantics and nesting are not validated. A
      * failed copy may have written a partial frame. No input resynchronization is promised after
-     * failure. A private 4 KiB buffer is allocated lazily and reused by this serializer only.
+     * failure. The retained 4 KiB scratch array is allocated lazily and reused by this serializer
+     * only.
      *
      * @param source source positioned at a frame prefix
      * @param target destination for the unchanged prefix and payload bytes
@@ -278,18 +311,16 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         int size = readLength(source);
         target.writeInt(size);
         int remaining = size;
-        if (remaining > 0 && copyBuffer == null) {
-            copyBuffer = new byte[4096];
-        }
+        byte[] buffer = remaining > 0 ? scratch() : null;
         while (remaining > 0) {
-            int count = Math.min(remaining, copyBuffer.length);
+            int count = Math.min(remaining, buffer.length);
             try {
-                source.readFully(copyBuffer, 0, count);
+                source.readFully(buffer, 0, count);
             } catch (EOFException e) {
                 throw new IOException("Truncated Protobuf frame during stream copy", e);
             }
             // DataOutputSerializer grows for byte-array writes, but not write(DataInputView, int).
-            target.write(copyBuffer, 0, count);
+            target.write(buffer, 0, count);
             remaining -= count;
         }
     }
@@ -338,6 +369,27 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     @Override
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
         return new ProtobufTypeSerializerSnapshot<>(messageClass, settings);
+    }
+
+    /** Writes the complete generated payload, reporting writes beyond the calculated size. */
+    private void write(T value, CodedOutputStream output) throws IOException {
+        if (settings.deterministicSerialization()) {
+            output.useDeterministicSerialization();
+        }
+        try {
+            value.writeTo(output);
+            output.flush();
+        } catch (CodedOutputStream.OutOfSpaceException e) {
+            throw new IOException("Protobuf output exceeds calculated payload size", e);
+        }
+    }
+
+    /** Returns the lazily allocated scratch array owned by this serializer instance. */
+    private byte[] scratch() {
+        if (scratch == null) {
+            scratch = new byte[SCRATCH_SIZE];
+        }
+        return scratch;
     }
 
     /** Reads and validates a frame prefix before allocating payload-dependent storage. */
@@ -471,6 +523,14 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
             }
             remaining -= count;
             return count;
+        }
+
+        /** Reads the complete bounded payload into the start of the supplied array. */
+        private void readPayload(byte[] bytes) throws IOException {
+            int offset = 0;
+            while (remaining > 0) {
+                offset += read(bytes, offset, remaining);
+            }
         }
     }
 }
