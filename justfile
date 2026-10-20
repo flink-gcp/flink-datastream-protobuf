@@ -77,9 +77,23 @@ baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
 baseline-read bundle version output:
     java -cp "$1/tools.jar" io.github.flink.gcp.protobuf.BaselineTool read "$1" "$2" "$3"
 
+# The run selects the bundle's Protobuf profile and artifact line and resolves this build's dependencies.
+# Restore a verified bundle's retained state with the current library and new-schema applications.
+[positional-arguments]
+baseline-upgrade bundle version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bundle=$(cd "$1" && pwd -P)
+    line=$(sed -n 's/^line=//p' "$bundle/manifest.properties")
+    major=$(sed -n 's/^protobuf.major=//p' "$bundle/manifest.properties")
+    just baseline-check "$bundle"
+    {{ mvn }} clean "-Pprotobuf$major" "-Dflink.compat=$line" "-Dflink.version=$2" \
+        "-Dprotobuf.test.retained.bundle=$bundle" -Dtest.excluded.groups= \
+        -Dtest=RetainedBaselineUpgradeITCase test
+
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
-    {{ mvn }} clean -Pchill -Dtest.excluded.groups= verify
+    {{ mvn }} clean -Pchill -Dtest.excluded.groups=retained-baseline verify
 
 # Run the scripts/tests suite, or only the given test files, through the locked pytest.
 [positional-arguments]

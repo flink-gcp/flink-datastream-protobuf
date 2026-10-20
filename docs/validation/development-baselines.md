@@ -172,8 +172,36 @@ The job does not fall back to a fresh download, so a corrupt or replaced entry s
 The four entries total about 780 MB of the repository's Actions cache quota.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-The Verify workflow's retained-baseline job runs this action for each of the four v0.1.0 bundles.
-The milestone-upgrade jobs planned in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) and the API-compatibility jobs planned in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) are to use the same action, which shares these cache entries.
+The Verify workflow's retained-baseline job runs this action and then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each v0.1.0 bundle and each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+The API-compatibility jobs planned in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) are to use the same action, which shares these cache entries.
+
+## Restore retained state with the current library
+
+`baseline-upgrade` restores a verified bundle's retained state and snapshot fixtures with the current library and the current tree's runtime applications, which contain only the current generated classes:
+
+```sh
+mise x -- just baseline-upgrade /tmp/baseline-v0.1.0/flink2-pb3 2.3.0
+```
+
+The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile and artifact line and the given Flink version.
+Maven resolves this build's own dependencies, so the bundle's `dependencies/` tree and its `library.jar` are never on the classpath; apart from the bundle's own `baseline-check`, the retained inputs are data: state archives, snapshot fixtures, manifests, and schemas.
+The test refuses a Protobuf runtime other than the one that wrote the bundle and a Flink version that the bundle was not read with, so each run keeps the gencode/runtime pair and the Flink version fixed and changes only the library and the application schema.
+It also requires the current `original` and `changed` application descriptors to be byte-identical to the bundle's `apps/original/schema.pb` and `apps/changed/schema.pb`, which makes the `original` restore the unchanged-schema control.
+
+For each backend, setting budget, and archive kind (the canonical savepoint and the full checkpoint), the test requires the state identity recorded in `state.properties` and restores the archive with the writer's recorded settings into the [runtime schemas](runtime-recovery.md#schema-changes) that differ from the retained writer:
+
+| Application | Expected result |
+|---|---|
+| `original` | Restored values, continued processing, and a second restore from the new application's savepoint |
+| `changed` | The same, with `added` empty in retained values and set in new values |
+| `reserved` | The same, with the retained payload kept as an unknown field and read back with the original schema |
+| `incompatible` | The restore fails and names the generated class and `Field 2 (count) ... changes type from INT32 to SINT32` |
+
+The restore checks are those of the [schema-evolution test](runtime-recovery.md#schema-changes), including the operator ListState values and the ValueState and MapState values that later inputs replace.
+Each retained archive holds all three state kinds, so the rejection shows only that whichever state the backend restores first fails; the schema-evolution test rejects each state kind from a savepoint that holds only that kind.
+The current library must write byte-identical snapshot metadata for each snapshot fixture at its recorded settings, which shows that the snapshot format and test schema are unchanged, and must restore the fixture's framed value.
+The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here; it is verified only with state written by 0.2.0 development builds.
+On 2026-10-21 all ten combinations passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
 
 ## Retention
 
@@ -191,6 +219,6 @@ Before copying any bundle to shared storage, inspect the exact inventory, archiv
 The checksum checker is not the benchmark content gate in #41 and does not prove the absence of arbitrary secrets.
 Retain original bytes privately if a separately sanitized derivative is needed, and identify that derivative with its own inventory.
 
-For #16, consume the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with a separately built new-schema application.
+[`baseline-upgrade`](#restore-retained-state-with-the-current-library) implements the #16 check: it consumes the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with separately built new-schema applications.
 For #17, retain both library jars and already-compiled consumer inputs per profile, and select a candidate library on an explicitly reviewed classpath without recompiling the old consumer.
 Neither follow-up should rebuild a newer working tree and label it the old writer.

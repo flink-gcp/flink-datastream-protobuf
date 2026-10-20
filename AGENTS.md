@@ -17,6 +17,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.
+- `just baseline-upgrade <bundle> <version>`: restore a verified bundle's retained state with the current library and new-schema applications.
 - `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application.
 - `just docs` / `just docs-serve`: build or preview the shared-design site.
 - `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.

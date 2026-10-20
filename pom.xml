@@ -66,7 +66,8 @@ limitations under the License.
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
-        <test.excluded.groups>chill</test.excluded.groups>
+        <!-- Opt-in groups: the Chill comparison and retained-bundle upgrades need explicit inputs. -->
+        <test.excluded.groups>chill,retained-baseline</test.excluded.groups>
         <flink.forkCountUnitTest>1</flink.forkCountUnitTest>
         <flink.forkCountITCase>1</flink.forkCountITCase>
         <!-- No module-opening flags: native integration and probes must work without Kryo reflection. -->

@@ -60,7 +60,7 @@ The rejected cases restore `original` state with `incompatible` separately for V
 Each rejected job must fail, and its failure must name the generated class and the [first incompatibility](../compatibility.md#schema-changes).
 The `incompatible` case shows the diagnostic for each state kind on both backends; the two reverse-direction cases register all three state kinds, so the first state that fails reports it.
 A decreased limit fails with Flink's `StateMigrationException` alone.
-These tests write and restore state with the same development build; restoring state written by the retained 0.1.0 artifact is tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16).
+These tests write and restore state with the same development build; the [retained-baseline upgrade check](development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 artifact with the same checks.
 
 For `ProtobufRecoveryITCase`, `ProtobufSchemaEvolutionITCase`, and `ProtobufSavepointFixtureITCase`, the application and generated classes live in separate test jars that are absent from the test runner's parent classpath.
 Each job is constructed with a fresh application loader and submitted with its application jar attached.
