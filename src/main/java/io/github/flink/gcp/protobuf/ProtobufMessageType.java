@@ -36,10 +36,10 @@ import java.util.Set;
 /**
  * Immutable runtime metadata cached by the actual application class, including its classloader.
  *
- * <p>The class-associated cache avoids repeated reflective lookup, parser validation, and schema
- * normalization across serializers. It does not maintain a global map that keeps application
- * classes alive. Failed resolutions are not cached. Concurrent first lookups may perform redundant
- * validation before ClassValue publishes one result.
+ * <p>The class-associated cache avoids repeated reflective lookup, parser validation, schema
+ * normalization, and sizing layout construction across serializers. It does not maintain a global
+ * map that keeps application classes alive. Failed resolutions are not cached. Concurrent first
+ * lookups may perform redundant validation before ClassValue publishes one result.
  */
 @Internal
 final class ProtobufMessageType {
@@ -56,12 +56,17 @@ final class ProtobufMessageType {
     final FileDescriptorSet schema;
     final String fullName;
 
+    /** Field layouts of the payload graph, linked before construction completes. */
+    final ProtobufMessageSize.Layout layout;
+
     private ProtobufMessageType(
             Message defaultInstance, Parser<? extends Message> parser, FileDescriptorSet schema) {
         this.defaultInstance = defaultInstance;
         this.parser = parser;
         this.schema = schema;
-        this.fullName = defaultInstance.getDescriptorForType().getFullName();
+        Descriptor descriptor = defaultInstance.getDescriptorForType();
+        this.fullName = descriptor.getFullName();
+        this.layout = ProtobufMessageSize.layout(descriptor);
     }
 
     /**

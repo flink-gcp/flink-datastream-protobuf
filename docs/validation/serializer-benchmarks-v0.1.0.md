@@ -330,6 +330,7 @@ The first optimization candidates are reducing fixed per-record buffers for smal
 Construction benchmarks and collection-heavy messages must remain separate acceptance cases when evaluating such changes.
 This issue establishes the baseline and investigation; it makes no production optimization or fastest-serializer claim.
 The [buffer-allocation report](serializer-buffer-allocation.md) measures the later small-frame buffer change separately, on a different machine.
+The [sizing-allocation report](serializer-sizing-allocation.md) measures the later sizing-traversal change the same way.
 
 ## Benchmark remeasurement for 1.0.0
 
