@@ -150,27 +150,9 @@ public final class BaselineRuntime {
                         BaselineTool.deleteTree(writerDirectory);
                         assertThat(saved).doesNotExist();
                         assertThat(writerDirectory).doesNotExist();
-                        Properties state = new Properties();
-                        state.setProperty("backend", backend);
-                        state.setProperty("checkpoint.incremental", "false");
-                        state.setProperty("savepoint.format", "CANONICAL");
-                        state.setProperty(
-                                "settings.deterministic",
-                                Boolean.toString(settings.deterministic()));
-                        state.setProperty(
-                                "settings.maxMessageSize", Integer.toString(settings.size()));
-                        state.setProperty(
-                                "settings.recursionLimit", Integer.toString(settings.depth()));
-                        state.setProperty("job.parallelism", "2");
-                        state.setProperty("job.maxParallelism", "16");
-                        state.setProperty("job.uids", "input,messages,values,output");
-                        state.setProperty("state.names", "keyed-values,map-values,operator-values");
-                        state.setProperty("expected.input.count", "8");
-                        state.setProperty("expected.ordinals", "0,1,2,3,4,5,6,7");
-                        state.setProperty("expected.keyed.count.per.key", "2");
-                        state.setProperty("expected.map.count.per.user.key", "1");
-                        state.setProperty("expected.unknown.100", "99");
-                        BaselineTool.save(state, fixture.resolve("state.properties"));
+                        BaselineTool.save(
+                                stateIdentity(backend, settings),
+                                fixture.resolve("state.properties"));
                     }
                     for (String kind : List.of("checkpoint", "savepoint")) {
                         Path relocated = work.resolve(prefix + "-" + kind);
@@ -280,12 +262,58 @@ public final class BaselineRuntime {
                     "id=42,kind=READY,detail=saved,child.id=7,nested.text=nested,unknown.100=99");
             BaselineTool.save(properties, file);
         }
-        Properties fixture = BaselineTool.load(file);
+        checkSnapshot(BaselineTool.load(file));
+    }
+
+    /**
+     * Returns the state identity that capture records and readers require.
+     *
+     * @param settings writer settings of the retained state
+     */
+    static Properties stateIdentity(String backend, RuntimeRecoveryHarness.Settings settings) {
+        Properties state = new Properties();
+        state.setProperty("backend", backend);
+        state.setProperty("checkpoint.incremental", "false");
+        state.setProperty("savepoint.format", "CANONICAL");
+        state.setProperty("settings.deterministic", Boolean.toString(settings.deterministic()));
+        state.setProperty("settings.maxMessageSize", Integer.toString(settings.size()));
+        state.setProperty("settings.recursionLimit", Integer.toString(settings.depth()));
+        state.setProperty("job.parallelism", "2");
+        state.setProperty("job.maxParallelism", "16");
+        state.setProperty("job.uids", "input,messages,values,output");
+        state.setProperty("state.names", "keyed-values,map-values,operator-values");
+        state.setProperty("expected.input.count", "8");
+        state.setProperty("expected.ordinals", "0,1,2,3,4,5,6,7");
+        state.setProperty("expected.keyed.count.per.key", "2");
+        state.setProperty("expected.map.count.per.user.key", "1");
+        state.setProperty("expected.unknown.100", "99");
+        return state;
+    }
+
+    /**
+     * Restores a snapshot fixture's framed value with the loaded library at the fixture's settings.
+     *
+     * <p>The loaded library must also write byte-identical snapshot metadata, which shows that the
+     * snapshot format, settings, and test schema are unchanged rather than merely compatible.
+     */
+    static void checkSnapshot(Properties fixture) throws Exception {
+        var serializer =
+                ProtobufTypeInformation.newBuilder(Envelope.class)
+                        .deterministicSerialization(
+                                Boolean.parseBoolean(fixture.getProperty("settings.deterministic")))
+                        .maxMessageSize(
+                                Integer.parseInt(fixture.getProperty("settings.maxMessageSize")))
+                        .recursionLimit(
+                                Integer.parseInt(fixture.getProperty("settings.recursionLimit")))
+                        .build()
+                        .createSerializer(new SerializerConfigImpl());
+        byte[] bytes = Base64.getDecoder().decode(fixture.getProperty("snapshot.base64"));
+        DataOutputSerializer current = new DataOutputSerializer(32);
+        TypeSerializerSnapshot.writeVersionedSnapshot(current, serializer.snapshotConfiguration());
+        assertThat(current.getCopyOfBuffer()).as("Current snapshot bytes").isEqualTo(bytes);
         TypeSerializerSnapshot<Envelope> saved =
                 TypeSerializerSnapshot.readVersionedSnapshot(
-                        new DataInputDeserializer(
-                                Base64.getDecoder().decode(fixture.getProperty("snapshot.base64"))),
-                        BaselineRuntime.class.getClassLoader());
+                        new DataInputDeserializer(bytes), BaselineRuntime.class.getClassLoader());
         assertThat(
                         serializer
                                 .snapshotConfiguration()

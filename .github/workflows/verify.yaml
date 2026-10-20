@@ -233,13 +233,19 @@ jobs:
             fi
           done
   retained-baseline:
-    name: Retained v0.1.0 bundle / ${{ matrix.bundle }}
+    name: Retained v0.1.0 upgrade / ${{ matrix.bundle }} / Flink ${{ matrix.flink }} / JDK ${{ matrix.java }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        bundle: [flink2-pb3, flink2-pb4, flink1-pb3, flink1-pb4]
+        # The Flink versions and JDKs that each retained bundle was read with.
+        bundle: [flink2-pb3, flink2-pb4]
+        flink: [2.2.1, 2.3.0]
+        java: ['17', '21']
+        include:
+          - {bundle: flink1-pb3, flink: 1.20.4, java: '17'}
+          - {bundle: flink1-pb4, flink: 1.20.4, java: '17'}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -251,11 +257,22 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: just
       # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
       - name: Fetch and check the retained bundle
+        id: fetch
         uses: ./.github/actions/baseline-fetch
         with:
           tag: v0.1.0
           bundle: ${{ matrix.bundle }}
           output: ${{ runner.temp }}/retained-baseline
+      # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
+      - name: Restore the retained state with the current library
+        env:
+          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          FLINK: ${{ matrix.flink }}
+        run: just baseline-upgrade "$BUNDLE" "$FLINK"

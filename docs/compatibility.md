@@ -133,7 +133,8 @@ Separate fixture directories record each tested environment; they do not indicat
 The schema-evolution tests write and restore state with the same development build.
 They check the restored values, continued processing, and a second restore from a savepoint that the new application wrote.
 A field removed with a reservation remains in restored values as an unknown field, and the new application's savepoints keep it; the test reads the value back with the original schema.
-Restoring state written by the [retained 0.1.0 artifact](validation/development-baselines.md#retained-v010-baseline) with these changes is tracked in [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) and not yet verified.
+The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores savepoints and checkpoints written by the [retained 0.1.0 artifact](validation/development-baselines.md#retained-v010-baseline) with the current library, unchanged and with the field addition and the reserved field removal, and requires the type change to be rejected.
+It runs for each retained bundle at the Flink and Protobuf versions that wrote and read it, on HashMap and RocksDB.
 The retained 0.1.0 runtime schema declares no enum, so enum-value addition is verified only with state written by 0.2.0 development builds.
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:

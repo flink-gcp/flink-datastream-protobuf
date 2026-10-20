@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.function.Function;
 
 import static io.github.flink.gcp.protobuf.RuntimeRecoveryHarness.BASELINE;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Separate-job restores of saved state into applications that contain only the new generated
@@ -47,11 +46,13 @@ class ProtobufSchemaEvolutionITCase {
 
     @TempDir Path root;
     private RuntimeRecoveryHarness harness;
+    private SchemaEvolutionChecks checks;
     private int sequence;
 
     @BeforeAll
     void startCluster() throws Exception {
         harness = new RuntimeRecoveryHarness();
+        checks = new SchemaEvolutionChecks(harness, this::directory);
     }
 
     @AfterAll
@@ -137,13 +138,7 @@ class ProtobufSchemaEvolutionITCase {
                 "Enum " + ENTRY + ".Kind removes or renames value KIND_SECOND");
     }
 
-    /**
-     * Restores a savepoint written by one schema with another, continues processing, and restores
-     * the evolved application's own savepoint.
-     *
-     * <p>Operator-state values are re-serialized by the evolved application after each restore, so
-     * {@code observed} sees the bytes that the evolved schema retained.
-     */
+    /** Writes state with one schema and restores it twice with another. */
     private void evolve(
             String backend,
             String writer,
@@ -152,63 +147,14 @@ class ProtobufSchemaEvolutionITCase {
             Function<DynamicMessage, Object> observed,
             Function<Integer, Object> expected)
             throws Exception {
-        String saved = saved(backend, "all", writer);
-        String next;
-        try (var job = harness.start(directory(), backend, "all", BASELINE, saved, reader, false)) {
-            job.assertRestored(0, 8);
-            assertValues(job.restored(0, decoder), decoder, observed, expected);
-            job.process(8, 12, 0);
-            assertReplaced(job, 8, 12, decoder, observed, expected);
-            next = job.savepoint(directory());
-        }
-        try (var job = harness.start(directory(), backend, "all", BASELINE, next, reader, false)) {
-            job.assertRestored(0, 12);
-            assertValues(job.restored(0, decoder), decoder, observed, expected);
-            // Inputs 16 to 19 replace the MapState values that the evolved application wrote.
-            job.process(12, 20, 0);
-            assertReplaced(job, 12, 20, decoder, observed, expected);
-        }
-    }
-
-    /**
-     * Checks the restored or newly written ValueState and MapState values that later inputs
-     * replaced.
-     *
-     * <p>Stream keys repeat every four inputs, and each key alternates between two MapState user
-     * keys, so input {@code n} replaces the ValueState value of input {@code n - 4} and the
-     * MapState value of input {@code n - 8}.
-     */
-    private static void assertReplaced(
-            RuntimeRecoveryHarness.Job job,
-            int first,
-            int end,
-            Descriptor decoder,
-            Function<DynamicMessage, Object> observed,
-            Function<Integer, Object> expected)
-            throws Exception {
-        FieldDescriptor ordinal = decoder.findFieldByName("ordinal");
-        for (int input = first; input < end; input++) {
-            List<DynamicMessage> replaced = job.replaced(0, input, decoder);
-            assertThat(replaced)
-                    .extracting(value -> value.getField(ordinal))
-                    .as("Ordinals of the values that input %s replaced", input)
-                    .containsExactly(input - 4, input - 8);
-            assertValues(replaced, decoder, observed, expected);
-        }
-    }
-
-    private static void assertValues(
-            List<DynamicMessage> values,
-            Descriptor decoder,
-            Function<DynamicMessage, Object> observed,
-            Function<Integer, Object> expected) {
-        var ordinal = decoder.findFieldByName("ordinal");
-        for (DynamicMessage value : values) {
-            int number = (Integer) value.getField(ordinal);
-            assertThat(observed.apply(value))
-                    .as("Restored value %s", number)
-                    .isEqualTo(expected.apply(number));
-        }
+        checks.restoreTwice(
+                backend,
+                BASELINE,
+                saved(backend, "all", writer),
+                reader,
+                decoder,
+                observed,
+                expected);
     }
 
     private String saved(String backend, String kind, String variant) throws Exception {
@@ -221,13 +167,6 @@ class ProtobufSchemaEvolutionITCase {
     private void rejected(
             String backend, String kind, String savepoint, String variant, String reason)
             throws Exception {
-        try (var job =
-                harness.start(directory(), backend, kind, BASELINE, savepoint, variant, false)) {
-            // The job must end unsuccessfully rather than run without the saved state.
-            assertThat(job.failure())
-                    .as("%s state restored by %s", kind, variant)
-                    .hasStackTraceContaining(RuntimeRecoveryHarness.MESSAGE)
-                    .hasStackTraceContaining("cannot read the saved Protobuf schema: " + reason);
-        }
+        checks.rejected(backend, kind, BASELINE, savepoint, variant, reason);
     }
 }

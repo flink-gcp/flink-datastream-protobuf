@@ -26,7 +26,7 @@ limitations under the License.
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Frame buffering amended: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Sizing traversal amended: 2026-10-19, [issue #43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43)
-- Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes written by the same development build; restore from retained 0.1.0 state remains in [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 

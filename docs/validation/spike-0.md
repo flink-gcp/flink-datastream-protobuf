@@ -115,7 +115,7 @@ mise x java@temurin-17 just -- just verify-flink 2.3.0 3
 mise x java@temurin-17 just -- just verify-flink 2.3.0 4
 mise x java@temurin-21 just -- just verify-flink 2.3.0 3
 mise x java@temurin-21 just -- just verify-flink 2.3.0 4
-mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill -Dflink.version=2.3.0 -Dtest.excluded.groups= verify
+mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill -Dflink.version=2.3.0 -Dtest.excluded.groups=retained-baseline verify
 ./mvnw -ntp -Pchill -Dflink.version=2.3.0 dependency:tree
 ```
 
