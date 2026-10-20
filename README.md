@@ -4,8 +4,8 @@ Native Protocol Buffers type integration for the Apache Flink DataStream API.
 
 This project is under development.
 The repository implements native serialization, explicit TypeInformation, and superclass factory registration for generated messages.
-Versioned descriptor snapshots support serializer restoration for unchanged schemas.
-MiniCluster tests verify unchanged-schema checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends.
+Versioned descriptor snapshots support serializer restoration for unchanged schemas and supported schema changes.
+MiniCluster tests verify checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends, including restoration across supported schema changes.
 No Maven Central release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
@@ -16,7 +16,7 @@ It targets full-runtime generated Protobuf messages with protobuf-java 3.25.9 an
 ## Supported Flink versions
 
 The [compatibility policy](docs/adr/0003-flink-version-compatibility.md) follows flink-connector-gcp: the current and previous Flink 2.x minors share one artifact, and Flink 1.20 LTS uses a separate build from the same source tree.
-The matrix covers the production serializer, type information, registration, native transport, and unchanged-schema checkpoint/savepoint recovery alongside separate feasibility probes.
+The matrix covers the production serializer, type information, registration, native transport, and checkpoint/savepoint recovery with unchanged and supported changed schemas alongside separate feasibility probes.
 Published-artifact capture and consumer verification remain release requirements.
 
 | Flink runtime | Tested patch | Java | Planned release version |
@@ -60,8 +60,9 @@ The milestone table includes implemented transport, common-type acceptance, and 
 | [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution and restore from retained 0.1.0 development state |
 | [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage support, with documented API/state upgrade behavior |
 
-The 0.1.0 contract rejects changed schemas while allowing unchanged-schema value-state restore with increased reader limits or a deterministic-mode change.
-This includes otherwise wire-safe field additions; see [Protobuf updates and state compatibility](docs/compatibility.md) for schema examples, Java runtime version guarantees, and the current versus planned restore behavior.
+The 0.1.0 contract rejected changed schemas, including otherwise wire-safe field additions.
+Current development builds restore value state across supported field additions, reserved field removals, and enum value additions, with equal or increased reader limits and either deterministic mode; restoring state written by the retained 0.1.0 artifact is not yet verified.
+See [Protobuf updates and state compatibility](docs/compatibility.md) for schema examples, the exact supported changes, and Java runtime version guarantees.
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.

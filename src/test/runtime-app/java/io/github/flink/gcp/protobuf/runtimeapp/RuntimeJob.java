@@ -41,6 +41,10 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Descriptors.EnumValueDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 import io.github.flink.gcp.protobuf.ProtobufTypeInformation;
 import io.github.flink.gcp.protobuf.runtimeapp.generated.RuntimeMessages.Entry;
@@ -54,6 +58,16 @@ import java.util.List;
 
 /** Application loaded only from an attached user jar, including all generated message classes. */
 public final class RuntimeJob {
+    // Schema variants share the generated class name but not every field, so fields that some
+    // variants lack are accessed through descriptors rather than generated accessors.
+    private static final int PAYLOAD_NUMBER = 3;
+    private static final FieldDescriptor PAYLOAD =
+            Entry.getDescriptor().findFieldByNumber(PAYLOAD_NUMBER);
+    private static final FieldDescriptor ADDED = Entry.getDescriptor().findFieldByName("added");
+    private static final FieldDescriptor DETAIL = Entry.getDescriptor().findFieldByName("detail");
+    private static final FieldDescriptor KIND =
+            DETAIL == null ? null : DETAIL.getMessageType().findFieldByName("kind");
+
     private RuntimeJob() {}
 
     public static JobGraph create(
@@ -124,7 +138,6 @@ public final class RuntimeJob {
                 Entry.newBuilder()
                         .setOrdinal(ordinal)
                         .setCount(count)
-                        .setPayload("v".repeat(payloadSize))
                         .setUnknownFields(
                                 UnknownFieldSet.newBuilder()
                                         .addField(
@@ -133,6 +146,21 @@ public final class RuntimeJob {
                                                         .addVarint(99)
                                                         .build())
                                         .build());
+        if (PAYLOAD != null) {
+            entry.setField(PAYLOAD, "v".repeat(payloadSize));
+        }
+        if (ADDED != null) {
+            entry.setField(ADDED, "added-" + ordinal);
+        }
+        if (DETAIL != null) {
+            // Each enum variant writes its last declared value.
+            List<EnumValueDescriptor> kinds = KIND.getEnumType().getValues();
+            entry.setField(
+                    DETAIL,
+                    entry.newBuilderForField(DETAIL)
+                            .setField(KIND, kinds.get(kinds.size() - 1))
+                            .build());
+        }
         Entry child = Entry.newBuilder().setCount(7).build();
         for (int i = 1; i < nesting; i++) {
             child = Entry.newBuilder().setChild(child).build();
@@ -144,14 +172,32 @@ public final class RuntimeJob {
         if (entry == null) {
             return;
         }
-        int length = entry.getPayload().length();
+        String payload = payload(entry);
+        int length = payload.length();
         if (entry.getClass().getClassLoader() != RuntimeJob.class.getClassLoader()
                 || !entry.getUnknownFields().getField(100).getVarintList().equals(List.of(99L))
                 || !entry.hasChild()
-                || (length != 8 && length != 1500)
-                || !entry.getPayload().equals("v".repeat(length))) {
+                || (length != 8 && length != 1500 && (PAYLOAD != null || length != 0))
+                || !payload.equals("v".repeat(length))) {
             throw new IllegalStateException(
                     "Recovered application value or user-code classloader differs");
+        }
+        // Values restored from a schema without the field have its default.
+        if (ADDED != null
+                && !entry.getField(ADDED).equals("")
+                && !entry.getField(ADDED).equals("added-" + entry.getOrdinal())) {
+            throw new IllegalStateException("Changed added field");
+        }
+        // Both enum variants write the nested message; no other variant declares it.
+        if (DETAIL != null) {
+            int number =
+                    ((EnumValueDescriptor) ((Message) entry.getField(DETAIL)).getField(KIND))
+                            .getNumber();
+            if (!entry.hasField(DETAIL)
+                    || number == 0
+                    || KIND.getEnumType().findValueByNumber(number) == null) {
+                throw new IllegalStateException("Unexpected nested enum value: " + number);
+            }
         }
         Entry child = entry.getChild();
         int nesting = 1;
@@ -165,6 +211,23 @@ public final class RuntimeJob {
         if (child.getCount() != 7 || (nesting != 1 && nesting != 6)) {
             throw new IllegalStateException("Changed nested leaf or depth");
         }
+    }
+
+    private static String encode(Entry entry) {
+        return entry == null ? "" : Base64.getEncoder().encodeToString(entry.toByteArray());
+    }
+
+    /** Returns the payload, which a schema reserving its number retains as an unknown field. */
+    private static String payload(Entry entry) {
+        if (PAYLOAD != null) {
+            return (String) entry.getField(PAYLOAD);
+        }
+        List<ByteString> unknown =
+                entry.getUnknownFields().getField(PAYLOAD_NUMBER).getLengthDelimitedList();
+        if (unknown.size() > 1) {
+            throw new IllegalStateException("Repeated unknown payload");
+        }
+        return unknown.isEmpty() ? "" : unknown.get(0).toStringUtf8();
     }
 
     private static void write(Path target, String text) throws Exception {
@@ -303,6 +366,7 @@ public final class RuntimeJob {
                             + entries.size()
                             + ","
                             + getRuntimeContext().getTaskInfo().getIndexOfThisSubtask();
+            // The tests decode the replaced keyed values, which checkValue accepts by shape only.
             write(
                     Path.of(
                             directory,
@@ -310,7 +374,7 @@ public final class RuntimeJob {
                                     + getRuntimeContext().getTaskInfo().getAttemptNumber()
                                     + "-"
                                     + entry.getOrdinal()),
-                    result);
+                    result + "," + encode(previous) + "," + encode(previousMap));
             output.collect(result);
         }
 

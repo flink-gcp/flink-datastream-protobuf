@@ -74,7 +74,7 @@ Dependabot must not independently advance Flink minor or major versions; patch u
 Support for a newly released minor starts with that reviewed range update, not merely its upstream publication.
 
 The tests cover the production serializer, TypeInformation and factory selection, and native transport, alongside a separate test-only factory/transport serializer.
-The runtime acceptance suite also verifies unchanged-schema checkpoint recovery and separate-job canonical savepoint restoration with HashMap and RocksDB backends.
+The runtime acceptance suite also verifies checkpoint recovery and separate-job canonical savepoint restoration with HashMap and RocksDB backends, including restoration across supported schema changes.
 Development fixtures retain a baseline for each pinned Flink/Protobuf/backend combination.
 All supported runtimes must retain native top-level, POJO, tuple, Row, and explicit List transport with generic types disabled.
 The inferred List control must retain its version-specific result: native element information on 2.x, generic fallback and serializer rejection on 1.20.

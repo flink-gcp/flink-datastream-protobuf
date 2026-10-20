@@ -56,8 +56,8 @@ import java.util.Objects;
  * scratch storage. Generated defaults, parsers, and descriptor metadata are shared by exact message
  * class through a ClassValue cache, including after Java deserialization.
  *
- * <p>Construction is internal to native type integration. Versioned snapshots support
- * unchanged-schema restoration with nondecreasing reader limits.
+ * <p>Construction is internal to native type integration. Versioned snapshots support restoration
+ * across unchanged schemas and supported schema changes with nondecreasing reader limits.
  *
  * @param <T> concrete generated message type
  */
@@ -362,7 +362,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Captures versioned descriptors and settings for unchanged-schema restoration.
+     * Captures versioned descriptors and settings for restoration by a compatible reader.
      *
      * @return an independent snapshot of this serializer's immutable configuration
      */

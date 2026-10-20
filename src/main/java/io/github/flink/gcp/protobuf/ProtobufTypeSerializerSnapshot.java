@@ -35,12 +35,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * Version-1 metadata for unchanged-schema restoration of generated Protobuf value serializers.
+ * Version-1 metadata for restoring generated Protobuf value serializers.
  *
  * <p>The persisted class name and payload layout are state-format identities. Reading metadata does
- * not load a generated class. Restoration uses Flink's supplied user-code classloader.
- * Compatibility compares complete normalized descriptors and permits only nondecreasing reader
- * limits; deterministic writing may change in either direction.
+ * not load a generated class. Restoration uses Flink's supplied user-code classloader. Both
+ * compatibility resolution and restoration delegate to the directional schema evaluator, which
+ * accepts unchanged descriptors and the supported schema changes and permits only nondecreasing
+ * reader limits; deterministic writing may change in either direction.
  *
  * @param <T> concrete generated message type
  */
@@ -168,11 +169,15 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
     }
 
     /**
-     * Resolves and validates the generated class using the loader retained by this snapshot.
+     * Resolves the generated class using the loader retained by this snapshot and checks that it
+     * can read the saved schema.
      *
-     * @return a reader with this snapshot's recorded settings
+     * <p>The class may declare a supported evolution of the saved schema; it need not be the class
+     * that wrote the state.
+     *
+     * @return a reader of the resolved class with this snapshot's recorded settings
      * @throws IllegalStateException if metadata is uninitialized or the class is missing,
-     *     unsupported, or has a different schema
+     *     unsupported, or cannot read the saved schema; the message names the first incompatibility
      */
     @Override
     public TypeSerializer<T> restoreSerializer() {
@@ -180,10 +185,17 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         try {
             Class<? extends Message> type =
                     Class.forName(className, false, userCodeClassLoader).asSubclass(Message.class);
-            ProtobufMessageType metadata = ProtobufMessageType.resolve(type);
-            if (!fullName.equals(metadata.fullName) || !schema.equals(metadata.schema)) {
+            ProtobufMessageType resolved = ProtobufMessageType.resolve(type);
+            // The reader keeps the saved settings, so only the message name and schema can differ.
+            ProtobufSchemaCompatibility.Result result =
+                    ProtobufSchemaCompatibility.evaluate(
+                            metadata(),
+                            new ProtobufSchemaCompatibility.Metadata(
+                                    type.getName(), resolved.fullName, settings, resolved.schema));
+            if (!result.compatibleAsIs()) {
                 throw new IllegalArgumentException(
-                        "Generated class has a different Protobuf schema");
+                        "Generated class cannot read the saved Protobuf schema: "
+                                + result.reason());
             }
             @SuppressWarnings("unchecked")
             Class<T> restoredType = (Class<T>) type;
@@ -194,8 +206,8 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
                             + className
                             + " ("
                             + fullName
-                            + "): supply a supported generated class with the saved schema through "
-                            + "Flink's user-code classloader. Cause: "
+                            + "): supply a supported generated class that can read the saved "
+                            + "schema through Flink's user-code classloader. Cause: "
                             + e.getMessage(),
                     e);
         }
@@ -205,8 +217,8 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
      * Checks whether this new configuration can read values permitted by an old configuration.
      *
      * @param oldSerializerSnapshot saved metadata, without requiring its generated class
-     * @return compatible as is for identical schemas and nondecreasing limits, otherwise
-     *     incompatible
+     * @return compatible as is when the schema evaluator accepts the saved schema and settings,
+     *     otherwise incompatible
      * @throws IllegalStateException if either Protobuf snapshot is uninitialized
      */
     @Override
@@ -217,14 +229,14 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
             return TypeSerializerSchemaCompatibility.incompatible();
         }
         old.requireInitialized();
-        if (className.equals(old.className)
-                && fullName.equals(old.fullName)
-                && schema.equals(old.schema)
-                && settings.maxMessageSize() >= old.settings.maxMessageSize()
-                && settings.recursionLimit() >= old.settings.recursionLimit()) {
-            return TypeSerializerSchemaCompatibility.compatibleAsIs();
-        }
-        return TypeSerializerSchemaCompatibility.incompatible();
+        // Flink's result carries no reason; restoreSerializer reports schema incompatibilities.
+        return ProtobufSchemaCompatibility.evaluate(old.metadata(), metadata()).compatibleAsIs()
+                ? TypeSerializerSchemaCompatibility.compatibleAsIs()
+                : TypeSerializerSchemaCompatibility.incompatible();
+    }
+
+    private ProtobufSchemaCompatibility.Metadata metadata() {
+        return new ProtobufSchemaCompatibility.Metadata(className, fullName, settings, schema);
     }
 
     private void requireInitialized() {

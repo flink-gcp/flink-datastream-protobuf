@@ -40,8 +40,9 @@ import java.util.Objects;
  * inferred and explicitly typed {@code keyBy} can bypass it. Deterministic serialization does not
  * make message hashes stable across classloaders or provide canonical bytes across builds.
  *
- * <p>Versioned snapshots support unchanged-schema checkpoint/savepoint recovery, verified with
- * HashMap and RocksDB state backends in MiniCluster tests.
+ * <p>Versioned snapshots support checkpoint/savepoint recovery with unchanged schemas and supported
+ * schema changes, verified with HashMap and RocksDB state backends in MiniCluster tests. A restored
+ * application may contain only the new generated class.
  *
  * <p>The class and {@code of(Class)} have an unbounded type parameter to match Flink's inherited
  * static {@code TypeInformation.of(Class)} signature. Construction still requires a supported
