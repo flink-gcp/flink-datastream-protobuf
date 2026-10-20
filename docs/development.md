@@ -83,6 +83,10 @@ CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and 
 It also runs the binary compatibility recipe for each Protobuf profile on JDK 17.
 Lint runs `just test-scripts` with the workflow and Markdown checks.
 These lanes run for each PR, main push, manual verification, and weekly schedule.
+A repository ruleset requires the GitHub Actions `CI passed` check for every update to main, so a PR merges only after that check succeeds for its head commit; the branch need not be up to date with main.
+On a PR, that check verifies the merge of the head into main that GitHub computed for the triggering event, not the head commit alone.
+The ruleset matches the check by the `name` of the `ci_passed` job in `.github/workflows/ci.yaml`, so changing that job's `needs` list or renaming a workflow needs no ruleset change.
+Changing that `name` needs a coordinated ruleset change: the renaming PR cannot merge while the ruleset names the old check, and once it names the new one, PRs that report only the old check cannot merge until a new PR event triggers a run, whose merge with main includes the rename; rerunning an earlier run reuses its old merge commit.
 The required checks above do not include a mutation-testing batch.
 Apply the shared review safeguards to any batch that is performed.
 To reproduce the JDK 21 lane locally, use `mise x java@temurin-21 just -- just verify-protobuf 4`.
