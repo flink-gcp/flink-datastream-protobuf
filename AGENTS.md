@@ -68,7 +68,8 @@ CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on F
 - After Draft creation, use `$self-review`, then `$self-review-round-two`, then `$independent-review`. Their instructions define the distinct passes and bounded repairs.
 - Record feedback inline on changed lines using the GitHub review API comments array. Do not post standalone review summaries.
 - Route out-of-scope findings with the user; do not create issues without a routing decision. Existing authorization persists across the workflow.
-- Wait for current aggregate `CI passed` and the required review flow before Ready. The restored shared skill retains the original recorded unavailable-reviewer exception; running or uncollected reviews are incomplete. The user merges; clean up only the verified target when requested.
+- Wait for current aggregate `CI passed` and the required review flow before Ready. The restored shared skill retains the original recorded unavailable-reviewer exception; running or uncollected reviews are incomplete. The user merges.
+- After confirming the merge, clean up that PR's own worktree, local branch, and review worktrees without a separate request. First check that no worktree has tracked or untracked changes, that the branch tip is contained in `origin/main`, that each review worktree still names its recorded reviewed SHA, and that ignored files are only build and tool outputs such as `target/` and `.venv/`. Keep anything else, such as ignored local configuration, unexpected commits, fetched bundles, or other sessions' worktrees, and ask before removing it.
 
 ## Optional tools
 
