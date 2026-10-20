@@ -25,6 +25,7 @@ limitations under the License.
 - Publication policy amended: 2026-09-13; 0.x versions are unpublished development milestones and 1.0.0 is the first Maven Central release
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Frame buffering amended: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
+- Sizing traversal amended: 2026-10-19, [issue #43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes written by the same development build; restore from retained 0.1.0 state remains in [issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -161,8 +162,8 @@ No resynchronization after malformed input is promised.
 The byte and recursion limits are input constraints, not guarantees about total heap usage or stack capacity.
 
 Generated messages are immutable: object copy returns the same instance and `isImmutableType()` returns true.
-Resolve validated defaults, parsers, and normalized descriptors through a `ClassValue` cache keyed by the exact generated class; the serializer must survive Java serialization to a TaskManager.
-This avoids repeated reflective lookup and schema normalization without a global map that retains application classloaders.
+Resolve validated defaults, parsers, normalized descriptors, and sizing field layouts through a `ClassValue` cache keyed by the exact generated class; the serializer must survive Java serialization to a TaskManager.
+This avoids repeated reflective lookup, schema normalization, and layout construction without a global map that retains application classloaders.
 Concurrent first lookups can compute redundant metadata before the cache publishes one result; validation must not depend on running exactly once.
 Reconstruct transient runtime objects under the application classloading context without serializing a parser or classloader in the job graph.
 Stream copy preserves the complete frame bytes without parsing and reserializing the payload; it checks length and truncation but does not validate payload semantics or nesting.
@@ -170,7 +171,11 @@ The current probe uses a simple byte-array implementation solely to exercise Fli
 It is not the production serializer or a stable wire format.
 
 The serializer implementation checks message size with a dedicated field-wise calculation using `long` arithmetic before emitting the prefix.
-It uses an explicit traversal stack for nested messages and unknown groups, retaining per-call size and depth summaries for shared child instances.
+It walks nested messages, map entries, and unknown groups with an explicit stack of frames over field layouts that each payload class computes once for every message type it reaches and caches with its other metadata.
+Each serializer instance reuses its frames across calls and clears their record references after every call.
+A shared child is counted at every occurrence and its depth is checked at each path.
+Within one call, a subtree whose sizing examined more than a small constant amount of content is summarized by identity, so a large shared subgraph is not traversed again.
+A smaller shared subtree is sized again at each occurrence, which bounds that repeated work by the constant.
 This avoids trusting `MessageLite.getSerializedSize()`, whose documented result can overflow for messages larger than `Integer.MAX_VALUE`, including wrapping to a small positive value.
 Scalar sizing follows the wire encoding, including packed fields, map entries, UTF-8 strings, and retained proto2 string bytes.
 Ordinary values need one output encoding pass.

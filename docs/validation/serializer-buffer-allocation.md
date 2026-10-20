@@ -135,6 +135,7 @@ Every verdict change is from missed to established or inconclusive: `deserialize
 The candidate still misses the tolerance for scalar, nested, and collections writes in both profiles; scalar and nested `serialize` and `serializeSameInstance` remain at 6.2 to 7.0 times Chill's time and allocate 1.9 to 2.2 KB/op.
 Protobuf 3 text writes are established for `serialize` and inconclusive for the other two write operations; Protobuf 4 text writes miss.
 The [0.1.0 diagnostics](serializer-benchmarks-v0.1.0.md#allocation-and-optimization-candidates) sampled the remaining allocation sites in the safe-sizing traversal, which [#43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43) owns; this report does not attribute the remaining time to it.
+The [sizing-allocation report](serializer-sizing-allocation.md) measures that traversal separately.
 Chill's Protobuf 4 text writes are about twice as fast as its Protobuf 3 writes in both runs, so the text verdict differs between profiles without a native difference of that size.
 
 ### Possible regressions

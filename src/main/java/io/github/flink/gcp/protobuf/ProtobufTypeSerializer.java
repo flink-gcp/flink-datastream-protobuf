@@ -52,9 +52,11 @@ import java.util.Objects;
  * that each instance retains and also uses for stream copy. Larger payloads are streamed through
  * per-record Protobuf coded-stream buffers without payload-sized storage in this serializer.
  *
- * <p>Instances are not intended for concurrent use; call {@link #duplicate()} for independent
- * scratch storage. Generated defaults, parsers, and descriptor metadata are shared by exact message
- * class through a ClassValue cache, including after Java deserialization.
+ * <p>Each instance also retains a bounded stack of sizing frames, which hold record references only
+ * during a write. Instances are not intended for concurrent use; call {@link #duplicate()} for
+ * independent scratch storage and sizing frames. Generated defaults, parsers, descriptor metadata,
+ * and sizing field layouts are shared by exact message class through a ClassValue cache, including
+ * after Java deserialization.
  *
  * <p>Construction is internal to native type integration. Versioned snapshots support restoration
  * across unchanged schemas and supported schema changes with nondecreasing reader limits.
@@ -120,7 +122,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         settings = original.settings;
         messageType = original.messageType;
         parser = messageType.parser;
-        messageSize = new ProtobufMessageSize(settings);
+        messageSize = new ProtobufMessageSize(settings, messageType.layout);
     }
 
     /**
@@ -416,7 +418,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     private void initialize() {
         messageType = ProtobufMessageType.resolve(messageClass);
         parser = messageType.parser;
-        messageSize = new ProtobufMessageSize(settings);
+        messageSize = new ProtobufMessageSize(settings, messageType.layout);
     }
 
     /**

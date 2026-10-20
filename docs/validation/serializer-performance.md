@@ -83,7 +83,7 @@ Inputs, generated accessors, memoized runtime sizes, and buffers are therefore w
 
 Caching validated metadata removes repeated reflective default lookup, parser validation, and descriptor normalization from warm serializer construction.
 That construction result does not imply a comparable per-record or whole-job speedup.
-Ordinary serialization still traverses fields and allocates sizing metadata; it does not perform this initialization work on each record.
+In the measured candidate, ordinary serialization still traversed fields and allocated sizing metadata, but it did not perform this initialization work on each record; the [sizing-allocation report](serializer-sizing-allocation.md) measures the later traversal change.
 
 The raw-string path replaces generated getter-name guesses with one bounded counting pass through public APIs.
 It can allocate more for a small raw message, while removing per-occurrence reflection/cache-key work in nested messages.

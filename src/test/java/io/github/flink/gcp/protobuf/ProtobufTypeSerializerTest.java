@@ -58,7 +58,6 @@ import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -367,9 +366,9 @@ class ProtobufTypeSerializerTest {
     void mismatchedGeneratedWriterCannotCompleteACorruptFrame() {
         ProtobufTypeSerializer<BrokenWriter> serializer =
                 new ProtobufTypeSerializer<>(BrokenWriter.class);
-        // Declared bytes-field lengths giving payloads of 2, 4096 (the last array-encoded size),
-        // 4097 (the first streamed size), and 8195 bytes.
-        for (int declared : List.of(0, SCRATCH_SIZE - 3, SCRATCH_SIZE - 2, 2 * SCRATCH_SIZE)) {
+        // Declared bytes-field lengths giving payloads of 3, 4096 (the last array-encoded size),
+        // 4097 (the first streamed size), and 8195 bytes. An empty proto3 bytes value is absent.
+        for (int declared : List.of(1, SCRATCH_SIZE - 3, SCRATCH_SIZE - 2, 2 * SCRATCH_SIZE)) {
             int size =
                     CodedOutputStream.computeBytesSize(10, ByteString.copyFrom(new byte[declared]));
             for (int count : List.of(0, size - 1, size + 1)) {
@@ -1055,8 +1054,22 @@ class ProtobufTypeSerializerTest {
         }
 
         @Override
-        public Map<FieldDescriptor, Object> getAllFields() {
-            return Map.of(ScalarMessage.getDescriptor().findFieldByName("bytes_value"), declared);
+        public boolean hasField(FieldDescriptor field) {
+            return field.getName().equals("bytes_value");
+        }
+
+        @Override
+        public Object getField(FieldDescriptor field) {
+            if (field.isRepeated()) {
+                return List.of();
+            }
+            // Like the runtime, an absent field reads as its default value.
+            return hasField(field) ? declared : field.getDefaultValue();
+        }
+
+        @Override
+        public int getRepeatedFieldCount(FieldDescriptor field) {
+            return 0;
         }
 
         @Override
