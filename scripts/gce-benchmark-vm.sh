@@ -189,6 +189,7 @@ manifest() {
     local -a entries=()
     entry() { entries+=("$1=$2"); }
     value=$(metadata zone); entry gce.zone "${value##*/}"
+    value=$(metadata name); entry gce.instance "$value"
     value=$(metadata machine-type); entry gce.machine.type "${value##*/}"
     value=$(metadata cpu-platform); entry gce.cpu.platform "$value"
     value=$(metadata image); entry gce.image "${value##*/}"

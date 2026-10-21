@@ -25,6 +25,7 @@ limitations under the License.
 - Evidence content gate added: 2026-09-18, [issue #41](https://github.com/flink-gcp/flink-datastream-protobuf/issues/41)
 - Temporary GCE execution added: 2026-10-11, [issue #44](https://github.com/flink-gcp/flink-datastream-protobuf/issues/44)
 - Paired native/Chill mode added: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
+- Variant placement calibrated: 2026-10-21, [issue #109](https://github.com/flink-gcp/flink-datastream-protobuf/issues/109)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -68,6 +69,10 @@ It keeps the correctness gates, fork, warmup, measurement, and alternating block
 The paired mode does not produce cross-format results and does not replace a complete baseline.
 This baseline describes that machine and does not establish whole-job throughput or saved-state compatibility.
 Later development comparisons and release-candidate measurements run on temporary Compute Engine VMs, one Protobuf profile per VM, with every compared variant measured in the same plan.
+The compared variants of a profile run sequentially on that one VM.
+A calibration plan may run one tree on several VMs of a profile; the [placement calibration](../validation/gce-placement-calibration.md) did so and, under a rule fixed before measuring, rejected comparing variants across VMs.
+Between identical trees on different VMs, the per-block Chill control left host offsets of 1% to 4% that the narrow intervals of large-record cells resolve as differences.
+Placing compared variants on separate VMs requires a new calibration that passes the same rule, such as one for another machine series; it is not a choice made per plan.
 The operator process alone holds cloud credentials; benchmark VMs have no service account, and results pass the evidence gate before retention.
 A VM result is not compared causally with the Mac baseline or with another plan's machine.
 
@@ -99,3 +104,6 @@ The [2020 Flink article](https://flink.apache.org/2020/04/15/flink-serialization
 
 A separate Maven module or a shaded executable would add publication and classpath complexity without improving the isolation already provided by test scope and separate JVMs.
 An ad-hoc timing loop would not provide JMH's fork, warmup, or allocation instrumentation.
+
+Running each variant on its own VM would make a plan's wall-clock time independent of its variant count, which the sequential placement multiplies by about 70 minutes of measurement per paired variant.
+The calibration rejected it, and a baseline repeated on every VM was not measured as a control for the host offsets it found.

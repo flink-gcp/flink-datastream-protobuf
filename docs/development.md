@@ -303,6 +303,7 @@ Paths below are relative to the repository root.
 | `docs/validation/data/serializer-benchmarks-v0.1.0/` | Fixed measurement and diagnostic evidence with source provenance | The [data inventory](validation/data/serializer-benchmarks-v0.1.0/README.md) records checksums and supported contents; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-buffer-allocation-v0.2.0/` | Paired native/Chill measurements of the #42 buffer variants with GCE run records | The [data inventory](validation/data/serializer-buffer-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-sizing-allocation-v0.2.0/` | Paired native/Chill measurements of the #43 sizing variants with GCE run records | The [data inventory](validation/data/serializer-sizing-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
+| `docs/validation/data/gce-placement-calibration-v0.2.0/` | Paired native/Chill measurements of one unchanged tree on three VMs per profile, two runs each, with GCE run records | The [data inventory](validation/data/gce-placement-calibration-v0.2.0/README.md) records checksums, VM placement, and the measured commit; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
 Its `ControlledSource`, `RuntimeJob`, and `CommonTypesRuntimeJob` run inside the MiniCluster jobs started by the integration tests.
@@ -521,8 +522,8 @@ The CI build matrix runs the smoke after ordinary native verification and accept
 `just gce-benchmark` runs [gce_benchmark.py](../scripts/gce_benchmark.py) on the operator's machine to plan, start, monitor, collect, and delete temporary Compute Engine VMs.
 [gce-benchmark-vm.sh](../scripts/gce-benchmark-vm.sh) runs on each VM.
 The operator tool uses Python's standard library and gcloud; the runner uses Bash; neither enters the library jar.
-One VM runs one Protobuf profile, measuring its variants sequentially, so profiles can run concurrently without competing within a VM.
-Compare optimization variants only within one plan, on the same machine type, image, and toolchain; earlier local timings are not a causal baseline for a VM result.
+By default, one VM runs one Protobuf profile, measuring its variants sequentially, so profiles can run concurrently without competing within a VM.
+Compare optimization variants only within one plan, on one VM per profile; earlier local timings are not a causal baseline for a VM result.
 
 Only the operator process uses cloud credentials.
 It reads `CLOUDSDK_CONFIG`, `GOOGLE_CLOUD_PROJECT`, `GCE_BENCHMARK_ZONE`, and `GCE_BENCHMARK_MACHINE_TYPE` from the environment, falling back to the gitignored `.env` in the repository root, and ignores every other key in that file.
@@ -548,20 +549,28 @@ A specification is a JSON file:
 
 `mode` is a `BenchmarkSuite` mode, and `flinkVersion` one of the benchmark recipe's versions; `plan` reads both lists from the source commit itself.
 Each variant applies its patch, relative to the specification file, to a fresh checkout of `source`; a variant without a patch measures the commit unchanged, and a profile without variants measures one `candidate`.
+For calibration, a variant may set `vm` to a group name of 1 to 16 lowercase letters and digits that starts with a letter but not with `pb` and a digit.
+Variants of one profile with the same group run sequentially, in specification order, on VM `<runId>-pb<major>-<group>`; variants without a group run on `<runId>-pb<major>`.
+Variant names stay distinct within a profile, so result directories keep their `protobuf-<major>-<variant>` names wherever they ran.
+The [placement calibration](validation/gce-placement-calibration.md) rejected comparing variants across VMs, so `plan` accepts groups in a profile only when all its variants name the same patch file or none.
 `benchmark-build` compiles and runs the benchmark contract tests, so a patch that reverts production code must also revert tests that depend on it.
 Run `just benchmark-build` locally for every variant and profile before planning; `plan` checks neither patch application nor compilation.
 Optional fields select `project`, `zone`, `machineType` (default `c3-standard-8`), `minCpuPlatform`, `image` family and project (default Ubuntu 24.04 LTS), `bootDiskGb`, `bootDiskType`, `flinkVersion` (default `2.3.0`), the `base` commit for retained source patches (default: merge base with `origin/main`), and `java`, `just`, and `mise` tool versions.
 
 | Command | Effect |
 |---|---|
-| `just gce-benchmark plan <spec> <new-dir>` | Resolve the exact image, source, ancestor base, machine shape, and quota; estimate VM-hours; create no resources |
+| `just gce-benchmark plan <spec> <new-dir>` | Resolve the exact image, source, ancestor base, machine shape, and quota; estimate VM-hours and wall-clock hours; create no resources |
 | `just gce-benchmark execute <dir> --approve` | Refuse if instances with the run label exist; create the planned VMs, upload inputs, and start each runner as a systemd unit |
 | `just gce-benchmark status <dir>` | Report instance state, runner state, boot identity, and completed result count |
 | `just gce-benchmark collect <dir> <new-dir>` | Download each VM's results, reject recorded maintenance events, run the evidence gate on every result directory, then delete the VMs |
 | `just gce-benchmark cleanup <dir>` | Delete every instance labelled with the run and verify that no instance or boot disk remains |
 
-Before `execute`, confirm that the plan targets the intended project and billing account, that its labels identify the run, and that regional CPU quota covers the planned VMs.
+Before `execute`, confirm that the plan targets the intended project and billing account, that its labels identify the run, and that regional quota covers the planned VMs.
+`plan` counts every VM against the regional `CPUS`, machine-family (for example `C3_CPUS`), `INSTANCES`, and `IN_USE_ADDRESSES` quotas, because each VM uses an ephemeral external address for SSH, and against the project-wide `CPUS_ALL_REGIONS` quota.
+It reads each quota from its own scope and skips a quota that GCE does not report.
 Recheck current Compute Engine and persistent-disk pricing for the zone; the plan reports estimated VM-hours, not a price.
+Each VM's estimate is 25 minutes of setup plus a per-variant time that includes both load gates: 20 minutes for `check`, 25 for `smoke`, 95 for `pair`, and 300 for `run`.
+The VM-hour estimate sums all VMs, and the wall-clock estimate is the longest VM's.
 `--approve` records that review; no other command creates resources.
 Keep plan and collection directories outside the repository: they contain the source bundle, raw results, and the resource ledger.
 They are not deleted automatically; remove them after the checked evidence and the ledger are retained in the external review records.
@@ -582,9 +591,10 @@ Retry an interrupted or failed run with a new run ID and new output directories;
 Before each build and each measurement, the runner applies the local load gate: ten consecutive observations about 30 seconds apart, each measuring CPU idle over two seconds, must average at least 90% idle with none below 85%, one-minute load below 10, no swap-out, and at most 1 MiB swap-in per observation.
 A gate that does not pass within 60 minutes fails the run; the VM keeps running and billing until `collect --partial` or `cleanup` deletes it.
 Each result directory contains the JMH and support files plus `vm-manifest.txt`, `maintenance-events.log`, the gate logs, build and console logs, invocation, start/end times, `source-base.txt`, and `measurement-source.patch`.
-The VM manifest records the zone, machine type, CPU platform and model, image, scheduling, kernel, OS release, memory, mise version and hash, resolved JDK, just, Thrift, source, base, mode, variant patch hash, runner hash, and boot ID.
+The VM manifest records the zone, instance name, machine type, CPU platform and model, image, scheduling, kernel, OS release, memory, mise version and hash, resolved JDK, just, Thrift, source, base, mode, variant patch hash, runner hash, and boot ID.
 C3 machine types run only on Intel Sapphire Rapids; for a series offered on several platforms, set `minCpuPlatform`.
-`collect` fails when the results of one plan differ in machine type, CPU platform, image, kernel, or JDK, so a plan's variants stay comparable.
+`collect` fails when the results of one plan differ in machine type, CPU platform, image, kernel, or JDK, including results from different VMs of one profile, so a plan's variants stay comparable.
+`collection.json` records which VM produced each result directory.
 JMH JVM arguments, the corpus seed, and dependency hashes remain in each result's JMH JSON, `manifest.properties`, and `classpath-sha256.txt`.
 The gate accepts these files; human review of the checked copies remains required before retaining them under `docs/validation/data`.
 

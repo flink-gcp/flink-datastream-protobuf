@@ -32,6 +32,10 @@ BASE = "b" * 40
 SUITE = 'throw new IllegalArgumentException("Usage: BenchmarkSuite <check|smoke|run> <dir>");'
 RECIPES = "    case \"$version\" in\n        1.20.4) adapter=flink1 ;;\n        2.2.1|2.3.0) adapter=flink2 ;;\n"
 PB4, PB3 = "issue42-test-pb4", "issue42-test-pb3"
+GROUPED = [{"protobuf": 4, "variants": [{"name": "a1", "vm": "a", "patch": "output.patch"},
+                                        {"name": "b1", "vm": "b", "patch": "output.patch"},
+                                        {"name": "a2", "vm": "a", "patch": "output.patch"},
+                                        {"name": "base", "patch": "output.patch"}]}]
 MANIFEST = (b"gce.machine.type=c3-standard-8\ngce.cpu.platform=Intel Sapphire Rapids\n"
             b"gce.image=ubuntu\nkernel=Linux 7\njava.version=openjdk 17\n")
 
@@ -52,7 +56,7 @@ class FakeGcloud:
     """Models instances, their boot disks, label filters, uploads, and downloads."""
 
     def __init__(self, instances=(), runner="SUCCEEDED\nboot\nboot\n3\n", fail_on=None, error=None,
-                 evidence=None, quotas=None, keep_disks=False, fail_after=False):
+                 evidence=None, quotas=None, project_quotas=(), keep_disks=False, fail_after=False):
         self.calls = []
         self.instances = {}
         self.disks = set()
@@ -66,6 +70,7 @@ class FakeGcloud:
         self.evidence = evidence
         self.quotas = quotas or [{"metric": "C3_CPUS", "usage": 0.0, "limit": 24.0},
                                  {"metric": "CPUS", "usage": 0.0, "limit": 100.0}]
+        self.project_quotas = list(project_quotas)
         self.keep_disks = keep_disks
         self.fail_after = fail_after
         self.uploads = []
@@ -114,6 +119,8 @@ class FakeGcloud:
             return {"guestCpus": 8, "memoryMb": 32768}
         if args[:3] == ("compute", "regions", "describe"):
             return {"quotas": self.quotas}
+        if args[:3] == ("compute", "project-info", "describe"):
+            return {"quotas": self.project_quotas}
         if args[:3] == ("compute", "instances", "list"):
             return [dict(i) for i in self.instances.values() if matches(i, expression)]
         if args[:3] == ("compute", "disks", "list"):
@@ -214,7 +221,13 @@ class GceBenchmarkTest(unittest.TestCase):
     def test_plan_rejects_invalid_specifications(self):
         for change in ({"mode": "Fast"}, {"runId": "Bad_Name"}, {"profiles": [{"protobuf": 5}]},
                        {"profiles": [{"protobuf": 4}, {"protobuf": 4}]}, {"extra": True},
-                       {"profiles": [{"protobuf": 4, "variants": [{"name": "a"}, {"name": "a"}]}]}):
+                       {"profiles": [{"protobuf": 4, "variants": [{"name": "a"}, {"name": "a"}]}]},
+                       *({"profiles": [{"protobuf": 4, "variants": [{"name": "a", "vm": vm}]}]}
+                         for vm in ("A", "a-b", "1a", "", "a" * 17, 3, "pb3", "pb4x")),
+                       {"profiles": [{"protobuf": 4, "variants": [{"name": "a", "vm": "a"},
+                                                                  {"name": "b", "vm": "b", "patch": "b.patch"}]}]},
+                       {"profiles": [{"protobuf": 4, "variants": [{"name": "a", "vm": "a", "patch": "a.patch"},
+                                                                  {"name": "b", "patch": "b.patch"}]}]}):
             with self.subTest(change=change), self.assertRaises(tool.Failure):
                 tool.validate_spec({**self.spec, **change})
 
@@ -237,6 +250,53 @@ class GceBenchmarkTest(unittest.TestCase):
             with self.subTest(metric=quota["metric"]), self.assertRaises(tool.Failure):
                 self.planned(FakeGcloud(quotas=[quota]))
             self.assertFalse((self.root / "plan").exists())
+
+    def test_grouped_variants_run_sequentially_on_their_own_vms(self):
+        plan = tool.read_plan(self.planned(profiles=GROUPED))
+        self.assertEqual([(PB4 + "-a", ["a1", "a2"]), (PB4 + "-b", ["b1"]), (PB4, ["base"])],
+                         [(vm["name"], [v["name"] for v in vm["variants"]]) for vm in plan["vms"]])
+        self.assertEqual("protobuf-4-b1.patch", plan["vms"][1]["variants"][0]["patch"])
+        self.assertEqual([25 + 2 * 300, 25 + 300, 25 + 300], [vm["estimatedMinutes"] for vm in plan["vms"]])
+        self.assertEqual((21.25, 10.42), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
+        gcloud = FakeGcloud()
+        plan = self.planned(gcloud, name="grouped", profiles=GROUPED)
+        with contextlib.redirect_stdout(io.StringIO()):
+            tool.execute(plan, True, gcloud, delay=0)
+        self.assertEqual([PB4 + "-a", PB4 + "-b", PB4], [create[3] for create in gcloud.created()])
+        uploaded = []
+        for upload in gcloud.uploads:
+            with tarfile.open(fileobj=io.BytesIO(upload)) as tar:
+                settings = tar.extractfile("input/run.env").read().decode()
+                patches = sorted(name for name in tar.getnames() if name.startswith("input/patches/"))
+            uploaded.append((dict(line.split("=", 1) for line in settings.splitlines())["VARIANTS"], patches))
+        self.assertEqual([("'a1 a2'", ["input/patches/a1.patch", "input/patches/a2.patch"]),
+                          ("b1", ["input/patches/b1.patch"]), ("base", ["input/patches/base.patch"])], uploaded)
+
+    def test_longest_group_and_run_id_fit_the_instance_name_limit(self):
+        variants = [{"name": "a", "vm": "z" * 16}, {"name": "b", "vm": "y"}]
+        plan = tool.read_plan(self.planned(runId="r" * 32, profiles=[{"protobuf": 4, "variants": variants}]))
+        self.assertEqual(["r" * 32 + "-pb4-" + "z" * 16, "r" * 32 + "-pb4-y"], [vm["name"] for vm in plan["vms"]])
+        self.assertLessEqual(max(len(vm["name"]) for vm in plan["vms"]), 63)
+
+    def test_plan_counts_every_vm_against_cpu_instance_and_address_quota(self):
+        # The project also lists a global IN_USE_ADDRESSES, which must not replace the regional one.
+        roomy = [{"metric": "IN_USE_ADDRESSES", "usage": 0.0, "limit": 100.0}]
+        cases = [([{"metric": "C3_CPUS", "usage": 0.0, "limit": 16.0}], [], "C3_CPUS"),
+                 ([{"metric": "CPUS", "usage": 80.0, "limit": 100.0}], [], "CPUS"),
+                 ([{"metric": "INSTANCES", "usage": 22.0, "limit": 24.0}], [], "INSTANCES"),
+                 ([{"metric": "IN_USE_ADDRESSES", "usage": 6.0, "limit": 8.0}], roomy, "IN_USE_ADDRESSES"),
+                 ([], [{"metric": "CPUS_ALL_REGIONS", "usage": 16.0, "limit": 32.0}], "CPUS_ALL_REGIONS")]
+        for regional, project, metric in cases:
+            with self.subTest(metric=metric), self.assertRaisesRegex(tool.Failure, metric):
+                self.planned(FakeGcloud(quotas=regional, project_quotas=project), profiles=GROUPED)
+            self.assertFalse((self.root / "plan").exists())
+        regional = [{"metric": "C3_CPUS", "usage": 0.0, "limit": 24.0}, {"metric": "CPUS", "usage": 76.0, "limit": 100.0},
+                    {"metric": "INSTANCES", "usage": 21.0, "limit": 24.0},
+                    {"metric": "IN_USE_ADDRESSES", "usage": 5.0, "limit": 8.0}]
+        project = [{"metric": "CPUS_ALL_REGIONS", "usage": 8.0, "limit": 32.0},
+                   {"metric": "IN_USE_ADDRESSES", "usage": 8.0, "limit": 8.0}]
+        gcloud = FakeGcloud(quotas=regional, project_quotas=project)
+        self.assertEqual(3, len(tool.read_plan(self.planned(gcloud, profiles=GROUPED))["vms"]))
 
     def test_execute_requires_approval_and_creates_credential_free_vms(self):
         plan = self.planned()
@@ -348,6 +408,30 @@ class GceBenchmarkTest(unittest.TestCase):
                                          sorted(p.name for p in (checked / "evidence").iterdir()))
                 self.assertEqual([PB4], gcloud.deleted())
                 self.assertEqual("cleanup-verified", self.events(plan)[-1])
+
+    def test_collect_records_placement_and_checks_hosts_across_vms(self):
+        groups = [{"protobuf": 4, "variants": [{"name": "a1", "vm": "a"}, {"name": "b1", "vm": "b"}]}]
+        running = [(PB4 + "-a", "RUNNING", "issue42-test"), (PB4 + "-b", "RUNNING", "issue42-test")]
+
+        def files(result, manifest):
+            return evidence_archive({result + "/console.log": b"synthetic\n", result + "/vm-manifest.txt": manifest,
+                                     result + "/maintenance-events.log": b"t NONE\n"})
+        for name, other, failure in (("same", MANIFEST, None),
+                                     ("differs", MANIFEST.replace(b"Linux 7", b"Linux 8"), "kernel")):
+            with self.subTest(case=name):
+                plan = self.planned(name=name, profiles=groups)
+                gcloud = FakeGcloud(instances=running, evidence={PB4 + "-a": files("protobuf-4-a1", MANIFEST),
+                                                                 PB4 + "-b": files("protobuf-4-b1", other)})
+                output = self.root / (name + "-collected")
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    if failure:
+                        with self.assertRaisesRegex(tool.Failure, failure):
+                            tool.collect(plan, output, gcloud)
+                    else:
+                        tool.collect(plan, output, gcloud)
+                record = json.loads((output / "collection.json").read_text())
+                self.assertEqual({PB4 + "-a": ["protobuf-4-a1"], PB4 + "-b": ["protobuf-4-b1"]}, record["results"])
+                self.assertEqual(sorted(name for name, _, _ in running), sorted(gcloud.deleted()))
 
     def test_collect_refuses_incomplete_runs_unless_partial(self):
         plan = self.planned()

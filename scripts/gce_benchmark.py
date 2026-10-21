@@ -16,6 +16,7 @@
 
 Only this operator process uses cloud credentials. Benchmark VMs have no service account and
 receive a source bundle, optional variant patches, and non-secret run settings.
+Each Protobuf profile runs on one VM by default; variants that name a VM group run on that group's VM.
 """
 
 import argparse
@@ -60,6 +61,9 @@ DEFAULTS = {
 CONTROLLED = ("gce.machine.type", "gce.cpu.platform", "gce.image", "kernel", "java.version")
 NAME = re.compile(r"[a-z][a-z0-9-]{0,30}[a-z0-9]")
 VARIANT = re.compile(r"[a-z][a-z0-9-]{0,23}")
+# A group suffix keeps instance names within the 63-character limit and free of a trailing hyphen;
+# a pb<digit> prefix could reproduce another run's <runId>-pb<major> name.
+GROUP = re.compile(r"(?!pb[0-9])[a-z][a-z0-9]{0,15}")
 
 
 class Failure(Exception):
@@ -164,12 +168,31 @@ def validate_spec(spec):
             "Each profile needs a distinct protobuf major of 3 or 4")
     for profile in profiles:
         require(set(profile) <= {"protobuf", "variants"}, "Unknown profile fields")
-        variants = profile.get("variants", [{"name": "candidate"}])
+        variants = profile_variants(profile)
         names = [variant.get("name") for variant in variants]
         require(variants and all(VARIANT.fullmatch(str(name)) for name in names) and len(set(names)) == len(names),
                 "Variant names must be distinct lowercase identifiers")
         for variant in variants:
-            require(set(variant) <= {"name", "patch"}, "Unknown variant fields")
+            require(set(variant) <= {"name", "patch", "vm"}, "Unknown variant fields")
+            require("vm" not in variant or GROUP.fullmatch(str(variant["vm"])) is not None,
+                    "A variant's vm must be 1-16 lowercase letters and digits, start with a letter, and not start with pb<digit>")
+        # ADR-0004 rejects comparing variants across VMs, so groups only calibrate placement with one tree.
+        require(not any("vm" in variant for variant in variants)
+                or len({variant.get("patch") for variant in variants}) == 1,
+                "Variants on separate VMs must measure the same tree, with one patch or none")
+
+
+def profile_variants(profile):
+    return profile.get("variants", [{"name": "candidate"}])
+
+
+def placement(run_id, profile):
+    """Group a profile's variants by VM in specification order; variants without a group share the default VM."""
+    groups = {}
+    for variant in profile_variants(profile):
+        groups.setdefault(variant.get("vm"), []).append(variant)
+    name = run_id + "-pb" + str(profile["protobuf"])
+    return [(name + ("-" + group if group else ""), variants) for group, variants in groups.items()]
 
 
 def plan(spec_path, output, environment, gcloud):
@@ -201,22 +224,30 @@ def plan(spec_path, output, environment, gcloud):
                            "--filter", "labels.run=" + spec["runId"])
     require(not existing, "Instances labelled run=" + spec["runId"] + " already exist")
     region = gcloud.json("compute", "regions", "describe", zone.rsplit("-", 1)[0], "--project", project)
+    placements = [(profile, name, variants) for profile in spec["profiles"]
+                  for name, variants in placement(spec["runId"], profile)]
     family = settings["machineType"].split("-")[0].upper() + "_CPUS"
-    needed = machine["guestCpus"] * len(spec["profiles"])
-    quotas = {quota["metric"]: quota for quota in region.get("quotas", [])}
-    for metric in ("CPUS", family):
-        if metric in quotas:
-            quota = quotas[metric]
-            require(quota["usage"] + needed <= quota["limit"],
-                    metric + " quota is insufficient for " + str(needed) + " vCPUs")
+    cpus = machine["guestCpus"] * len(placements)
+    # Every VM also holds one instance slot and an ephemeral external address for SSH. The project lists
+    # metrics such as IN_USE_ADDRESSES globally too, so each scope is checked only for its own metrics.
+    project_info = gcloud.json("compute", "project-info", "describe", "--project", project)
+    checks = [(region, {"CPUS": cpus, family: cpus, "INSTANCES": len(placements),
+                        "IN_USE_ADDRESSES": len(placements)}),
+              (project_info, {"CPUS_ALL_REGIONS": cpus})]
+    for scope, needed in checks:
+        quotas = {quota["metric"]: quota for quota in scope.get("quotas", [])}
+        for metric, amount in needed.items():
+            if metric in quotas:
+                require(quotas[metric]["usage"] + amount <= quotas[metric]["limit"],
+                        metric + " quota is insufficient for " + str(amount) + " more")
 
     output.mkdir(parents=True)
     (output / "patches").mkdir()
     vms = []
     minutes = 0
-    for profile in spec["profiles"]:
+    for profile, name, planned in placements:
         variants = []
-        for variant in profile.get("variants", [{"name": "candidate"}]):
+        for variant in planned:
             entry = {"name": variant["name"]}
             if variant.get("patch"):
                 patch = (spec_path.parent / variant["patch"]).resolve()
@@ -227,8 +258,7 @@ def plan(spec_path, output, environment, gcloud):
             variants.append(entry)
         vm_minutes = SETUP_MINUTES + VARIANT_MINUTES.get(settings["mode"], max(VARIANT_MINUTES.values())) * len(variants)
         minutes += vm_minutes
-        vms.append({"name": spec["runId"] + "-pb" + str(profile["protobuf"]),
-                    "protobuf": profile["protobuf"], "variants": variants,
+        vms.append({"name": name, "protobuf": profile["protobuf"], "variants": variants,
                     "estimatedMinutes": vm_minutes})
     result = {
         "version": PLAN_VERSION, "createdAt": now(), "runId": spec["runId"],
@@ -244,11 +274,13 @@ def plan(spec_path, output, environment, gcloud):
         "source": source, "base": base, "mode": settings["mode"], "flinkVersion": settings["flinkVersion"],
         "tools": {"java": settings["java"], "just": settings["just"], "mise": settings["mise"]},
         "vms": vms, "estimatedVmHours": round(minutes / 60, 2),
+        "estimatedWallHours": round(max(vm["estimatedMinutes"] for vm in vms) / 60, 2),
     }
     (output / "plan.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("Planned " + str(len(vms)) + " " + settings["machineType"] + " VM(s) in " + project + "/" + zone
           + " from image " + image["name"] + ".")
-    print("Estimated usage: " + str(result["estimatedVmHours"]) + " VM-hours plus "
+    print("Estimated usage: " + str(result["estimatedVmHours"]) + " VM-hours over about "
+          + str(result["estimatedWallHours"]) + " hours, plus "
           + str(settings["bootDiskGb"]) + " GB " + settings["bootDiskType"] + " per VM.")
     print("Check current pricing and project ownership, then run: execute " + str(output) + " --approve")
     return result
@@ -491,7 +523,11 @@ def collect(directory, output, gcloud, partial=False, keep=False):
         differing = uncontrolled(checked) if checked else []
         if differing:
             failures.append("results differ or lack controlled values: " + ", ".join(differing))
-        record = {"time": now(), "states": states, "partial": bool(incomplete), "failures": failures}
+        # Record placement beside the states, including VMs that produced no result.
+        placed = {vm["name"]: sorted(path.name for path in (output / "evidence" / vm["name"]).glob("*")
+                                     if path.is_dir()) for vm in plan_data["vms"]}
+        record = {"time": now(), "states": states, "results": placed, "partial": bool(incomplete),
+                  "failures": failures}
         (output / "collection.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
                                                 encoding="utf-8")
         ledger(directory, "collected", output=str(output), partial=bool(incomplete), failures=len(failures))
