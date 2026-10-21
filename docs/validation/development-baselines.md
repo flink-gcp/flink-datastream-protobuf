@@ -173,8 +173,8 @@ The job does not fall back to a fresh download, so a corrupt or replaced entry s
 The four entries total about 780 MB of the repository's Actions cache quota.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-The Verify workflow's retained-baseline job runs this action and then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each v0.1.0 bundle and each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-Each of those jobs then runs the [API compatibility gate](../development.md#api-compatibility-gate) and the retained compiled consumers against the candidate at the job's Flink version and JDK.
+The Verify workflow's retained-baseline job runs this action for each v0.1.0 bundle, then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+The same job runs the [API compatibility gate](../development.md#api-compatibility-gate) once and the retained compiled consumers against the candidate at each of those Flink versions and JDKs.
 
 ## Restore retained state with the current library
 
