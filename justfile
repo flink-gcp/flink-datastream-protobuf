@@ -91,6 +91,16 @@ baseline-upgrade bundle version:
         "-Dprotobuf.test.retained.bundle=$bundle" -Dtest.excluded.groups= \
         -Dtest=RetainedBaselineUpgradeITCase test
 
+# Run a retained bundle's compiled consumers against a candidate library without recompiling them.
+[positional-arguments]
+baseline-consume bundle candidate version output:
+    java src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java consume "$1" "$2" "$3" "$4"
+
+# Compare the annotated API with a retained bundle's library through japicmp.
+[positional-arguments]
+api-compat bundle:
+    bash scripts/api-compat.sh "$1"
+
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups=retained-baseline verify

@@ -141,6 +141,12 @@ class BaselineToolTest {
         Files.createSymbolicLink(link, input);
         assertThatThrownBy(() -> BaselineTool.newDirectory(link.resolve("output"), input))
                 .hasMessageContaining("outside");
+        Path repository = Files.createDirectory(temporary.resolve("repository"));
+        assertThatThrownBy(
+                        () ->
+                                BaselineTool.newDirectory(
+                                        repository.resolve("output"), input, repository))
+                .hasMessageContaining("outside");
         Path output = BaselineTool.newDirectory(temporary.resolve("output"), input);
         assertThatThrownBy(() -> BaselineTool.newDirectory(output, input))
                 .isInstanceOf(java.nio.file.FileAlreadyExistsException.class);

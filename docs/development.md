@@ -58,6 +58,8 @@ mise x -- just --list
 | `just baseline-fetch <tag> <output> [bundle...] [--archives <dir>]` | Download, verify, extract, and check retained release bundles in a new external directory |
 | `just baseline-fetch-test` | Run the retrieval checks against synthetic releases without network access |
 | `just baseline-upgrade <bundle> <version>` | Restore a verified bundle's retained state with the current library and new-schema applications; see [restoring retained state](validation/development-baselines.md#restore-retained-state-with-the-current-library) |
+| `just api-compat <bundle>` | Build the candidate for the bundle's line and profile, compare its annotated API with the retained library, and run the negative control |
+| `just baseline-consume <bundle> <candidate-jar> <version> <output>` | Run the bundle's compiled consumers against a candidate jar without recompilation |
 | `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
@@ -343,6 +345,60 @@ The reader uses retained bytes without rebuilding them; CI verifies the same jar
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` then restores their state with the current library and applications, resolving this build's dependencies instead of the retained ones.
+
+### API compatibility gate
+
+Issue [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) checks the application-facing API of each candidate against the retained development library with two complementary checks.
+The first compares class files with japicmp; the second runs the retained compiled consumers against the candidate jar.
+Both are separate from saved-state restoration and from application gencode/runtime compatibility.
+
+```sh
+mise x -- just baseline-fetch v0.1.0 /tmp/baseline-v0.1.0
+mise x -- just api-compat /tmp/baseline-v0.1.0/flink2-pb3
+mise x -- just baseline-consume /tmp/baseline-v0.1.0/flink2-pb3 target/flink-datastream-protobuf-0.2.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+```
+
+`api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
+It reads the adapter line, Protobuf profile, and compile Flink version from the bundle manifest.
+It then runs a clean `verify` with tests skipped and the `api-compat` profile, selecting the same `-Pprotobuf<major>`, `-Dflink.compat`, and `-Dflink.version` as the retained library.
+
+The profile uses the japicmp-maven-plugin version managed by `flink-connector-parent` but replaces the parent's configuration, which compares `org.apache.flink` coordinates and covers `@Public` only.
+The comparison covers public and protected members of types annotated `@Public` or `@PublicEvolving` and of their nested types, excluding elements annotated `@Internal`.
+In the current tree these are `ProtobufTypeInformation`, its `Builder`, and `ProtobufTypeInfoFactory`.
+japicmp lists the members that these class files declare; the LTS `createSerializer(ExecutionConfig)` override is declared in the `@Internal` adapter superclass, so the retained legacy-entry-point consumer, rather than the report, exercises it.
+
+japicmp decides compatibility and fails the build on the binary- and source-incompatible changes that its build break covers, naming the member and the change type, for example `ProtobufTypeInformation$Builder.recursionLimit(int):METHOD_REMOVED`.
+The break does not cover every change that the report marks source-incompatible: with japicmp 0.18.5, changing only the generic type of a parameter, such as `newBuilder(Class<T>)` to `newBuilder(Class<? extends T>)`, is reported as `METHOD_PARAMETER_GENERICS_CHANGED` and passes.
+The erased signatures stay binary compatible, so review generic signature changes in public types by hand.
+An intentional 0.x break is accepted only by adding that member to the plugin-level japicmp `<excludes>` in the profile, such as `io.github.flink.gcp.protobuf.ProtobufTypeInformation$Builder#recursionLimit(int)`, with a comment linking the upgrade documentation section that explains the break and its replacement.
+Exclude the affected member, never its whole class or package; an excluded member is no longer compared at all, so remove the entry when the baseline moves past the break.
+Do not add excludes inside an execution: Maven merges an execution's `<excludes>` with the plugin-level list element by element, so the first entry would replace the `@Internal` exclude for that comparison.
+Review these entries, and the build-break settings beside them, as part of the gate; nothing else checks them.
+The profile currently excludes no member, because the current API matches the four retained 0.1.0 libraries.
+Do not exclude a member to work around an unexplained difference; ADR-0001's 0.x policy allows only documented intentional breaks.
+
+The same Maven run checks a negative control built from the candidate, with japicmp's build break disabled for that comparison only.
+Its old jar holds the candidate's main classes plus the compiled test classes and generated test messages; its new jar drops `ProtobufTypeInfoFactory` and every test class.
+`ApiNegativeControl`, run in Java source-file mode, requires `ProtobufTypeInfoFactory` to be the only incompatible type in that report and to be reported as removed.
+This shows that the configured scope detects an accidental removal and ignores unannotated test and generated classes; japicmp's configuration cannot express that expectation itself.
+`ApiNegativeControlTest` covers the check with synthetic reports during ordinary verification.
+
+`baseline-consume <bundle> <candidate-jar> <flink-version> <new-output>` runs the bundle's `tools.jar` instruments on the candidate without recompiling them.
+These are the compiled explicit-construction, builder, and factory consumer, the registered transport check, and on Flink 1.20 the legacy entry-point check.
+Only the first is limited to the annotated API: the transport check names `ProtobufTypeSerializer` and `ProtobufTypeSerializerSnapshot`, and the legacy check calls the package-private serializer constructor and settings record.
+A change to those `@Internal` members can therefore fail `consume` while the public API is unchanged; such a failure needs a reviewed decision, because a japicmp exclude does not apply to it.
+The bundle's `dependencies/` tree was resolved on the capture host, so the command resolves the current tree's test-scope dependencies for the bundle's line, Protobuf profile, and the selected Flink version into the output directory.
+It pins protobuf-java to the bundle's version, because the retained instruments require their own runtime.
+It copies the candidate and the bundle manifest into `candidate/` in the output, where the retained instruments look for the library.
+The retained consumer records the hash of the jar it loaded, and the transport and legacy instruments assert that the library classes come from that copy.
+The results record the candidate and baseline hashes, the baseline source revision, and the revision and cleanliness of the checkout that ran the command; the candidate jar itself carries no source revision, so that checkout identifies the candidate only when it also built the jar, as in CI.
+Build the candidate with the bundle's line and Protobuf profile, as `api-compat` does; the command cannot tell which adapter a jar was compiled for.
+The bundle is checked again afterwards, as for `baseline-read`.
+
+The Verify workflow runs one retained-baseline job for each v0.1.0 bundle, Flink version, and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+After `baseline-upgrade`, each job runs `api-compat` and then `baseline-consume` at its Flink version on its JDK.
+Neither check publishes or uploads artifacts.
+When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 
 ### Selecting and capturing savepoint fixtures
 
@@ -677,6 +733,7 @@ Review Flink major/minor changes as a coordinated supported-window update under 
 Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including new exact-version fixtures and matrix checks.
 Keep each Protobuf runtime and protoc pair together.
 The existing `org.apache.flink:*` exclusion also covers `flink-connector-parent` major/minor upgrades; check its releases during dependency maintenance and review relevant build-tool changes separately from runtime-window changes.
+A parent update that changes the managed japicmp version also needs the [API compatibility gate](#api-compatibility-gate) review of its build break and report format.
 
 JUnit major upgrades follow the supported Flink floor, using the same adoption condition as [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906).
 Check the upstream Apache Flink release's root POM (`flink-parent`) for this condition; this library inherits `flink-connector-parent` separately.
@@ -765,7 +822,7 @@ The development sequence and current implementation status are:
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
 4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
-6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; add milestone-to-milestone API checks and upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17).
+6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; complete the upgrade documentation in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), whose [API compatibility gate](#api-compatibility-gate) checks each candidate against the retained 0.1.0 libraries.
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), compare shared and separate explicit-descriptor DynamicMessage APIs, serializers and snapshots in [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) before implementing integration and state recovery in [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23). Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
 8. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
