@@ -61,7 +61,7 @@ Do not infer parity from overlapping individual score intervals or average away 
 The five-block model assumes approximately normal independent log ratios; the report must retain raw data and discuss drift, scheduling, and limited replication.
 There is no simultaneous confidence claim across all workload/operation cells.
 
-Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf matrix in CI.
+Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf matrix in CI: on every push to main, the weekly schedule, and manual runs, and on pull requests that change sources, the evidence gate, or build inputs.
 Do not impose timing thresholds on shared runners.
 Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 17, and both supported Protobuf profiles.
 A controlled comparison of native serializer changes may use a paired mode that runs only the native and Chill Protobuf lanes.

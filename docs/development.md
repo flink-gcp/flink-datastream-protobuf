@@ -396,8 +396,8 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf profile, as `api-compat` does; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-The Verify workflow runs one retained-baseline job for each v0.1.0 bundle, Flink version, and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-After `baseline-upgrade`, each job runs `api-compat` and then `baseline-consume` at its Flink version on its JDK.
+The Verify workflow runs one retained-baseline job for each v0.1.0 bundle, covering every Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+On JDK 17 the job runs `baseline-upgrade` for each Flink version, then `api-compat` once, then `baseline-consume` for each Flink version; the 2.x jobs then switch to JDK 21 and repeat `baseline-upgrade` and `baseline-consume` with the same candidate jar.
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 
@@ -626,6 +626,15 @@ Cache and artifact credentials stay in their own action steps; benchmark process
 The smoke command runs under a five-minute `timeout`, so a hang fails the step with an error annotation and the existing content gate still checks any partial evidence.
 The step then kills any process left in the timeout's process group, so the gate does not read output that a surviving JVM is still writing.
 A job time limit cancels the job instead, and the gate does not run after cancellation.
+
+The organization's GitHub Free plan runs at most 20 jobs at a time, and a pull-request run of Verify, Lint, and Docs starts more, so the longest matrix jobs can wait for a runner.
+To shorten pull-request runs, CI's first job, `Freeze source revision`, uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to compare a pull request with its base branch and passes the result to Verify as the `benchmarks` and `baseline` inputs.
+An empty token makes the filter use git, so the job needs no `pull-requests` permission, and the selection adds no job that the matrix jobs would wait for.
+The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, or the CI and Verify workflows.
+Capture builds and runs the current library and test sources from a clean tree, so all of those are its inputs.
+Matrix jobs run the benchmark compiler and smoke steps for the same paths and for `scripts/benchmark_evidence.py`; the benchmark build compiles the test sources as well.
+Pushes to main, the weekly schedule, and manual `workflow_dispatch` runs always run both, so a change that a pull request skipped is still checked after it merges; start Verify manually on the branch to run them before merging.
+When a change adds an input to either check, add its path to the filters in `ci.yaml`; `baseline` lists the inputs shared by both checks.
 
 Verify job and smoke limits are at least twice the slowest measured successful run, rounded up to five minutes.
 The [CI budget measurements](validation/ci-budget.md) record the GitHub runner durations behind the current limits.

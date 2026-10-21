@@ -93,10 +93,12 @@ The rule in the [development guide](../development.md#ci-compiler-reuse-and-job-
 | Binary compatibility job | 315 s | 20 min | 15 min |
 | Development bundle job | 345 s | 30 min | 15 min |
 | Benchmark smoke command | 89 s | none | 5 min |
-| Retained v0.1.0 upgrade job | 196 s | 15 min | 10 min |
+| Retained v0.1.0 upgrade job | 251 s | 15 min | 10 min |
 
 The retained upgrade job fetches one bundle and restores its state with a clean Maven build; its ten jobs in the first pull-request run, [39451689508](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39451689508), took 59 to 122 seconds.
 The job then also runs the API compatibility gate, which rebuilds the candidate cleanly, and the retained compiled consumers; with those steps its ten jobs in run [39518523442](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39518523442) took 110 to 196 seconds.
 Twice the new maximum rounds up to the same 10-minute limit.
+Those ten cells were then folded into one job per bundle that runs each Flink version and JDK in turn and the API gate once; its four jobs in run [39630362526](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39630362526) took 152 seconds for the LTS bundles and 246 to 251 seconds for the 2.x bundles, whose jobs cover four combinations each.
+Twice that maximum also rounds up to 10 minutes.
 The matrix limit keeps the cold-compiler maximum, because a key change or an evicted entry returns every job to the cold path.
 No measured job combined the slowest step of each kind, but even the sum of the per-step maxima, about 630 seconds including setup steps, stays within the 20-minute limit.

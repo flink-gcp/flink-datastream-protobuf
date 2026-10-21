@@ -5,6 +5,13 @@ on:
       ref:
         type: string
         default: ''
+      # CI's source job selects these for pull requests; every other event runs both.
+      benchmarks:
+        type: boolean
+        default: true
+      baseline:
+        type: boolean
+        default: true
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'
@@ -77,17 +84,20 @@ jobs:
       # See "CI compiler reuse and job budgets" in docs/development.md.
       - name: Identify the reusable benchmark compiler
         id: compiler-identity
+        if: github.event_name != 'pull_request' || inputs.benchmarks
         run: |
           identity=$(just benchmark-tools-identity)
           echo "key=benchmark-compiler-$identity" >> "$GITHUB_OUTPUT"
       - name: Restore the benchmark compiler
         id: compiler-cache
+        if: github.event_name != 'pull_request' || inputs.benchmarks
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/benchmark-tools/build/compiler/cpp/bin/thrift
           key: ${{ steps.compiler-identity.outputs.key }}
       - name: Prepare the opt-in benchmark compiler
         id: compiler
+        if: github.event_name != 'pull_request' || inputs.benchmarks
         env:
           RESTORED: ${{ steps.compiler-cache.outputs.cache-hit }}
           COMPILER: ${{ runner.temp }}/benchmark-tools/build/compiler/cpp/bin/thrift
@@ -111,6 +121,7 @@ jobs:
           key: ${{ steps.compiler-identity.outputs.key }}
       - name: Validate serializer selection and smoke the benchmark harness
         id: benchmark-smoke
+        if: github.event_name != 'pull_request' || inputs.benchmarks
         env:
           RUNTIME: ${{ matrix.runtime }}
           PROTOBUF: ${{ matrix.protobuf }}
@@ -177,6 +188,7 @@ jobs:
         run: just binary-compat "$FLINK_CEILING" "$PROTOBUF"
   development-baseline:
     name: Development bundle / ${{ matrix.line }} / Protobuf ${{ matrix.protobuf }}
+    if: github.event_name != 'pull_request' || inputs.baseline
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -233,19 +245,19 @@ jobs:
             fi
           done
   retained-baseline:
-    name: Retained v0.1.0 upgrade / ${{ matrix.bundle }} / Flink ${{ matrix.flink }} / JDK ${{ matrix.java }}
+    # One job per bundle keeps Verify within the plan's 20 concurrent jobs; see docs/validation/ci-budget.md.
+    name: Retained v0.1.0 upgrade / ${{ matrix.bundle }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         # The Flink versions and JDKs that each retained bundle was read with.
-        bundle: [flink2-pb3, flink2-pb4]
-        flink: [2.2.1, 2.3.0]
-        java: ['17', '21']
         include:
-          - {bundle: flink1-pb3, flink: 1.20.4, java: '17'}
-          - {bundle: flink1-pb4, flink: 1.20.4, java: '17'}
+          - {bundle: flink2-pb3, flink: '2.2.1 2.3.0', jdk21: true}
+          - {bundle: flink2-pb4, flink: '2.2.1 2.3.0', jdk21: true}
+          - {bundle: flink1-pb3, flink: '1.20.4', jdk21: false}
+          - {bundle: flink1-pb4, flink: '1.20.4', jdk21: false}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -257,7 +269,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          java-version: '17'
           cache: maven
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
@@ -271,24 +283,51 @@ jobs:
           bundle: ${{ matrix.bundle }}
           output: ${{ runner.temp }}/retained-baseline
       # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
-      - name: Restore the retained state with the current library
+      - name: Restore the retained state with the current library on JDK 17
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
-        run: just baseline-upgrade "$BUNDLE" "$FLINK"
+        run: |
+          test -n "$FLINK"
+          for version in $FLINK; do
+            just baseline-upgrade "$BUNDLE" "$version"
+          done
       # See "API compatibility gate" in docs/development.md.
       - name: Compare the annotated API with the retained library
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
-        run: just api-compat "$BUNDLE"
-      - name: Run the retained compiled consumers on the candidate
+        run: |
+          just api-compat "$BUNDLE"
+          # The upgrade builds below clean target/; keep the compared candidate for every consumer run.
+          cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
+      - name: Run the retained compiled consumers on the candidate with JDK 17
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
-        run: just baseline-consume "$BUNDLE" target/flink-datastream-protobuf-*-SNAPSHOT.jar "$FLINK" "$RUNNER_TEMP/consume"
+        run: |
+          for version in $FLINK; do
+            just baseline-consume "$BUNDLE" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$version"
+          done
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: matrix.jdk21
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Restore the retained state and run the consumers again on JDK 21
+        if: matrix.jdk21
+        env:
+          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          FLINK: ${{ matrix.flink }}
+        run: |
+          for version in $FLINK; do
+            just baseline-upgrade "$BUNDLE" "$version"
+            just baseline-consume "$BUNDLE" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-21-$version"
+          done
       - name: Show failed consumer logs
         if: failure()
         run: |
-          if [[ -d "$RUNNER_TEMP/consume" ]]; then
-            find "$RUNNER_TEMP/consume" -name '*.log' -type f -exec tail -n 60 {} +
-          fi
+          for directory in "$RUNNER_TEMP"/consume-*; do
+            if [[ -d "$directory" ]]; then
+              find "$directory" -name '*.log' -type f -exec tail -n 60 {} +
+            fi
+          done
