@@ -338,6 +338,70 @@ limitations under the License.
                 </executions></plugin>
             </plugins></build>
         </profile>
+        <!-- Compare the annotated API with a retained library; see "API compatibility gate" in docs/development.md. -->
+        <profile>
+            <id>api-compat</id>
+            <properties>
+                <api.compat.directory>${project.build.directory}/api-compat</api.compat.directory>
+            </properties>
+            <build><plugins>
+                <!-- The negative control removes a public class; the test and generated classes it also drops are outside the API. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><executions>
+                    <execution><id>package-api-negative-control</id><phase>package</phase><goals><goal>run</goal></goals><configuration><target>
+                        <jar destfile="${api.compat.directory}/negative-old.jar" duplicate="fail">
+                            <fileset dir="${project.build.outputDirectory}"/><fileset dir="${project.build.testOutputDirectory}"/>
+                        </jar>
+                        <jar destfile="${api.compat.directory}/negative-new.jar" basedir="${project.build.outputDirectory}" excludes="io/github/flink/gcp/protobuf/ProtobufTypeInfoFactory.class"/>
+                    </target></configuration></execution>
+                </executions></plugin>
+                <plugin><groupId>com.github.siom79.japicmp</groupId><artifactId>japicmp-maven-plugin</artifactId>
+                    <!-- Replace the parent's org.apache.flink, @Public-only defaults. -->
+                    <configuration combine.self="override">
+                        <parameter>
+                            <includes><include>@org.apache.flink.annotation.Public</include><include>@org.apache.flink.annotation.PublicEvolving</include></includes>
+                            <excludes>
+                                <exclude>@org.apache.flink.annotation.Internal</exclude>
+                                <!-- Intentional 0.x breaks: exclude only the affected member here, not in an execution, with a comment linking its upgrade documentation. -->
+                            </excludes>
+                            <accessModifier>protected</accessModifier>
+                            <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+                            <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+                            <includeSynthetic>true</includeSynthetic>
+                            <ignoreMissingClasses>false</ignoreMissingClasses>
+                            <skipHtmlReport>true</skipHtmlReport>
+                        </parameter>
+                    </configuration>
+                    <executions>
+                        <!-- Disable the parent's execution so both comparisons inherit only the configuration above. -->
+                        <execution><id>default</id><phase>none</phase></execution>
+                        <!-- Report the deliberate break without failing; ApiNegativeControl checks the report. -->
+                        <execution><id>api-negative-control</id><phase>verify</phase><goals><goal>cmp</goal></goals><configuration>
+                            <oldVersion><file><path>${api.compat.directory}/negative-old.jar</path></file></oldVersion>
+                            <newVersion><file><path>${api.compat.directory}/negative-new.jar</path></file></newVersion>
+                            <projectBuildDir>${api.compat.directory}/negative-control</projectBuildDir>
+                            <parameter>
+                                <breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
+                                <breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
+                            </parameter>
+                        </configuration></execution>
+                        <execution><id>api-baseline</id><phase>verify</phase><goals><goal>cmp</goal></goals><configuration>
+                            <oldVersion><file><path>${api.baseline.jar}</path></file></oldVersion>
+                            <newVersion><file><path>${project.build.directory}/${project.build.finalName}.jar</path></file></newVersion>
+                            <projectBuildDir>${api.compat.directory}/baseline</projectBuildDir>
+                        </configuration></execution>
+                    </executions>
+                </plugin>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.6.4</version><executions>
+                    <execution><id>check-api-negative-control</id><phase>verify</phase><goals><goal>exec</goal></goals><configuration>
+                        <executable>${java.home}/bin/java</executable><arguments>
+                            <argument>${project.basedir}/src/test/java/io/github/flink/gcp/protobuf/ApiNegativeControl.java</argument>
+                            <argument>${api.compat.directory}/negative-control/japicmp/api-negative-control.xml</argument>
+                            <argument>io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory</argument>
+                        </arguments>
+                    </configuration></execution>
+                </executions></plugin>
+            </plugins></build>
+        </profile>
         <profile><id>flink1</id><activation><property><name>flink.compat</name><value>flink1</value></property></activation>
             <properties><flink.version>1.20.4</flink.version><flink.compat>flink1</flink.compat><flink.compat.pattern>flink1</flink.compat.pattern><flink.version.pattern>1\.20\..+</flink.version.pattern></properties>
         </profile>

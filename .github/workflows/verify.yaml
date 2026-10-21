@@ -276,3 +276,19 @@ jobs:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
         run: just baseline-upgrade "$BUNDLE" "$FLINK"
+      # See "API compatibility gate" in docs/development.md.
+      - name: Compare the annotated API with the retained library
+        env:
+          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+        run: just api-compat "$BUNDLE"
+      - name: Run the retained compiled consumers on the candidate
+        env:
+          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          FLINK: ${{ matrix.flink }}
+        run: just baseline-consume "$BUNDLE" target/flink-datastream-protobuf-*-SNAPSHOT.jar "$FLINK" "$RUNNER_TEMP/consume"
+      - name: Show failed consumer logs
+        if: failure()
+        run: |
+          if [[ -d "$RUNNER_TEMP/consume" ]]; then
+            find "$RUNNER_TEMP/consume" -name '*.log' -type f -exec tail -n 60 {} +
+          fi

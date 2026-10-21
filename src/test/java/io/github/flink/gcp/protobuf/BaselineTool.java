@@ -72,9 +72,15 @@ public final class BaselineTool {
             } finally {
                 checkUnchanged(bundle, inventoryHash);
             }
+        } else if (args.length == 5 && args[0].equals("consume")) {
+            consume(
+                    Path.of(args[1]).toRealPath(),
+                    Path.of(args[2]).toRealPath(),
+                    args[3],
+                    Path.of(args[4]));
         } else {
             throw new IllegalArgumentException(
-                    "Expected capture <flink2|flink1> <3|4> <new-output>, check <bundle>, or read <bundle> <flink-version> <new-results>");
+                    "Expected capture <flink2|flink1> <3|4> <new-output>, check <bundle>, read <bundle> <flink-version> <new-results>, or consume <bundle> <candidate-jar> <flink-version> <new-results>");
         }
     }
 
@@ -248,19 +254,95 @@ public final class BaselineTool {
         return command;
     }
 
-    private static void runtime(Path bundle, String version, String mode, Path results)
+    /**
+     * Runs the retained compiled consumers against a candidate library without recompiling them.
+     *
+     * <p>The bundle's dependency jars were resolved on the capture host, so the current tree
+     * resolves the runtime dependencies for the bundle's adapter line, Protobuf profile, and Flink
+     * version.
+     */
+    private static void consume(Path bundle, Path candidate, String version, Path destination)
             throws Exception {
+        Properties manifest = check(bundle);
+        String inventoryHash = hash(bundle.resolve("SHA256SUMS"));
+        String line = manifest.getProperty("line");
+        require(runtimes(line).contains(version), "Unsupported Flink runtime");
+        validateJava(line, Runtime.version().feature());
+        require(
+                Files.isRegularFile(candidate) && candidate.toString().endsWith(".jar"),
+                "Missing candidate library jar");
+        Path repository = Path.of(git("rev-parse", "--show-toplevel")).toRealPath();
+        require(
+                Path.of("").toRealPath().equals(repository),
+                "Consume must start at the repository root");
+        Path output = newDirectory(destination, bundle, repository);
+        try {
+            command(
+                    output,
+                    "dependencies",
+                    maven(
+                            line,
+                            manifest.getProperty("protobuf.major"),
+                            version,
+                            "dependency:copy-dependencies",
+                            // The retained instruments require their own Protobuf runtime.
+                            "-Dprotobuf.version=" + manifest.getProperty("protobuf.version"),
+                            "-DincludeScope=test",
+                            "-Dmdep.useRepositoryLayout=true",
+                            "-DoutputDirectory=" + output.resolve("dependencies")));
+            // Retained instruments find the library and manifest through their bundle argument.
+            Path view = Files.createDirectory(output.resolve("candidate"));
+            copy(bundle.resolve("manifest.properties"), view.resolve("manifest.properties"));
+            copy(candidate, view.resolve("library.jar"));
+            Path results = Files.createDirectory(output.resolve("results"));
+            instruments(
+                    view,
+                    classpath(bundle.resolve("tools.jar"), view, output.resolve("dependencies")),
+                    version,
+                    results);
+            List<String> cases = compiledCases(version);
+            Properties result = new Properties();
+            result.setProperty("status", "passed");
+            result.setProperty("flink.version", version);
+            result.setProperty("protobuf.version", manifest.getProperty("protobuf.version"));
+            result.setProperty("java.version", System.getProperty("java.runtime.version"));
+            result.setProperty("baseline.source.revision", manifest.getProperty("source.revision"));
+            result.setProperty("baseline.library.sha256", manifest.getProperty("library.sha256"));
+            result.setProperty("consumer.sha256", hash(bundle.resolve("tools.jar")));
+            result.setProperty("library.sha256", hash(view.resolve("library.jar")));
+            // The jar may come from elsewhere; this identifies the checkout that resolved the
+            // classpath.
+            result.setProperty("checkout.source.revision", git("rev-parse", "HEAD"));
+            result.setProperty(
+                    "checkout.source.clean",
+                    Boolean.toString(git("status", "--porcelain").isEmpty()));
+            result.setProperty("case.count", Integer.toString(cases.size()));
+            result.setProperty("cases", String.join(",", cases));
+            save(result, output.resolve("result.properties"));
+            System.out.println("Retained compiled consumers passed on the candidate: " + output);
+        } finally {
+            checkUnchanged(bundle, inventoryHash);
+        }
+    }
+
+    private static List<String> classpath(Path tools, Path bundle, Path dependencies)
+            throws IOException {
         List<String> classpath =
                 new ArrayList<>(
-                        List.of(
-                                bundle.resolve("tools.jar").toString(),
-                                bundle.resolve("library.jar").toString()));
-        for (Path jar : files(bundle.resolve("dependencies/" + version))) {
+                        List.of(tools.toString(), bundle.resolve("library.jar").toString()));
+        for (Path jar : files(dependencies)) {
             if (jar.toString().endsWith(".jar")) {
                 classpath.add(jar.toString());
             }
         }
         require(classpath.size() > 2, "Missing runtime dependencies");
+        return classpath;
+    }
+
+    /** Runs the compiled consumer and transport checks, plus the LTS legacy check, on a library. */
+    private static void instruments(
+            Path bundle, List<String> classpath, String version, Path results) throws Exception {
+        String library = hash(bundle.resolve("library.jar"));
         command(
                 results,
                 "consumer",
@@ -271,16 +353,7 @@ public final class BaselineTool {
                         String.join(File.pathSeparator, classpath),
                         "io.github.flink.gcp.protobuf.BaselineConsumer",
                         results.resolve("consumer.properties").toString()));
-        Properties consumer = load(results.resolve("consumer.properties"));
-        require(
-                consumer.getProperty("status", "").equals("passed")
-                        && consumer.getProperty("library.sha256", "")
-                                .equals(hash(bundle.resolve("library.jar"))),
-                "Compiled consumer did not verify the retained library");
-        for (String instrument :
-                version.startsWith("1.20.")
-                        ? List.of("transport", "legacy")
-                        : List.of("transport")) {
+        for (String instrument : instruments(version)) {
             command(
                     results,
                     instrument,
@@ -295,6 +368,26 @@ public final class BaselineTool {
                             version,
                             results.toString()));
         }
+        // The consumer hashes the loaded library; the other instruments assert its location.
+        List<String> checked = new ArrayList<>(List.of("consumer"));
+        checked.addAll(instruments(version));
+        for (String instrument : checked) {
+            Properties result = load(results.resolve(instrument + ".properties"));
+            require(
+                    result.getProperty("status", "").equals("passed")
+                            && result.getProperty("library.sha256", "").equals(library),
+                    "Compiled " + instrument + " check did not pass on the selected library");
+        }
+    }
+
+    private static void runtime(Path bundle, String version, String mode, Path results)
+            throws Exception {
+        List<String> classpath =
+                classpath(
+                        bundle.resolve("tools.jar"),
+                        bundle,
+                        bundle.resolve("dependencies/" + version));
+        instruments(bundle, classpath, version, results);
         command(
                 results,
                 "runtime",
@@ -311,11 +404,21 @@ public final class BaselineTool {
         validateResult(bundle, version, results.resolve("result.properties"));
     }
 
-    static List<String> expectedCases(String version) {
+    /** Separate-JVM instruments after the compiled consumer; LTS adds the legacy entry point. */
+    private static List<String> instruments(String version) {
+        return version.startsWith("1.20.") ? List.of("transport", "legacy") : List.of("transport");
+    }
+
+    private static List<String> compiledCases(String version) {
         List<String> cases = new ArrayList<>(List.of("compiled-consumer", "registered-transport"));
         if (version.startsWith("1.20.")) {
             cases.add("legacy-entry-point");
         }
+        return cases;
+    }
+
+    static List<String> expectedCases(String version) {
+        List<String> cases = compiledCases(version);
         cases.addAll(List.of("snapshot-default", "snapshot-raised"));
         for (String backend : List.of("hashmap", "rocksdb")) {
             for (String settings : List.of("baseline", "raised")) {
@@ -478,10 +581,12 @@ public final class BaselineTool {
         return HexFormat.of().formatHex(digest.digest());
     }
 
-    static Path newDirectory(Path requested, Path excluded) throws IOException {
+    static Path newDirectory(Path requested, Path... excluded) throws IOException {
         Path absolute = requested.toAbsolutePath().normalize();
         Path real = absolute.getParent().toRealPath().resolve(absolute.getFileName());
-        require(!real.startsWith(excluded.toRealPath()), "Output must be outside the input tree");
+        for (Path tree : excluded) {
+            require(!real.startsWith(tree.toRealPath()), "Output must be outside the input tree");
+        }
         return Files.createDirectory(real);
     }
 

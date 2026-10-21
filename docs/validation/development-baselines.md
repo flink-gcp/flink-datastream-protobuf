@@ -52,7 +52,8 @@ The companion `tools.jar` contains compiled test instruments, test messages, and
 It retains the compiled explicit type construction, builder, factory, registered transport, and LTS legacy-entry-point checks for subsequent API investigations.
 The explicit consumer, registration transport check, and LTS legacy check run in separate JVMs from the state writer and reader.
 LTS results include an additional `legacy-entry-point` case, giving 13 cases on LTS and 12 on 2.x.
-This is a concrete consumer inventory, not an exhaustive public-API compatibility checker; that gate belongs to #17.
+This is a concrete consumer inventory, not an exhaustive public-API compatibility checker.
+`baseline-consume` reruns it against a candidate library, and the [API compatibility gate](../development.md#api-compatibility-gate) compares the annotated API separately.
 
 ## Inspect and restore
 
@@ -173,7 +174,7 @@ The four entries total about 780 MB of the repository's Actions cache quota.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
 The Verify workflow's retained-baseline job runs this action and then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each v0.1.0 bundle and each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-The API-compatibility jobs planned in [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) are to use the same action, which shares these cache entries.
+Each of those jobs then runs the [API compatibility gate](../development.md#api-compatibility-gate) and the retained compiled consumers against the candidate at the job's Flink version and JDK.
 
 ## Restore retained state with the current library
 
@@ -220,5 +221,5 @@ The checksum checker is not the benchmark content gate in #41 and does not prove
 Retain original bytes privately if a separately sanitized derivative is needed, and identify that derivative with its own inventory.
 
 [`baseline-upgrade`](#restore-retained-state-with-the-current-library) implements the #16 check: it consumes the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with separately built new-schema applications.
-For #17, retain both library jars and already-compiled consumer inputs per profile, and select a candidate library on an explicitly reviewed classpath without recompiling the old consumer.
+For #17, `api-compat` compares the retained `library.jar` with a candidate built for the same line and profile, and `baseline-consume` runs the retained `tools.jar` with the candidate on an explicit classpath of the current tree's dependencies, without recompiling the old consumer.
 Neither follow-up should rebuild a newer working tree and label it the old writer.
