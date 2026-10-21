@@ -24,6 +24,9 @@ jobs:
     outputs:
       sha: ${{ steps.source.outputs.sha }}
       publish: ${{ github.repository_id == '1358906035' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      # Pull requests run the benchmark smoke and the capture rehearsal only when their inputs change; see docs/development.md.
+      benchmarks: ${{ github.event_name != 'pull_request' || steps.filter.outputs.benchmarks == 'true' }}
+      baseline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.baseline == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,11 +34,35 @@ jobs:
           persist-credentials: false
       - id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # An empty token makes the filter compare with git against the pull request base, without pull-requests permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          filters: |
+            baseline: &baseline
+              - 'src/**'
+              - pom.xml
+              - justfile
+              - benchmarks.just
+              - mise.toml
+              - mvnw
+              - '.mvn/**'
+              - 'tools/maven/**'
+              - .gitignore
+              - .github/workflows/ci.yaml
+              - .github/workflows/verify.yaml
+            benchmarks:
+              - *baseline
+              - scripts/benchmark_evidence.py
   verify:
     needs: source
     uses: ./.github/workflows/verify.yaml
     with:
       ref: ${{ needs.source.outputs.sha }}
+      benchmarks: ${{ needs.source.outputs.benchmarks == 'true' }}
+      baseline: ${{ needs.source.outputs.baseline == 'true' }}
     permissions:
       contents: read
   lint:

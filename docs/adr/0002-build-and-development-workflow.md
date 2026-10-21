@@ -74,6 +74,7 @@ Each job checks a restored compiler before use and rebuilds the pinned source wh
 A shared preparation job was rejected because every matrix job would wait for it, including runs with a usable cache entry.
 Separate smoke jobs were rejected because they would repeat checkout, JDK, and Maven setup in ten more jobs; Verify already starts 16 jobs per run, and the organization's [GitHub Free plan](https://docs.github.com/en/actions/reference/limits) allows 20 concurrent standard-runner jobs.
 Neither alternative changes the supported runtime matrix or the aggregate gate; the cache keeps the smoke in the job that verified the same runtime.
+After Verify grew to 26 jobs and pull-request runs waited for runners at that limit, pull requests run the smoke and the capture rehearsal only when they change sources or build inputs; pushes to main, the weekly schedule, and manual runs always run both, so a skipped check is still exercised after merge.
 Job limits come from measured GitHub runner durations with at least twice the slowest successful run, and the smoke has a command limit so that a hung measurement fails before the job limit cancels evidence retention.
 Shared-runner durations never become benchmark pass/fail thresholds.
 
@@ -139,7 +140,7 @@ Current commands, retention details and rollout instructions live in the develop
 [Issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) owns 1.0.0 publication preparation, candidate verification, actual publication, and consumer verification.
 Issue #40's test-only development bundle tooling retains packaged writers, compiled consumers, runtime dependencies, and state outside the source tree.
 The capture workflow builds each artifact/profile once and reruns its retained inputs on the supported JDK/Flink combinations without compilation.
-CI exercises these as disposable rehearsals.
+CI exercises these as disposable rehearsals: on every push to main, the weekly schedule, and manual runs, and on pull requests that change sources or build inputs.
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are stored with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release, as described in the [retained baseline](../validation/development-baselines.md#retained-v010-baseline).
 Milestone checks obtain them through a verified retrieval that checks a `SHA256SUMS` digest pinned in the repository and every extracted file, without rebuilding the old tree; CI caches each archive by its checksum and verifies it again on every run.
 Milestone-to-milestone API checks are added for 0.2.0 against the fixed 0.1.0 development baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
