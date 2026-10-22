@@ -36,6 +36,10 @@ GROUPED = [{"protobuf": 4, "variants": [{"name": "a1", "vm": "a", "patch": "outp
                                         {"name": "b1", "vm": "b", "patch": "output.patch"},
                                         {"name": "a2", "vm": "a", "patch": "output.patch"},
                                         {"name": "base", "patch": "output.patch"}]}]
+CHAIN = [{"protobuf": 4, "variants": [{"name": "baseline", "patch": "output.patch"}, {"name": "descriptors"},
+                                      {"name": "candidate", "patch": "output.patch"}, {"name": "floor"}],
+          "comparisons": [["baseline", "descriptors"], ["descriptors", "candidate"], ["candidate", "floor"]]},
+         {"protobuf": 3}]
 MANIFEST = (b"gce.machine.type=c3-standard-8\ngce.cpu.platform=Intel Sapphire Rapids\n"
             b"gce.image=ubuntu\nkernel=Linux 7\njava.version=openjdk 17\n")
 
@@ -153,6 +157,12 @@ def evidence_archive(files):
     return stream.getvalue()
 
 
+def results(*names):
+    """One VM's archive with a minimal passing result directory per name."""
+    return evidence_archive({result + "/" + base: data for result in names for base, data in (
+        ("console.log", b"synthetic\n"), ("vm-manifest.txt", MANIFEST), ("maintenance-events.log", b"t NONE\n"))})
+
+
 def tool_csv():
     return b"lane,workload,operation,deterministic,block,ns_per_op,derived_ops_per_second,allocated_bytes_per_op\n"
 
@@ -210,6 +220,8 @@ class GceBenchmarkTest(unittest.TestCase):
         self.assertEqual([PB4, PB3], [vm["name"] for vm in plan["vms"]])
         self.assertEqual(["baseline", "candidate"], [v["name"] for v in plan["vms"][0]["variants"]])
         self.assertEqual([{"name": "candidate"}], plan["vms"][1]["variants"])
+        # Without declared comparisons, every pair of variants on one VM is comparable.
+        self.assertEqual([[["baseline", "candidate"]], []], [vm["comparisons"] for vm in plan["vms"]])
         self.assertIn("patchSha256", plan["vms"][0]["variants"][0])
         self.assertEqual((SOURCE, BASE), (plan["source"], plan["base"]))
         self.assertEqual({"purpose": tool.PURPOSE, "run": "issue42-test"}, plan["labels"])
@@ -230,6 +242,24 @@ class GceBenchmarkTest(unittest.TestCase):
                                                                   {"name": "b", "patch": "b.patch"}]}]}):
             with self.subTest(change=change), self.assertRaises(tool.Failure):
                 tool.validate_spec({**self.spec, **change})
+
+    def test_plan_rejects_invalid_comparisons(self):
+        variants = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+        pair = "two distinct variants"
+        for comparisons, message in (([], "non-empty list"), (3, "non-empty list"), ({"a": "b"}, "non-empty list"),
+                                     ([["a"], ["b", "c"]], pair), ([["a", "b", "c"]], pair),
+                                     ([["a", "a"], ["b", "c"]], pair), ([["a", "x"], ["b", "c"]], pair),
+                                     ([["a", ["b"]], ["b", "c"]], pair), (["ab", ["b", "c"]], pair),
+                                     ([["a", "b"], ["b", "a"], ["b", "c"]], "b/a is declared twice"),
+                                     ([["a", "b"]], "in no comparison: c")):
+            profile = {"protobuf": 4, "variants": variants, "comparisons": comparisons}
+            with self.subTest(comparisons=comparisons), self.assertRaisesRegex(tool.Failure, message):
+                tool.validate_spec({**self.spec, "profiles": [profile]})
+        # Groups measure one tree on several VMs, so declaring a comparison there would compare across VMs.
+        grouped = [{"name": "a", "vm": "a"}, {"name": "b", "vm": "a"}]
+        with self.assertRaisesRegex(tool.Failure, "cannot be combined with vm groups"):
+            self.planned(profiles=[{"protobuf": 4, "variants": grouped, "comparisons": [["a", "b"]]}])
+        self.assertFalse((self.root / "plan").exists())
 
     def test_plan_checks_the_source_commit_and_existing_runs(self):
         cases = [({"mode": "pair"}, None), ({"flinkVersion": "1.19.0"}, None),
@@ -256,6 +286,7 @@ class GceBenchmarkTest(unittest.TestCase):
         self.assertEqual([(PB4 + "-a", ["a1", "a2"]), (PB4 + "-b", ["b1"]), (PB4, ["base"])],
                          [(vm["name"], [v["name"] for v in vm["variants"]]) for vm in plan["vms"]])
         self.assertEqual("protobuf-4-b1.patch", plan["vms"][1]["variants"][0]["patch"])
+        self.assertEqual([[["a1", "a2"]], [], []], [vm["comparisons"] for vm in plan["vms"]])
         self.assertEqual([25 + 2 * 300, 25 + 300, 25 + 300], [vm["estimatedMinutes"] for vm in plan["vms"]])
         self.assertEqual((21.25, 10.42), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
         gcloud = FakeGcloud()
@@ -271,6 +302,32 @@ class GceBenchmarkTest(unittest.TestCase):
             uploaded.append((dict(line.split("=", 1) for line in settings.splitlines())["VARIANTS"], patches))
         self.assertEqual([("'a1 a2'", ["input/patches/a1.patch", "input/patches/a2.patch"]),
                           ("b1", ["input/patches/b1.patch"]), ("base", ["input/patches/base.patch"])], uploaded)
+
+    def test_declared_comparisons_run_pairwise_and_repeat_shared_variants(self):
+        roomy = [{"metric": "C3_CPUS", "usage": 0.0, "limit": 64.0}]
+        plan = tool.read_plan(self.planned(FakeGcloud(quotas=roomy), profiles=CHAIN))
+        self.assertEqual([(PB4 + "-c1", ["baseline", "descriptors"], [["baseline", "descriptors"]]),
+                          (PB4 + "-c2", ["descriptors", "candidate"], [["descriptors", "candidate"]]),
+                          (PB4 + "-c3", ["candidate", "floor"], [["candidate", "floor"]]),
+                          (PB3, ["candidate"], [])],
+                         [(vm["name"], [v["name"] for v in vm["variants"]], vm["comparisons"]) for vm in plan["vms"]])
+        # Six variant runs instead of four, but the longest VM measures two instead of four.
+        self.assertEqual([25 + 2 * 300] * 3 + [25 + 300], [vm["estimatedMinutes"] for vm in plan["vms"]])
+        self.assertEqual((36.67, 10.42), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
+        gcloud = FakeGcloud(quotas=roomy)
+        plan = self.planned(gcloud, name="chain", profiles=CHAIN)
+        with contextlib.redirect_stdout(io.StringIO()):
+            tool.execute(plan, True, gcloud, delay=0)
+        self.assertEqual([PB4 + "-c1", PB4 + "-c2", PB4 + "-c3", PB3], [create[3] for create in gcloud.created()])
+        uploaded = []
+        for upload in gcloud.uploads:
+            with tarfile.open(fileobj=io.BytesIO(upload)) as tar:
+                settings = tar.extractfile("input/run.env").read().decode()
+                patches = sorted(name for name in tar.getnames() if name.startswith("input/patches/"))
+            uploaded.append((dict(line.split("=", 1) for line in settings.splitlines())["VARIANTS"], patches))
+        self.assertEqual([("'baseline descriptors'", ["input/patches/baseline.patch"]),
+                          ("'descriptors candidate'", ["input/patches/candidate.patch"]),
+                          ("'candidate floor'", ["input/patches/candidate.patch"]), ("candidate", [])], uploaded)
 
     def test_longest_group_and_run_id_fit_the_instance_name_limit(self):
         variants = [{"name": "a", "vm": "z" * 16}, {"name": "b", "vm": "y"}]
@@ -380,9 +437,10 @@ class GceBenchmarkTest(unittest.TestCase):
                 "protobuf-4-candidate/vm-manifest.txt": MANIFEST,
                 "protobuf-4-candidate/maintenance-events.log": b"2026-01-01T00:00:00Z NONE\n"}
         cases = [("ok", good, None),
-                 ("gate", {**good, "protobuf-4-candidate/unknown.bin": b"x"}, "evidence gate"),
+                 ("gate", {**good, "protobuf-4-candidate/unknown.bin": b"x"}, PB4 + "/protobuf-4-candidate: evidence gate"),
                  ("maintenance", {**good, "protobuf-4-candidate/maintenance-events.log":
-                                  b"t NONE\nt TERMINATE_ON_HOST_MAINTENANCE\n"}, "host maintenance"),
+                                  b"t NONE\nt TERMINATE_ON_HOST_MAINTENANCE\n"},
+                  PB4 + "/protobuf-4-candidate: host maintenance"),
                  ("empty", {}, "no result directories"),
                  ("uncontrolled", {**good, "protobuf-4-candidate/vm-manifest.txt": MANIFEST + b"x\n",
                                    "protobuf-4-other/vm-manifest.txt": MANIFEST.replace(b"Sapphire", b"Emerald"),
@@ -401,7 +459,7 @@ class GceBenchmarkTest(unittest.TestCase):
                             tool.collect(plan, output, gcloud)
                     else:
                         tool.collect(plan, output, gcloud)
-                        checked = output / "checked" / "protobuf-4-candidate"
+                        checked = output / "checked" / PB4 / "protobuf-4-candidate"
                         self.assertTrue((checked / "inventory.json").is_file())
                         # JMH output from benchmark/ and the VM maintenance log are flattened beside run records.
                         self.assertEqual(["console.log", "maintenance-events.log", "measurements.csv", "vm-manifest.txt"],
@@ -431,7 +489,44 @@ class GceBenchmarkTest(unittest.TestCase):
                         tool.collect(plan, output, gcloud)
                 record = json.loads((output / "collection.json").read_text())
                 self.assertEqual({PB4 + "-a": ["protobuf-4-a1"], PB4 + "-b": ["protobuf-4-b1"]}, record["results"])
+                self.assertEqual({PB4 + "-a": [], PB4 + "-b": []}, record["comparisons"])
                 self.assertEqual(sorted(name for name, _, _ in running), sorted(gcloud.deleted()))
+
+    def test_collect_keeps_a_repeated_variant_apart_on_each_vm(self):
+        profiles = [{"protobuf": 3, "variants": [{"name": "a"}, {"name": "b"}, {"name": "c"}],
+                     "comparisons": [["a", "b"], ["b", "c"]]}]
+        running = [(PB3 + "-c1", "RUNNING", "issue42-test"), (PB3 + "-c2", "RUNNING", "issue42-test")]
+        plan = self.planned(profiles=profiles)
+        gcloud = FakeGcloud(instances=running, evidence={PB3 + "-c1": results("protobuf-3-a", "protobuf-3-b"),
+                                                         PB3 + "-c2": results("protobuf-3-b", "protobuf-3-c")})
+        output = self.root / "collected"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            tool.collect(plan, output, gcloud)
+        self.assertEqual([PB3 + "-c1/protobuf-3-a", PB3 + "-c1/protobuf-3-b",
+                          PB3 + "-c2/protobuf-3-b", PB3 + "-c2/protobuf-3-c"],
+                         sorted(str(path.relative_to(output / "checked")) for path in (output / "checked").glob("*/*")))
+        record = json.loads((output / "collection.json").read_text())
+        self.assertEqual({PB3 + "-c1": ["protobuf-3-a", "protobuf-3-b"], PB3 + "-c2": ["protobuf-3-b", "protobuf-3-c"]},
+                         record["results"])
+        self.assertEqual({PB3 + "-c1": [["protobuf-3-a", "protobuf-3-b"]], PB3 + "-c2": [["protobuf-3-b", "protobuf-3-c"]]},
+                         record["comparisons"])
+        self.assertEqual(sorted(name for name, _, _ in running), sorted(gcloud.deleted()))
+
+    def test_collect_records_every_pair_of_a_sequential_vm_including_older_plans(self):
+        for name in ("current", "older"):
+            with self.subTest(plan=name):
+                plan = self.planned(name=name, profiles=self.spec["profiles"][:1])
+                if name == "older":
+                    data = tool.read_plan(plan)
+                    del data["vms"][0]["comparisons"]
+                    (plan / "plan.json").write_text(json.dumps(data), encoding="utf-8")
+                gcloud = FakeGcloud(instances=[(PB4, "RUNNING", "issue42-test")],
+                                    evidence={PB4: results("protobuf-4-baseline", "protobuf-4-candidate")})
+                output = self.root / (name + "-collected")
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    tool.collect(plan, output, gcloud)
+                record = json.loads((output / "collection.json").read_text())
+                self.assertEqual({PB4: [["protobuf-4-baseline", "protobuf-4-candidate"]]}, record["comparisons"])
 
     def test_collect_refuses_incomplete_runs_unless_partial(self):
         plan = self.planned()
@@ -455,7 +550,7 @@ class GceBenchmarkTest(unittest.TestCase):
                             evidence={PB4: partial[4], PB3: partial[3]})
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(tool.Failure, "diagnosis only"):
             tool.collect(plan, self.root / "partial", gcloud, partial=True)
-        self.assertTrue((self.root / "partial" / "checked" / "protobuf-4-candidate").is_dir())
+        self.assertTrue((self.root / "partial" / "checked" / PB4 / "protobuf-4-candidate").is_dir())
         self.assertEqual(sorted([PB4, PB3]), sorted(gcloud.deleted()))
 
     def test_cleanup_deletes_in_one_request_and_reports_remaining_disks(self):

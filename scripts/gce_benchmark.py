@@ -16,12 +16,14 @@
 
 Only this operator process uses cloud credentials. Benchmark VMs have no service account and
 receive a source bundle, optional variant patches, and non-secret run settings.
-Each Protobuf profile runs on one VM by default; variants that name a VM group run on that group's VM.
+Each Protobuf profile runs on one VM by default; variants that name a VM group run on that group's VM,
+and a profile that declares comparisons runs each comparison on its own VM.
 """
 
 import argparse
 import datetime
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -167,7 +169,7 @@ def validate_spec(spec):
     require(all(major in (3, 4) for major in majors) and len(set(majors)) == len(majors),
             "Each profile needs a distinct protobuf major of 3 or 4")
     for profile in profiles:
-        require(set(profile) <= {"protobuf", "variants"}, "Unknown profile fields")
+        require(set(profile) <= {"protobuf", "variants", "comparisons"}, "Unknown profile fields")
         variants = profile_variants(profile)
         names = [variant.get("name") for variant in variants]
         require(variants and all(VARIANT.fullmatch(str(name)) for name in names) and len(set(names)) == len(names),
@@ -180,19 +182,51 @@ def validate_spec(spec):
         require(not any("vm" in variant for variant in variants)
                 or len({variant.get("patch") for variant in variants}) == 1,
                 "Variants on separate VMs must measure the same tree, with one patch or none")
+        if "comparisons" in profile:
+            comparisons = profile["comparisons"]
+            require(isinstance(comparisons, list) and comparisons, "comparisons must be a non-empty list")
+            # Groups measure one tree, so a declared comparison is always placed pairwise instead.
+            require(not any("vm" in variant for variant in variants), "comparisons cannot be combined with vm groups")
+            pairs = set()
+            for pair in comparisons:
+                require(isinstance(pair, list) and len(pair) == 2 and all(isinstance(name, str) for name in pair)
+                        and pair[0] != pair[1] and set(pair) <= set(names),
+                        "Each comparison must name two distinct variants of its profile")
+                require(frozenset(pair) not in pairs, "Comparison " + "/".join(pair) + " is declared twice")
+                pairs.add(frozenset(pair))
+            unused = [name for name in names if not any(name in pair for pair in comparisons)]
+            require(not unused, "Variants in no comparison: " + ", ".join(unused))
 
 
 def profile_variants(profile):
     return profile.get("variants", [{"name": "candidate"}])
 
 
+def all_pairs(variants):
+    return [[a["name"], b["name"]] for a, b in itertools.combinations(variants, 2)]
+
+
+def result_name(major, variant):
+    return "protobuf-" + str(major) + "-" + variant
+
+
 def placement(run_id, profile):
-    """Group a profile's variants by VM in specification order; variants without a group share the default VM."""
-    groups = {}
-    for variant in profile_variants(profile):
-        groups.setdefault(variant.get("vm"), []).append(variant)
+    """Place a profile's variants on VMs, each with the comparisons it measures.
+
+    Declared comparisons run pairwise, one VM each, so a variant shared by several comparisons is repeated on
+    each of their VMs. Otherwise variants group by VM in specification order, variants without a group share the
+    default VM, and every pair on one VM is comparable.
+    """
     name = run_id + "-pb" + str(profile["protobuf"])
-    return [(name + ("-" + group if group else ""), variants) for group, variants in groups.items()]
+    variants = profile_variants(profile)
+    if "comparisons" in profile:
+        named = {variant["name"]: variant for variant in variants}
+        return [(name + "-c" + str(index), [named[side] for side in pair], [pair])
+                for index, pair in enumerate(profile["comparisons"], 1)]
+    groups = {}
+    for variant in variants:
+        groups.setdefault(variant.get("vm"), []).append(variant)
+    return [(name + ("-" + group if group else ""), members, all_pairs(members)) for group, members in groups.items()]
 
 
 def plan(spec_path, output, environment, gcloud):
@@ -224,8 +258,8 @@ def plan(spec_path, output, environment, gcloud):
                            "--filter", "labels.run=" + spec["runId"])
     require(not existing, "Instances labelled run=" + spec["runId"] + " already exist")
     region = gcloud.json("compute", "regions", "describe", zone.rsplit("-", 1)[0], "--project", project)
-    placements = [(profile, name, variants) for profile in spec["profiles"]
-                  for name, variants in placement(spec["runId"], profile)]
+    placements = [(profile, name, variants, pairs) for profile in spec["profiles"]
+                  for name, variants, pairs in placement(spec["runId"], profile)]
     family = settings["machineType"].split("-")[0].upper() + "_CPUS"
     cpus = machine["guestCpus"] * len(placements)
     # Every VM also holds one instance slot and an ephemeral external address for SSH. The project lists
@@ -245,21 +279,21 @@ def plan(spec_path, output, environment, gcloud):
     (output / "patches").mkdir()
     vms = []
     minutes = 0
-    for profile, name, planned in placements:
+    for profile, name, planned, pairs in placements:
         variants = []
         for variant in planned:
             entry = {"name": variant["name"]}
             if variant.get("patch"):
                 patch = (spec_path.parent / variant["patch"]).resolve()
                 require(patch.is_file(), "Missing patch for variant " + variant["name"])
-                target = output / "patches" / ("protobuf-" + str(profile["protobuf"]) + "-" + variant["name"] + ".patch")
+                target = output / "patches" / (result_name(profile["protobuf"], variant["name"]) + ".patch")
                 target.write_bytes(patch.read_bytes())
                 entry.update(patch=target.name, patchSha256=sha256(target))
             variants.append(entry)
         vm_minutes = SETUP_MINUTES + VARIANT_MINUTES.get(settings["mode"], max(VARIANT_MINUTES.values())) * len(variants)
         minutes += vm_minutes
         vms.append({"name": name, "protobuf": profile["protobuf"], "variants": variants,
-                    "estimatedMinutes": vm_minutes})
+                    "comparisons": pairs, "estimatedMinutes": vm_minutes})
     result = {
         "version": PLAN_VERSION, "createdAt": now(), "runId": spec["runId"],
         "project": project, "zone": zone, "machineType": settings["machineType"],
@@ -488,12 +522,12 @@ def download(gcloud, plan_data, vm, output, failures):
         failures.append(vm["name"] + ": no result directories")
     for result in results:
         if maintenance_events(result):
-            failures.append(result.name + ": host maintenance was recorded")
-        checked = output / "checked" / result.name
+            failures.append(vm["name"] + "/" + result.name + ": host maintenance was recorded")
+        checked = output / "checked" / vm["name"] / result.name
         code = subprocess.run([sys.executable, str(ROOT / "scripts" / "benchmark_evidence.py"),
                                "check", str(result), str(checked)]).returncode
         if code != 0:
-            failures.append(result.name + ": evidence gate rejected the directory")
+            failures.append(vm["name"] + "/" + result.name + ": evidence gate rejected the directory")
 
 
 def collect(directory, output, gcloud, partial=False, keep=False):
@@ -523,11 +557,16 @@ def collect(directory, output, gcloud, partial=False, keep=False):
         differing = uncontrolled(checked) if checked else []
         if differing:
             failures.append("results differ or lack controlled values: " + ", ".join(differing))
-        # Record placement beside the states, including VMs that produced no result.
+        # Record placement beside the states, including VMs that produced no result. A repeated variant's
+        # results on different VMs are never compared, so each comparison names its VM's result directories.
         placed = {vm["name"]: sorted(path.name for path in (output / "evidence" / vm["name"]).glob("*")
                                      if path.is_dir()) for vm in plan_data["vms"]}
-        record = {"time": now(), "states": states, "results": placed, "partial": bool(incomplete),
-                  "failures": failures}
+        # A plan written before comparisons were recorded used the sequential placement.
+        compared = {vm["name"]: [[result_name(vm["protobuf"], side) for side in pair]
+                                 for pair in vm.get("comparisons", all_pairs(vm["variants"]))]
+                    for vm in plan_data["vms"]}
+        record = {"time": now(), "states": states, "results": placed, "comparisons": compared,
+                  "partial": bool(incomplete), "failures": failures}
         (output / "collection.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
                                                 encoding="utf-8")
         ledger(directory, "collected", output=str(output), partial=bool(incomplete), failures=len(failures))

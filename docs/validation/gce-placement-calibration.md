@@ -21,7 +21,7 @@ limitations under the License.
 # Variant placement across temporary GCE VMs
 
 This report calibrates the comparison of benchmark variants that run on different VMs of one plan, for [#109](https://github.com/flink-gcp/flink-datastream-protobuf/issues/109).
-The [temporary GCE procedure](../development.md#temporary-gce-execution) measures every variant of a profile sequentially on one VM, so a plan's wall-clock time grows with its variant count: each `just benchmark-pair` variant takes about 70 minutes.
+The [temporary GCE procedure](../development.md#temporary-gce-execution) measured every variant of a profile sequentially on one VM, so a plan's wall-clock time grows with its variant count: each `just benchmark-pair` variant takes about 70 minutes.
 Placing each variant on its own VM would make that time independent of the variant count, but it compares variants across hosts.
 The [ADR-0004](../adr/0004-serializer-benchmarks.md) native/Chill protocol controls host speed within each block, and this calibration measures how much of the between-VM difference that control leaves.
 
@@ -71,7 +71,7 @@ The rule did not fix this direction, and the band is not symmetric under inversi
 Neither profile passes the rule.
 The between-VM point estimates fall short of the 95% band on both profiles.
 The share of between-VM intervals that exclude 1 sits exactly at the limit on Protobuf 4, 7.5% against 2.5% plus 5 points, and exceeds it on Protobuf 3, 8.75% against 8.33%.
-Separate-VM placement is therefore not adopted; [ADR-0004](../adr/0004-serializer-benchmarks.md) keeps every compared variant of a profile on one VM.
+Separate-VM placement is therefore not adopted; [ADR-0004](../adr/0004-serializer-benchmarks.md) keeps both variants of every comparison on one VM.
 
 The two conditions fail for different reasons.
 The band condition fails within one VM as well: two runs of the same tree on the same host already place 6.7% of Protobuf 4 and 14.2% of Protobuf 3 point estimates outside 0.95 to 1.05, against 7.9% and 12.5% between VMs.
