@@ -125,6 +125,7 @@ Text and large writes improve less in relative terms because UTF-8 counting or p
 
 Small writes still miss the native/Chill tolerance, but closer: scalar and nested `serialize` and `serializeSameInstance` move from 6.2 to 7.1 times Chill's time to 2.4 to 2.9 times, collections writes from 3.8 to 6.1 to 2.0 to 2.5, and `buildAndSerialize` of scalar and nested records from 3.1 to 3.3 to 1.5 to 1.6.
 Protobuf 4 text writes move from 1.8 to 2.2 to 1.3 to 1.6.
+The [generated-size report](serializer-generated-size.md) measures the later change for these writes.
 
 | Profile | Variant | Established | Inconclusive | Missed |
 |---|---|---:|---:|---:|

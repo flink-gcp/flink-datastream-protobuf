@@ -1,0 +1,41 @@
+// Copyright 2026 The flink-gcp authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
+syntax = "proto2";
+package flink.protobuf.serializer;
+option java_package = "io.github.flink.gcp.protobuf.generated";
+option java_multiple_files = true;
+
+import "legacy.proto";
+
+// An acyclic graph of height 2 through a group, with required fields and unchecked strings.
+message BoundedLegacy {
+  required string id = 1;
+  optional string raw = 2;
+  optional BoundedRequired child = 3;
+  repeated BoundedRequired children = 4;
+  optional group Item = 5 {
+    optional string label = 6;
+    optional BoundedRequired value = 7;
+  }
+}
+message BoundedRequired {
+  required int32 value = 1;
+  optional string raw = 2;
+}
+// Not recursive itself, but its graph reaches a recursive type with required fields.
+message ReachesRequired {
+  optional RequiredMessage node = 1;
+}
