@@ -197,10 +197,11 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      *
      * <p>Validation failures leave the target untouched. A payload of at most 4 KiB is encoded into
      * the retained scratch array before the frame is written, so an inconsistent generated writer
-     * also leaves the target untouched. Larger payloads are written incrementally, and an
-     * inconsistent generated writer can leave a partial frame. An I/O failure of the target can
-     * leave a partial frame for any payload. Generated runtime operations may allocate their own
-     * storage.
+     * also leaves the target untouched. For a statically bounded message type, the size of such a
+     * payload may come from the runtime's generated size, which this encoding confirms. Larger
+     * payloads are written incrementally, and an inconsistent generated writer can leave a partial
+     * frame. An I/O failure of the target can leave a partial frame for any payload. Generated
+     * runtime operations may allocate their own storage.
      *
      * @param value non-null initialized message of the exact configured class
      * @param target destination for the frame
@@ -214,20 +215,34 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         }
         int size = messageSize.check(value);
         if (!value.isInitialized()) {
+            // A generated size skips required fields; the traversal names the first missing one.
+            messageSize.traverse(value);
             throw new IOException("Uninitialized message: " + messageClass.getName());
         }
         if (size <= SCRATCH_SIZE) {
             byte[] payload = scratch();
             CodedOutputStream output = CodedOutputStream.newInstance(payload, 0, size);
-            write(value, output);
-            // The array encoder is bounded by the 4 KiB array, not the payload size, so it can
-            // overrun a smaller payload without failing; negative remaining space reports that.
-            int remaining = output.spaceLeft();
-            if (remaining != 0) {
-                throw new IOException(
-                        remaining < 0
-                                ? "Protobuf output exceeds calculated payload size"
-                                : "Protobuf output is shorter than calculated payload size");
+            try {
+                write(value, output);
+                // The array encoder is bounded by the 4 KiB array, not the payload size, so it can
+                // overrun a smaller payload without failing; negative remaining space reports that.
+                int remaining = output.spaceLeft();
+                if (remaining != 0) {
+                    throw new IOException(
+                            remaining < 0
+                                    ? "Protobuf output exceeds calculated payload size"
+                                    : "Protobuf output is shorter than calculated payload size");
+                }
+            } catch (IOException e) {
+                // A generated size can hide an int overflow, which the traversal reports as the
+                // exceeded limit; otherwise the writer is inconsistent with its own size.
+                try {
+                    messageSize.traverse(value);
+                } catch (IOException limit) {
+                    limit.addSuppressed(e);
+                    throw limit;
+                }
+                throw e;
             }
             target.writeInt(size);
             target.write(payload, 0, size);
