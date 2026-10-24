@@ -26,6 +26,7 @@ limitations under the License.
 - Temporary GCE execution added: 2026-10-11, [issue #44](https://github.com/flink-gcp/flink-datastream-protobuf/issues/44)
 - Paired native/Chill mode added: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Variant placement calibrated: 2026-10-21, [issue #109](https://github.com/flink-gcp/flink-datastream-protobuf/issues/109)
+- Pairwise comparison placement added: 2026-10-22, [issue #115](https://github.com/flink-gcp/flink-datastream-protobuf/issues/115)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -68,9 +69,11 @@ A controlled comparison of native serializer changes may use a paired mode that 
 It keeps the correctness gates, fork, warmup, measurement, and alternating block order of the long run, so each variant has its own native/Chill intervals.
 The paired mode does not produce cross-format results and does not replace a complete baseline.
 This baseline describes that machine and does not establish whole-job throughput or saved-state compatibility.
-Later development comparisons and release-candidate measurements run on temporary Compute Engine VMs, one Protobuf profile per VM, with every compared variant measured in the same plan.
-The compared variants of a profile run sequentially on that one VM.
-A calibration plan may run one tree on several VMs of a profile; the [placement calibration](../validation/gce-placement-calibration.md) did so and, under a rule fixed before measuring, rejected comparing variants across VMs.
+Later development comparisons and release-candidate measurements run on temporary Compute Engine VMs, each running one Protobuf profile, with every compared variant measured in the same plan.
+Both variants of every comparison run sequentially on one VM.
+By default all variants of a profile share that VM; a plan that declares a profile's comparisons as pairs of variants runs each comparison on its own VM instead.
+A variant in several declared comparisons, such as a shared baseline, is measured again on each of their VMs; those runs are never compared with each other, combined, or used to derive an undeclared comparison, and the collection records which result directories form each VM's comparisons.
+A calibration plan may instead run one tree on several VMs of a profile, without declared comparisons; the [placement calibration](../validation/gce-placement-calibration.md) did so and, under a rule fixed before measuring, rejected comparing variants across VMs.
 Between identical trees on different VMs, the per-block Chill control left host offsets of 1% to 4% that the narrow intervals of large-record cells resolve as differences.
 Placing compared variants on separate VMs requires a new calibration that passes the same rule, such as one for another machine series; it is not a choice made per plan.
 The operator process alone holds cloud credentials; benchmark VMs have no service account, and results pass the evidence gate before retention.
@@ -107,3 +110,6 @@ An ad-hoc timing loop would not provide JMH's fork, warmup, or allocation instru
 
 Running each variant on its own VM would make a plan's wall-clock time independent of its variant count, which the sequential placement multiplies by about 70 minutes of measurement per paired variant.
 The calibration rejected it, and a baseline repeated on every VM was not measured as a control for the host offsets it found.
+Pairwise placement keeps both sides of each comparison on one VM, as the sequential placement does, and limits each VM to two variants.
+It costs the repeated variants: three adjacent comparisons of four variants take six variant runs on three VMs instead of four on one, but the longest VM measures two variants instead of four.
+Packing several comparisons onto fewer VMs would trade that wall-clock time back for VM count and is left to a later change that needs it.
