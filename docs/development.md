@@ -234,17 +234,20 @@ See the [construction and configuration examples](usage.md) for registration tim
 
 The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without allocating a payload array for each record.
 Payloads of at most 4 KiB are encoded into a lazily allocated 4 KiB array that the serializer instance retains; larger payloads stream through Protobuf's per-call coded-output buffer.
-Before writing the prefix, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget.
+Unless the generated-size path described below applies, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget before the prefix is written.
 It iterates over field layouts that each payload class computes once for every message type it reaches, using traversal frames that each serializer instance reuses and clears after every call.
 Per-call identity-based summaries cover only subtrees whose sizing examined more than a small constant amount of content; smaller shared children are sized again at each occurrence.
 Ordinary values are encoded once; ambiguous proto2 strings additionally count generated root output to preserve retained invalid UTF-8 bytes without guessing Java getter names.
 The whole graph is validated before this single counting pass, including when several nested strings are ambiguous; its cost is measured separately.
+The lower bound includes one byte for each UTF-16 unit of an ambiguous string, so a String shared by many occurrences is rejected before the runtime sizes every copy.
 Sizing reads fields through Protobuf's public reflection accessors, which allocate on their own; once its frames exist, the traversal itself allocates only for summaries, unknown-field sets and groups, boxed elements of unpacked repeated scalars, frames beyond the 64 it retains, layouts derived for a value whose descriptor differs from its field's type, and the raw-string counting pass.
 The streaming output wrapper rejects writes beyond the calculated length as they happen and checks the byte count after flushing.
 The array encoder is bounded only by its 4 KiB array, so its remaining space is checked after encoding and before a small frame is written, reporting both overruns and short output.
 Tests compare the calculated lengths with actual Protobuf output for scalar and packed encodings, Unicode and retained proto2 string bytes, unknown fields, and random graphs with shared children.
 `ProtobufMessageSizeTest` also checks multi-byte packed length prefixes, implicit-presence defaults, shared children above and below the summary bound and a summarized unknown-field set at deeper paths, a doubling shared graph that would be exponential without summaries, reuse after failed checks, and that a sizer keeps no checked record reachable, including siblings pending when a check fails.
 A separate shared-data test verifies rejection before encoding when the logical size exceeds 4 GiB and the runtime's integer size calculation overflows.
+For a payload type whose acyclic type graph is no deeper than the recursion limit, a value without unknown groups instead uses the runtime's memoized generated size when that size is at most 4 KiB and the size limit; encoding into the scratch array confirms it, and a failed or short encoding reruns the traversal to report the exceeded limit ([ADR-0001](adr/0001-native-protobuf-type-integration.md#message-framing-version-1)).
+`ProtobufGeneratedSizeTest` compares serialization through this path with the traversal's decisions for random proto3 and proto2 graphs at size and depth boundaries, checks which values are eligible, rejects a String shared by 262,144 repeated, map, or ambiguous proto2 occurrences without measuring each one, and rejects generated sizes that wrapped around `int` through shared data in the root, a nested value, and a map value at the static height.
 The limits constrain accepted inputs; they do not promise a bound on total heap usage or sufficient stack capacity for arbitrarily high configured recursion limits.
 
 Reading validates the prefix before allocating from its value and bounds underlying reads to the current frame.
@@ -260,6 +263,7 @@ Each duplicate owns its scratch array and traversal frames, so instances remain 
 The [local performance comparison](validation/serializer-performance.md) measures warm construction and representative serialization paths before and after these changes, including the raw-string counting path.
 The [buffer-allocation report](validation/serializer-buffer-allocation.md) separates the effect of the small-frame scratch array on writes and reads with controlled variants measured on temporary GCE VMs.
 The [sizing-allocation report](validation/serializer-sizing-allocation.md) measures the final traversal change against the previous sizing and, for an earlier candidate, separates traversal bookkeeping, descriptor work, and the remaining safe-sizing cost from output work with controlled variants.
+The [generated-size report](validation/serializer-generated-size.md) measures the generated-size path against the traversal alone.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
 `snapshotConfiguration()` returns an internal version-1 `ProtobufTypeSerializerSnapshot`.
@@ -303,6 +307,7 @@ Paths below are relative to the repository root.
 | `docs/validation/data/serializer-benchmarks-v0.1.0/` | Fixed measurement and diagnostic evidence with source provenance | The [data inventory](validation/data/serializer-benchmarks-v0.1.0/README.md) records checksums and supported contents; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-buffer-allocation-v0.2.0/` | Paired native/Chill measurements of the #42 buffer variants with GCE run records | The [data inventory](validation/data/serializer-buffer-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-sizing-allocation-v0.2.0/` | Paired native/Chill measurements of the #43 sizing variants with GCE run records | The [data inventory](validation/data/serializer-sizing-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
+| `docs/validation/data/serializer-generated-size-v0.2.0/` | Paired native/Chill measurements of the #112 generated-size change with GCE run records | The [data inventory](validation/data/serializer-generated-size-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/gce-placement-calibration-v0.2.0/` | Paired native/Chill measurements of one unchanged tree on three VMs per profile, two runs each, with GCE run records | The [data inventory](validation/data/gce-placement-calibration-v0.2.0/README.md) records checksums, VM placement, and the measured commit; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.

@@ -26,6 +26,7 @@ limitations under the License.
 - Release contract amended: 2026-09-08, [issue #7](https://github.com/flink-gcp/flink-datastream-protobuf/issues/7)
 - Frame buffering amended: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Sizing traversal amended: 2026-10-19, [issue #43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43)
+- Generated sizes for bounded types amended: 2026-10-22, [issue #112](https://github.com/flink-gcp/flink-datastream-protobuf/issues/112)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -152,7 +153,7 @@ A payload of at most 4 KiB may be encoded into one 4 KiB array that the serializ
 Enable `CodedOutputStream.useDeterministicSerialization()` only when configured.
 Framing version 1 identifies this representation in the snapshot, independently of the snapshot format version.
 
-Check serialized size without integer-overflow arithmetic and enforce the configured size and recursion limits before emitting a frame.
+Check serialized size so that integer overflow cannot accept a value, and enforce the configured size and recursion limits before emitting a frame.
 The write-side depth check must match the configured parser budget, including nested message/map-entry payloads and unknown groups, so an accepted value is not written beyond its own reader's limits.
 On reading, reject negative or excessive lengths before allocating storage from the length, use a stream bounded to that frame, and require complete valid parsing within it.
 A payload of at most 4 KiB may be read completely into the same retained array and parsed without aliasing, so decoded values never refer to reused storage.
@@ -170,21 +171,31 @@ Stream copy preserves the complete frame bytes without parsing and reserializing
 The current probe uses a simple byte-array implementation solely to exercise Flink's routing and transport.
 It is not the production serializer or a stable wire format.
 
-The serializer implementation checks message size with a dedicated field-wise calculation using `long` arithmetic before emitting the prefix.
+Unless the generated-size path below applies, the serializer implementation checks message size with a dedicated field-wise calculation using `long` arithmetic before emitting the prefix.
 It walks nested messages, map entries, and unknown groups with an explicit stack of frames over field layouts that each payload class computes once for every message type it reaches and caches with its other metadata.
 Each serializer instance reuses its frames across calls and clears their record references after every call.
 A shared child is counted at every occurrence and its depth is checked at each path.
 Within one call, a subtree whose sizing examined more than a small constant amount of content is summarized by identity, so a large shared subgraph is not traversed again.
 A smaller shared subtree is sized again at each occurrence, which bounds that repeated work by the constant.
-This avoids trusting `MessageLite.getSerializedSize()`, whose documented result can overflow for messages larger than `Integer.MAX_VALUE`, including wrapping to a small positive value.
+The traversal does not trust `MessageLite.getSerializedSize()`, whose documented result can overflow for messages larger than `Integer.MAX_VALUE`, including wrapping to a small positive value; the generated-size path below trusts it only where the scratch encoding confirms it.
 Scalar sizing follows the wire encoding, including packed fields, map entries, UTF-8 strings, and retained proto2 string bytes.
 Ordinary values need one output encoding pass.
 For a proto2 string without UTF-8 validation, a decoded replacement character can hide retained invalid bytes, so the reflected String does not establish the wire length.
 The implementation computes a lower size bound and validates the entire graph, then counts the root's generated wire output through a bounded sink before writing the actual frame.
+That bound includes one byte for each UTF-16 unit of such a string, because the generated writer can size every string occurrence before the sink sees a byte, even when the occurrences share one String.
 This uses public runtime APIs and avoids reproducing protoc's Java getter naming rules or accessing private raw-field methods.
 The counting sink retains no payload bytes and uses one additional fixed-size encoder buffer; it counts the root once even when multiple nested strings are ambiguous.
 Generated field accessors already cache their reflective methods in Protobuf's accessor table; the library does not maintain a second method cache.
 The dedicated calculation requires differential tests against both supported runtimes; performance measurements must distinguish ordinary values from the counting path.
+
+A payload type whose reachable type graph is acyclic has a static height: the greatest parser depth that a value can reach without unknown groups.
+When that height is within the recursion limit, the serializer reads the value's message fields to find unknown groups and values reporting another descriptor, and its repeated strings and string-valued maps to bound their wire size from below; without either and within that bound, it uses the runtime's memoized `getSerializedSize()` if the result is at most 4 KiB and the size limit.
+Until one of the runtime's `int` sums first exceeds `Integer.MAX_VALUE`, each addend is the exact length that the generated writer emits, so a reported size that wrapped implies at least 2 GiB of output.
+Encoding such a value into the 4 KiB array fails before any frame byte reaches the target, and the serializer then runs the traversal, which reports the exceeded limit.
+Required fields are checked by generated `isInitialized()` on this path, as for every value after sizing; when that check fails, the traversal reports the first missing field.
+The traversal decides instead for a recursive type or one whose static height exceeds the recursion limit, and for a value with unknown groups, a value reporting another descriptor, more than 64 counted nested values, repeated strings or string-valued maps whose bound exceeds 4 KiB or the size limit, a generated size above 4 KiB or the size limit, or a runtime failure to compute the size.
+The runtime sizes every distinct value in full, including strings, lists, and unknown fields that values share, and measures a String again at each repeated or map occurrence; the count and the string bound limit that repeated work before the traversal rejects an oversized value.
+Field reads on this path use the same reflective accessors as the traversal, so it relies on no protoc getter names; the library still keeps no method cache of its own.
 
 `snapshotConfiguration()` captures the versioned descriptors and settings defined below.
 Unit tests verify metadata round trips, compatibility decisions, and serializer restoration with isolated user-code classloaders.
@@ -408,5 +419,8 @@ A Kryo adapter leaves the message in Flink's generic-type path and does not meet
 It is outside this library's staged release scope.
 Exact full-descriptor equality deliberately rejects all schema changes in 0.1.0; using it as the permanent value-state policy would unnecessarily reject the compatible changes planned for 0.2.0.
 Fingerprint equality alone is insufficient in either development milestone.
+
+Caching a method handle for each generated getter would make the remaining traversal cheaper, but it requires reproducing protoc's Java accessor names or reaching private accessor tables.
+The generated-size path removes reflective reads of scalar fields for bounded types without either, and recursive types keep the traversal.
 
 Cross-Flink-version savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.

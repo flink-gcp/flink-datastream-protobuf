@@ -25,6 +25,7 @@ import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Internal.IntList;
 import com.google.protobuf.Internal.LongList;
+import com.google.protobuf.LazyStringList;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 
@@ -40,10 +41,17 @@ import java.util.Objects;
 /**
  * Overflow-safe wire sizing and parser-depth validation before the caller writes a frame.
  *
- * <p>Each check traverses the value graph iteratively over field layouts precomputed for the
- * message class. Values whose subtree sizing examined more than a small constant amount of content
- * are summarized by identity for that invocation only, so shared children are counted at every
- * occurrence without re-traversing large subgraphs. Smaller values are sized again at each
+ * <p>When the payload type graph is acyclic and its static height is within the recursion limit, a
+ * value without unknown groups cannot exceed that limit. Such a value uses the runtime's memoized
+ * generated size if it is at most the scratch size. Until one of the runtime's {@code int} sums
+ * first exceeds {@link Integer#MAX_VALUE}, each addend is the exact length that the writer emits,
+ * so a size that wrapped implies at least 2 GiB of output; encoding into the scratch array then
+ * fails before the caller writes the frame.
+ *
+ * <p>Otherwise, each check traverses the value graph iteratively over field layouts precomputed for
+ * the message class. Values whose subtree sizing examined more than a small constant amount of
+ * content are summarized by identity for that invocation only, so shared children are counted at
+ * every occurrence without re-traversing large subgraphs. Smaller values are sized again at each
  * occurrence. Ordinary fields are sized without encoding; ambiguous proto2 strings require counting
  * generated wire output because decoded values can hide retained invalid UTF-8.
  *
@@ -59,14 +67,37 @@ final class ProtobufMessageSize {
      */
     static final long CACHE_THRESHOLD = 64;
 
+    /**
+     * Counted nested values that a value may contain and still use its generated size. The runtime
+     * sizes every distinct value in full, including strings, lists, and unknown fields shared with
+     * other values, so this bound limits the repeated work before an oversized value is rejected.
+     */
+    static final int GENERATED_SIZE_BUDGET = 64;
+
     /** Frames retained across checks; a deeper traversal releases the additional frames. */
     private static final int RETAINED_FRAMES = 64;
+
+    private static final int UNMEASURED = -3;
+    private static final int MEASURING = -2;
+    private static final int UNBOUNDED = -1;
 
     private final int maxSize;
     private final int recursionLimit;
     private final Layout root;
+
+    /**
+     * Largest generated size accepted without traversal; negative if the root type's height is
+     * unbounded or exceeds the recursion limit.
+     */
+    private final int generatedLimit;
+
     private Frame[] frames = new Frame[0];
     private boolean requiresWireSize;
+
+    /**
+     * Wire-size lower bound of the repeated strings visited by the current generated-size check.
+     */
+    private long stringBytes;
 
     /**
      * Captures immutable limits and the root layout; records are referenced only during a check.
@@ -75,6 +106,10 @@ final class ProtobufMessageSize {
         maxSize = settings.maxMessageSize();
         recursionLimit = settings.recursionLimit();
         this.root = root;
+        generatedLimit =
+                root.height >= 0 && root.height <= recursionLimit
+                        ? Math.min(maxSize, ProtobufTypeSerializer.SCRATCH_SIZE)
+                        : -1;
     }
 
     /**
@@ -104,11 +139,237 @@ final class ProtobufMessageSize {
                 }
             }
         }
+        for (Layout layout : pending) {
+            layout.nested = nested(layout);
+        }
+        measure(result);
         return result;
     }
 
     /**
-     * Checks required fields, parser depth, and exact wire size.
+     * Selects the message fields whose values can hold unknown fields. Map entries have none, so a
+     * map field is selected only if its values are messages.
+     */
+    private static Field[] nested(Layout layout) {
+        List<Field> result = new ArrayList<>();
+        for (Field field : layout.fields) {
+            if (field.message != null
+                    && (!field.descriptor.isMapField() || hasMessageFields(field.message))) {
+                result.add(field);
+            }
+        }
+        return result.toArray(new Field[0]);
+    }
+
+    private static boolean hasMessageFields(Layout layout) {
+        for (Field field : layout.fields) {
+            if (field.message != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sets the static height of every layout reachable from a root, or {@link #UNBOUNDED} if it
+     * reaches a cycle, through an iterative post-order walk. A layout is still on the walk's path
+     * when one of its descendants refers to it.
+     */
+    private static void measure(Layout root) {
+        Layout[] path = {root};
+        int[] next = new int[1];
+        int[] height = new int[1];
+        int top = 0;
+        root.height = MEASURING;
+        while (true) {
+            Layout layout = path[top];
+            if (next[top] < layout.fields.length) {
+                Layout child = layout.fields[next[top]++].message;
+                if (child == null) {
+                    continue;
+                }
+                if (child.height == UNMEASURED) {
+                    if (++top == path.length) {
+                        path = Arrays.copyOf(path, 2 * top);
+                        next = Arrays.copyOf(next, 2 * top);
+                        height = Arrays.copyOf(height, 2 * top);
+                    }
+                    path[top] = child;
+                    next[top] = 0;
+                    height[top] = 0;
+                    child.height = MEASURING;
+                } else {
+                    height[top] = parentHeight(height[top], child.height);
+                }
+                continue;
+            }
+            layout.height = height[top];
+            if (top-- == 0) {
+                return;
+            }
+            height[top] = parentHeight(height[top], layout.height);
+        }
+    }
+
+    /** Combines a parent's height so far with a child's height or in-progress state. */
+    private static int parentHeight(int parent, int child) {
+        return parent < 0 || child < 0 ? UNBOUNDED : Math.max(parent, child + 1);
+    }
+
+    /**
+     * Checks parser depth and wire size, using the generated size when the caller can confirm it.
+     *
+     * <p>A result of at most {@link ProtobufTypeSerializer#SCRATCH_SIZE} may be the runtime's
+     * generated size without a required-field check. The caller must check initialization, encode
+     * the value into a scratch array of that size, and call {@link #traverse(Message)} if encoding
+     * fails or the output length differs.
+     *
+     * @param message generated message to validate
+     * @return payload length, excluding the Flink frame prefix
+     * @throws IOException if size/depth limits are exceeded or the traversal rejects the value
+     */
+    int check(Message message) throws IOException {
+        if (generatedLimit >= 0) {
+            int size = generatedSize(message);
+            if (size >= 0) {
+                return size;
+            }
+        }
+        return traverse(message);
+    }
+
+    /**
+     * Returns the generated size of a value whose depth is statically bounded, or -1 if the
+     * traversal must decide.
+     */
+    private int generatedSize(Message message) {
+        stringBytes = 0;
+        if (visit(message, root, GENERATED_SIZE_BUDGET) < 0) {
+            return -1;
+        }
+        int size;
+        try {
+            size = message.getSerializedSize();
+        } catch (RuntimeException e) {
+            // The runtime rejects a string whose UTF-8 length does not fit in an int.
+            return -1;
+        }
+        return size >= 0 && size <= generatedLimit ? size : -1;
+    }
+
+    /**
+     * Visits the message values of a statically bounded graph and returns the remaining budget, or
+     * -1 if the value must be traversed instead.
+     *
+     * <p>Unknown groups can nest without a static bound, and a value reporting another descriptor
+     * may need another layout. The budget counts repeated elements and singular values other than
+     * the default instance below the root; an absent singular value reads as that instance, which
+     * holds no fields.
+     */
+    private int visit(Message message, Layout layout, int budget) {
+        if (budget < 0
+                || message.getDescriptorForType() != layout.descriptor
+                || hasGroups(message.getUnknownFields())) {
+            return -1;
+        }
+        for (Field field : layout.strings) {
+            if (!repeatedStrings(message, field)) {
+                return -1;
+            }
+        }
+        for (Field field : layout.nested) {
+            FieldDescriptor descriptor = field.descriptor;
+            if (field.copied) {
+                // Map reflection copies its entries into a new list; an indexed entry read does
+                // not.
+                int count = message.getRepeatedFieldCount(descriptor);
+                budget -= count;
+                for (int i = 0; budget >= 0 && i < count; i++) {
+                    Message entry = (Message) message.getRepeatedField(descriptor, i);
+                    budget = visit(entry, field.message, budget);
+                }
+            } else if (field.repeated) {
+                List<?> values = (List<?>) message.getField(descriptor);
+                budget -= values.size();
+                for (int i = 0; budget >= 0 && i < values.size(); i++) {
+                    budget = visit((Message) values.get(i), field.message, budget);
+                }
+            } else {
+                Message value = (Message) message.getField(descriptor);
+                if (value != value.getDefaultInstanceForType()) {
+                    budget = visit(value, field.message, budget - 1);
+                }
+            }
+            if (budget < 0) {
+                return -1;
+            }
+        }
+        return budget;
+    }
+
+    /**
+     * Adds a wire-size lower bound for a repeated string or string-valued map field and returns
+     * whether the visited strings still fit the generated limit. The runtime measures the UTF-8
+     * length at every occurrence, even when the occurrences share one String, so the bound stops
+     * that repeated work before it exceeds the scratch size.
+     */
+    private boolean repeatedStrings(Message message, Field field) {
+        FieldDescriptor descriptor = field.descriptor;
+        if (field.mapValue == null) {
+            List<?> values = (List<?>) message.getField(descriptor);
+            // A raw element avoids decoding retained bytes into a String.
+            LazyStringList raw = values instanceof LazyStringList lazy ? lazy : null;
+            for (int i = 0; i < values.size(); i++) {
+                if (!addString(raw == null ? values.get(i) : raw.getRaw(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        int count = message.getRepeatedFieldCount(descriptor);
+        for (int i = 0; i < count; i++) {
+            Message entry = (Message) message.getRepeatedField(descriptor, i);
+            if (!addString(entry.getField(field.mapValue))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Adds a tag, a length prefix, and at least one byte for each UTF-16 unit or retained byte, or
+     * returns false for an element representation that the bound does not know.
+     */
+    private boolean addString(Object value) {
+        int length;
+        if (value instanceof String string) {
+            length = string.length();
+        } else if (value instanceof ByteString bytes) {
+            length = bytes.size();
+        } else {
+            // A lazy string list can also hold byte arrays, which the traversal decodes instead.
+            return false;
+        }
+        stringBytes += 2L + length;
+        return stringBytes <= generatedLimit;
+    }
+
+    /** Returns whether a value's unknown fields hold a group, whose nesting is unbounded. */
+    private static boolean hasGroups(UnknownFieldSet unknown) {
+        // Protobuf 3 copies even an empty set's map, so skip the shared empty instance.
+        if (unknown == UnknownFieldSet.getDefaultInstance()) {
+            return false;
+        }
+        for (UnknownFieldSet.Field field : unknown.asMap().values()) {
+            if (!field.getGroupList().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks required fields, parser depth, and exact wire size by traversing the value.
      *
      * <p>Cached subtree depth is checked again at each occurrence, so sharing a message at a deeper
      * path cannot bypass the recursion limit. If any proto2 string is ambiguous, the traversal
@@ -119,7 +380,7 @@ final class ProtobufMessageSize {
      * @return exact payload length, excluding the Flink frame prefix
      * @throws IOException if required fields are absent or size/depth limits are exceeded
      */
-    int check(Message message) throws IOException {
+    int traverse(Message message) throws IOException {
         Map<Object, Summary> completed = null;
         requiresWireSize = false;
         int top = 0;
@@ -342,7 +603,10 @@ final class ProtobufMessageSize {
             if (field.rawString && string.indexOf('\ufffd') >= 0) {
                 // Reflection exposes a decoded String, which may hide retained invalid UTF-8.
                 // Keep a lower bound, then count the root once after validating the whole graph.
+                // Each UTF-16 unit takes at least one wire byte, so the bound includes the
+                // length, which rejects shared strings before the runtime measures each copy.
                 requiresWireSize = true;
+                frame.size = add(frame.size, delimited(string.length()));
             } else {
                 frame.size = add(frame.size, delimited(utf8Length(string)));
             }
@@ -507,19 +771,39 @@ final class ProtobufMessageSize {
         private final Field[] fields;
         private final FieldDescriptor[] required;
 
+        /**
+         * Repeated string fields and maps with string values, whose elements can share a String.
+         */
+        private final Field[] strings;
+
+        /** Message fields whose values can hold unknown fields; set once after linking. */
+        private Field[] nested;
+
+        /**
+         * Greatest parser depth of a value relative to this type without unknown groups, or {@link
+         * #UNBOUNDED} if the type graph from here reaches a cycle; set once after linking.
+         */
+        private int height = UNMEASURED;
+
         private Layout(Descriptor descriptor) {
             this.descriptor = descriptor;
             List<FieldDescriptor> declared = descriptor.getFields();
             fields = new Field[declared.size()];
             List<FieldDescriptor> requiredFields = new ArrayList<>();
+            List<Field> stringFields = new ArrayList<>();
             for (int i = 0; i < fields.length; i++) {
                 FieldDescriptor field = declared.get(i);
                 fields[i] = new Field(field);
                 if (field.isRequired()) {
                     requiredFields.add(field);
                 }
+                FieldDescriptor element = fields[i].mapValue == null ? field : fields[i].mapValue;
+                if (field.isRepeated() && element.getType() == FieldDescriptor.Type.STRING) {
+                    stringFields.add(fields[i]);
+                }
             }
             required = requiredFields.toArray(new FieldDescriptor[0]);
+            strings = stringFields.toArray(new Field[0]);
         }
     }
 
@@ -538,6 +822,9 @@ final class ProtobufMessageSize {
 
         private final Object defaultValue;
 
+        /** Value field of a map entry, or null for a field that is not a map. */
+        private final FieldDescriptor mapValue;
+
         /** Layout of a message or group field; set once while linking the layout graph. */
         private Layout message;
 
@@ -555,6 +842,10 @@ final class ProtobufMessageSize {
                             && !descriptor.hasPresence()
                             && !descriptor.getContainingType().getOptions().getMapEntry();
             defaultValue = implicit ? descriptor.getDefaultValue() : null;
+            mapValue =
+                    descriptor.isMapField()
+                            ? descriptor.getMessageType().findFieldByNumber(2)
+                            : null;
         }
     }
 
