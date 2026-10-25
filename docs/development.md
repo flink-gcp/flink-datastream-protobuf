@@ -74,7 +74,7 @@ mise x -- just --list
 | `just benchmark-evidence-repository <new-output>` | Validate retained benchmark archives from HEAD and retain inspection inventories |
 | `just benchmark-evidence-test` | Run the gate's synthetic positive and negative controls |
 | `just gce-benchmark <command> ...` | Plan, run, collect, and clean up temporary GCE benchmark VMs; see [Temporary GCE execution](#temporary-gce-execution) |
-| `just gce-benchmark-test` | Run the GCE operator tooling tests against a recording gcloud double, without cloud access |
+| `just gce-benchmark-test` | Run the GCE operator tooling tests against a recording gcloud double and the VM runner tests against local stubs, without cloud access |
 | `just test-scripts [test-file...]` | Run the `scripts/tests` suite through the locked pytest, or only the given files; the per-tool test recipes delegate to it |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
@@ -607,6 +607,7 @@ Run `cleanup` after any interrupted session, and check `gcloud compute instances
 VMs use standard provisioning, `TERMINATE` host maintenance, and no automatic restart.
 The runner watches the metadata server's maintenance event, logging failed requests as `UNAVAILABLE` and retrying them.
 Any event other than `NONE` marks the run interrupted and keeps stopping benchmark-user processes until the runner exits, so work launched after the event cannot proceed; the run fails at the next step boundary, and later steps cannot replace that status.
+Once the watcher has marked the run interrupted, the runner's exit completes that record from the marker, so a watcher stopped before recording it, or a status update that started before the marker, cannot leave a stale status or final event.
 `status` also reports a stopped instance or changed boot ID as interrupted, and `collect` rejects any result whose `maintenance-events.log` records an event.
 `collect` refuses incomplete runs; `--partial` downloads and gates failed or interrupted runs for diagnosis only and still reports failure.
 Neither form collects while a runner is still preparing or measuring, or while a running instance's state cannot be read, because collection deletes the VMs; use `cleanup` to abandon such a run.
@@ -634,6 +635,11 @@ just gce-benchmark collect /tmp/gce-benchmark/smoke-plan /tmp/gce-benchmark/smok
 
 Here `smoke.json` contains `{"runId": "smoke-1", "mode": "smoke", "source": "<commit>", "profiles": [{"protobuf": 4}]}`.
 For the representative long matrix, use `"mode": "run"` with both profiles; each profile's VM then measures for several hours.
+
+The runner's offline tests in [test_gce_benchmark_vm.py](../scripts/tests/test_gce_benchmark_vm.py) run it on Linux against a loopback metadata server and the command stubs in [gce-benchmark-vm-stubs.sh](../scripts/tests/gce-benchmark-vm-stubs.sh), without network or cloud access; other systems skip them, and the Lint workflow runs them through `just test-scripts`.
+They cover the load gate's pass, reset, window, and timeout, a maintenance event during a root-only step, the gate, or a benchmark process, unavailable metadata requests, a failure in package or tool installation, the mise checksum, checkout, the Thrift build, a manifest lookup, the build, or the measurement, a changed boot ID, and the retained result files and source patch.
+Their stubs shorten every wait, so they check the order of the runner's steps but not the intervals of its gate, watcher, or retries.
+Only a real VM checks those intervals, the image's packages, the apt, mise, Java, just, and Thrift installations, the metadata server's real responses and maintenance announcements, systemd, `runuser`, process ownership, and the measurement itself.
 
 ### CI compiler reuse and job budgets
 

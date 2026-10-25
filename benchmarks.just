@@ -188,5 +188,6 @@ benchmark-evidence-test: (test-scripts "scripts/tests/test_benchmark_evidence.py
 gce-benchmark *args:
     @{{ python }} scripts/gce_benchmark.py "$@"
 
-# Exercise the GCE operator tooling against a recording gcloud double, without cloud access.
-gce-benchmark-test: (test-scripts "scripts/tests/test_gce_benchmark.py")
+# Exercise the GCE operator tooling against a recording gcloud double and the VM runner against
+# local stubs, without cloud access.
+gce-benchmark-test: (test-scripts "scripts/tests/test_gce_benchmark.py" "scripts/tests/test_gce_benchmark_vm.py")
