@@ -19,7 +19,12 @@ set -euo pipefail
 # Command substitutions such as source=$(checkout ...) must also stop on the first failure.
 shopt -s inherit_errexit
 
-work=/srv/benchmark
+# The offline tests replace the VM root, the /proc and /etc root, and both endpoints; systemd-run
+# does not pass the caller's environment, so a VM run always uses these defaults.
+work=${GCE_BENCHMARK_VM_ROOT:-/srv/benchmark}
+system=${GCE_BENCHMARK_VM_SYSTEM_ROOT:-}
+metadata_url=${GCE_BENCHMARK_VM_METADATA_URL:-http://metadata.google.internal/computeMetadata/v1/instance}
+mise_url=${GCE_BENCHMARK_VM_MISE_URL:-https://github.com/jdx/mise/releases/download}
 input="$work/input"
 state="$work/state"
 results="$work/results"
@@ -40,15 +45,15 @@ check_interrupted() {
 
 metadata() {
     curl --fail --silent --show-error --max-time 10 -H 'Metadata-Flavor: Google' \
-        "http://metadata.google.internal/computeMetadata/v1/instance/$1"
+        "$metadata_url/$1"
 }
 
 cpu_counters() {
-    awk '/^cpu / { idle = $5 + $6; total = 0; for (i = 2; i <= NF; i++) total += $i; print idle, total }' /proc/stat
+    awk '/^cpu / { idle = $5 + $6; total = 0; for (i = 2; i <= NF; i++) total += $i; print idle, total }' "$system/proc/stat"
 }
 
 vm_counter() {
-    awk -v key="$1" '$1 == key { print $2 }' /proc/vmstat
+    awk -v key="$1" '$1 == key { print $2 }' "$system/proc/vmstat"
 }
 
 # Wait until ten consecutive observations, about 30 s apart and each measuring CPU idle over two
@@ -65,7 +70,7 @@ gate() {
         sleep 2
         read -r idle1 total1 < <(cpu_counters)
         idle=$(awk -v i=$((idle1 - idle0)) -v t=$((total1 - total0)) 'BEGIN { printf "%.2f", (t > 0 ? 100 * i / t : 0) }')
-        load=$(awk '{ print $1 }' /proc/loadavg)
+        load=$(awk '{ print $1 }' "$system/proc/loadavg")
         ins=$(vm_counter pswpin)
         outs=$(vm_counter pswpout)
         ok=1
@@ -107,7 +112,7 @@ watch_maintenance() {
         query=maintenance-event
         if [[ -n $etag ]]; then query="maintenance-event?wait_for_change=true&last_etag=$etag"; fi
         if event=$(curl --fail --silent --show-error -D "$headers" -H 'Metadata-Flavor: Google' \
-            "http://metadata.google.internal/computeMetadata/v1/instance/$query"); then
+            "$metadata_url/$query"); then
             etag=$(awk 'tolower($1) == "etag:" { gsub(/\r/, "", $2); print $2 }' "$headers")
         else
             printf '%s UNAVAILABLE\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$state/maintenance-events.log"
@@ -116,7 +121,9 @@ watch_maintenance() {
         fi
         printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$event" >> "$state/maintenance-events.log"
         if [[ $event != NONE ]]; then
-            touch "$state/interrupted"
+            # The marker carries the status, so the runner can record it if it stops the watcher first.
+            printf 'maintenance-event %s\n' "$event" > "$state/interrupted.new"
+            mv "$state/interrupted.new" "$state/interrupted"
             status INTERRUPTED "maintenance-event $event"
             # Keep stopping benchmark processes, so work the root runner launches after a check
             # cannot run; the runner's EXIT trap ends this loop.
@@ -151,9 +158,9 @@ prepare() {
     chown -R root: "$input" "$state"
     local binary="mise-v$MISE_VERSION-linux-x64" expected actual
     curl --fail --location --silent --show-error --retry 3 -o "$state/SHASUMS256.txt" \
-        "https://github.com/jdx/mise/releases/download/v$MISE_VERSION/SHASUMS256.txt"
+        "$mise_url/v$MISE_VERSION/SHASUMS256.txt"
     curl --fail --location --silent --show-error --retry 3 -o "$work/.local/bin/mise" \
-        "https://github.com/jdx/mise/releases/download/v$MISE_VERSION/$binary"
+        "$mise_url/v$MISE_VERSION/$binary"
     expected=$(awk -v name="./$binary" '$2 == name || $2 == substr(name, 3) { print $1 }' "$state/SHASUMS256.txt")
     actual=$(sha256sum "$work/.local/bin/mise" | awk '{ print $1 }')
     [[ -n $expected && $expected == "$actual" ]]
@@ -194,11 +201,11 @@ manifest() {
     value=$(metadata cpu-platform); entry gce.cpu.platform "$value"
     value=$(metadata image); entry gce.image "${value##*/}"
     value=$(metadata scheduling/on-host-maintenance); entry gce.scheduling "$value"
-    value=$(awk -F= '$1 == "PRETTY_NAME" { gsub(/"/, "", $2); print $2 }' /etc/os-release); entry os.release "$value"
+    value=$(awk -F= '$1 == "PRETTY_NAME" { gsub(/"/, "", $2); print $2 }' "$system/etc/os-release"); entry os.release "$value"
     value=$(uname -srm); entry kernel "$value"
-    value=$(awk -F': ' '/^model name/ { print $2; exit }' /proc/cpuinfo); entry cpu.model "$value"
+    value=$(awk -F': ' '/^model name/ { print $2; exit }' "$system/proc/cpuinfo"); entry cpu.model "$value"
     value=$(nproc); entry cpu.count "$value"
-    value=$(awk '/^MemTotal/ { print $2 }' /proc/meminfo); entry memory.kib "$value"
+    value=$(awk '/^MemTotal/ { print $2 }' "$system/proc/meminfo"); entry memory.kib "$value"
     value=$(cat "$state/mise.sha256"); entry mise.sha256 "$value"
     value=$(as_benchmark java -version 2>&1); entry java.version "${value%%$'\n'*}"
     value=$(as_benchmark just --version); entry just.version "$value"
@@ -210,7 +217,7 @@ manifest() {
         value=${value%% *}
     fi
     entry variant.patch.sha256 "$value"
-    value=$(cat /proc/sys/kernel/random/boot_id); entry boot.id "$value"
+    value=$(cat "$system/proc/sys/kernel/random/boot_id"); entry boot.id "$value"
     {
         printf 'run.id=%s\nvariant=%s\nbenchmark.mode=%s\nflink.version=%s\nprotobuf.major=%s\n' \
             "$RUN_ID" "$variant" "$BENCHMARK_MODE" "$FLINK_VERSION" "$PROTOBUF_MAJOR"
@@ -249,23 +256,38 @@ measure() {
     as_benchmark "${just[@]}" "${run[@]}" > "$out/console.log" 2>&1
     date -u +%Y-%m-%dT%H:%M:%SZ > "$out/end-utc.txt"
     check_interrupted
-    [[ "$(cat /proc/sys/kernel/random/boot_id)" == "$(cat "$state/boot-id")" ]]
+    [[ "$(cat "$system/proc/sys/kernel/random/boot_id")" == "$(cat "$state/boot-id")" ]]
 }
 
 current=prepare
 watcher=
 
 # Record a failure for the step in progress; collection reads results directly.
+# With the watcher stopped, complete its interruption record: the watcher may have stopped before
+# writing it, or a status update that passed its check before the marker existed may have replaced
+# the status file or followed the interruption in the event log.
 finish() {
-    local code=$?
+    local code=$? interruption
     set +e
-    if [[ -n $watcher ]]; then kill "$watcher" 2> /dev/null; fi
+    if [[ -n $watcher ]]; then
+        kill "$watcher" 2> /dev/null
+        wait "$watcher" 2> /dev/null
+    fi
+    if [[ -f "$state/interrupted" ]]; then
+        interruption="INTERRUPTED $(cat "$state/interrupted")"
+        if [[ $(tail -n 1 "$state/events.log" 2> /dev/null) != *" $interruption" ]]; then
+            printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$interruption" >> "$state/events.log"
+        fi
+        if [[ $(cat "$state/status" 2> /dev/null) != "$interruption" ]]; then
+            printf '%s\n' "$interruption" > "$state/status"
+        fi
+    fi
     if [[ $code -ne 0 ]]; then status FAILED "$current"; fi
 }
 
 run() {
     mkdir -p "$state"
-    cat /proc/sys/kernel/random/boot_id > "$state/boot-id"
+    cat "$system/proc/sys/kernel/random/boot_id" > "$state/boot-id"
     watch_maintenance &
     watcher=$!
     trap finish EXIT
