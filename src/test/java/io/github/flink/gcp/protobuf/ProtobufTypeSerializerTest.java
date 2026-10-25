@@ -23,6 +23,7 @@ import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 import org.apache.flink.util.InstantiationUtil;
 
 import com.google.protobuf.AbstractParser;
+import com.google.protobuf.ByteOutput;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
@@ -37,6 +38,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.UnknownFieldSet;
+import com.google.protobuf.UnsafeByteOperations;
 import io.github.flink.gcp.protobuf.generated.AmbiguousStringNames;
 import io.github.flink.gcp.protobuf.generated.ExtensionDeclaration;
 import io.github.flink.gcp.protobuf.generated.ExtensionHolder;
@@ -55,6 +57,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -64,6 +67,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static io.github.flink.gcp.protobuf.ProtobufTypeSerializer.LARGE_READ_INITIAL_SIZE;
 import static io.github.flink.gcp.protobuf.ProtobufTypeSerializer.SCRATCH_SIZE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -280,42 +284,169 @@ class ProtobufTypeSerializerTest {
     }
 
     @Test
-    void decodedValuesDoNotReferToTheReusedScratchArray() throws Exception {
-        ScalarMessage scalar =
-                ScalarMessage.newBuilder()
-                        .setStringValue("first é 中 😀")
-                        .setBytesValue(randomBytes(512, 1))
-                        .addBlobs(randomBytes(64, 2))
-                        .addStrings("listed")
-                        .setSelectedMessage(
-                                ScalarMessage.newBuilder().setBytesValue(randomBytes(32, 3)))
-                        .setUnknownFields(
-                                UnknownFieldSet.newBuilder()
-                                        .addField(
-                                                200,
-                                                UnknownFieldSet.Field.newBuilder()
-                                                        .addLengthDelimited(randomBytes(48, 4))
-                                                        .addGroup(unknownGroups(2))
-                                                        .build())
-                                        .build())
-                        .build();
-        assertDecodedValueSurvivesScratchReuse(
-                new ProtobufTypeSerializer<>(ScalarMessage.class),
-                scalar,
-                ScalarMessage.newBuilder().setBytesValue(filledBytes(SCRATCH_SIZE - 3)).build());
-        LazyMessage lazy =
-                LazyMessage.newBuilder()
-                        .setChild(RequiredMessage.newBuilder().setValue("lazy child"))
-                        .setUnchecked(RequiredMessage.newBuilder().setValue("unverified"))
-                        .build();
-        assertDecodedValueSurvivesScratchReuse(
-                new ProtobufTypeSerializer<>(LazyMessage.class),
-                lazy,
-                LazyMessage.newBuilder()
-                        .setChild(
-                                RequiredMessage.newBuilder()
-                                        .setValue("x".repeat(SCRATCH_SIZE - 16)))
-                        .build());
+    void decodedValuesShareNoReusedOrCallerStorage() throws Exception {
+        // Scale 1 parses from the scratch array; scale 16 parses from a fresh frame array that
+        // decoded bytes may share. Each value then survives later small and large reads.
+        for (int scale : List.of(1, 16)) {
+            String label = "scale " + scale;
+            ScalarMessage scalar =
+                    ScalarMessage.newBuilder()
+                            .setStringValue("first é 中 😀".repeat(scale))
+                            .setBytesValue(randomBytes(512 * scale, 1))
+                            .addBlobs(randomBytes(64 * scale, 2))
+                            .addStrings("listed".repeat(scale))
+                            .setSelectedMessage(
+                                    ScalarMessage.newBuilder()
+                                            .setBytesValue(randomBytes(32 * scale, 3)))
+                            .setUnknownFields(
+                                    UnknownFieldSet.newBuilder()
+                                            .addField(
+                                                    200,
+                                                    UnknownFieldSet.Field.newBuilder()
+                                                            .addLengthDelimited(
+                                                                    randomBytes(48 * scale, 4))
+                                                            .addGroup(unknownGroups(2))
+                                                            .addGroup(
+                                                                    unknownBytes(
+                                                                            randomBytes(
+                                                                                    16 * scale, 5)))
+                                                            .build())
+                                            .build())
+                            .build();
+            assertThat(scalar.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
+            ProtobufTypeSerializer<ScalarMessage> serializer =
+                    new ProtobufTypeSerializer<>(ScalarMessage.class);
+            ScalarMessage decoded =
+                    serializer.deserialize(new DataInputDeserializer(encode(serializer, scalar)));
+            // Only the large path aliases, so its bytes values share one frame array.
+            assertThat(backingArray(decoded.getBytesValue()) == backingArray(decoded.getBlobs(0)))
+                    .as("%s shares the frame array", label)
+                    .isEqualTo(scale > 1);
+            assertDecodedValueSurvivesLaterReads(
+                    label,
+                    serializer,
+                    scalar,
+                    ScalarMessage.newBuilder().setBytesValue(filledBytes(SCRATCH_SIZE - 3)).build(),
+                    ScalarMessage.newBuilder()
+                            .setBytesValue(filledBytes(2 * SCRATCH_SIZE))
+                            .build());
+            // The full runtime parses lazy fields eagerly; their proto2 strings alias the frame.
+            LazyMessage lazy =
+                    LazyMessage.newBuilder()
+                            .setChild(
+                                    RequiredMessage.newBuilder()
+                                            .setValue("lazy child ".repeat(32 * scale)))
+                            .setUnchecked(
+                                    RequiredMessage.newBuilder()
+                                            .setValue("unverified ".repeat(32 * scale)))
+                            .build();
+            assertThat(lazy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
+            assertDecodedValueSurvivesLaterReads(
+                    label,
+                    new ProtobufTypeSerializer<>(LazyMessage.class),
+                    lazy,
+                    LazyMessage.newBuilder()
+                            .setChild(
+                                    RequiredMessage.newBuilder()
+                                            .setValue("x".repeat(SCRATCH_SIZE - 16)))
+                            .build(),
+                    LazyMessage.newBuilder()
+                            .setChild(
+                                    RequiredMessage.newBuilder()
+                                            .setValue("x".repeat(2 * SCRATCH_SIZE)))
+                            .build());
+            // Proto2 strings retain their wire bytes, and the group nests another message.
+            LegacyMessage legacy =
+                    LegacyMessage.newBuilder()
+                            .setText("legacy é ".repeat(32 * scale))
+                            .addTexts("listed ".repeat(32 * scale))
+                            .setGroupValue(
+                                    LegacyMessage.GroupValue.newBuilder()
+                                            .setNumber(-1)
+                                            .setChild(
+                                                    LegacyMessage.newBuilder()
+                                                            .setText("nested ".repeat(32 * scale))))
+                            .build();
+            assertThat(legacy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
+            assertDecodedValueSurvivesLaterReads(
+                    label,
+                    new ProtobufTypeSerializer<>(LegacyMessage.class),
+                    legacy,
+                    LegacyMessage.newBuilder().setText("x".repeat(SCRATCH_SIZE - 3)).build(),
+                    LegacyMessage.newBuilder().setText("x".repeat(2 * SCRATCH_SIZE)).build());
+        }
+    }
+
+    @Test
+    void framesAboveTheInitialLargeReadSizeGrowToTheirExactLength() throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        for (int size :
+                List.of(
+                        LARGE_READ_INITIAL_SIZE - 1,
+                        LARGE_READ_INITIAL_SIZE,
+                        LARGE_READ_INITIAL_SIZE + 1,
+                        3 * LARGE_READ_INITIAL_SIZE + 5)) {
+            ScalarMessage value = bytesPayload(size, size);
+            assertThat(value.getSerializedSize()).isEqualTo(size);
+            byte[] frame = encode(serializer, value);
+            byte[] adjacent =
+                    encode(serializer, ScalarMessage.newBuilder().setInt32Value(9).build());
+            byte[] both = Arrays.copyOf(frame, frame.length + adjacent.length);
+            System.arraycopy(adjacent, 0, both, frame.length, adjacent.length);
+            DataInputDeserializer source = new DataInputDeserializer(both);
+            ScalarMessage decoded = serializer.deserialize(source);
+            assertThat(decoded).as("%d-byte payload", size).isEqualTo(value);
+            assertThat(backingArray(decoded.getBytesValue())).hasSize(size);
+            assertThat(serializer.deserialize(source).getInt32Value()).isEqualTo(9);
+            assertThat(source.available()).isZero();
+        }
+    }
+
+    @Test
+    void decodedValuesSurviveSourcesThatKeepTheirReadDestinations() throws Exception {
+        // Protobuf's stream decoder copies arrays that its input received for the same reason.
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        for (int size : List.of(64, 2 * SCRATCH_SIZE, LARGE_READ_INITIAL_SIZE + 5)) {
+            ScalarMessage value = bytesPayload(size, 6);
+            byte[] expected = value.toByteArray();
+            List<byte[]> destinations = new ArrayList<>();
+            DataInputViewStreamWrapper source =
+                    new DataInputViewStreamWrapper(
+                            new ByteArrayInputStream(encode(serializer, value)) {
+                                @Override
+                                public synchronized int read(byte[] bytes, int offset, int length) {
+                                    destinations.add(bytes);
+                                    return super.read(bytes, offset, length);
+                                }
+                            });
+            ScalarMessage decoded = serializer.deserialize(source);
+            for (byte[] destination : destinations) {
+                Arrays.fill(destination, (byte) 0x55);
+            }
+            assertThat(decoded.toByteArray()).as("%d-byte payload", size).isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void truncatedLargeFramesAllocateOnlyAroundTheBytesPresent() throws Exception {
+        // Allocating each declared length up front would exceed the JVM's array limit here.
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(
+                        ScalarMessage.class,
+                        new ProtobufSerializerSettings(false, Integer.MAX_VALUE, 100));
+        for (int present : List.of(0, 1, LARGE_READ_INITIAL_SIZE, 3 * LARGE_READ_INITIAL_SIZE)) {
+            byte[] truncated = new byte[4 + present];
+            truncated[0] = 0x7f;
+            truncated[1] = truncated[2] = truncated[3] = (byte) 0xff;
+            assertThatThrownBy(() -> serializer.deserialize(new DataInputDeserializer(truncated)))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining(
+                            "Truncated Protobuf payload; missing "
+                                    + (Integer.MAX_VALUE - present)
+                                    + " bytes");
+        }
     }
 
     @Test
@@ -832,6 +963,23 @@ class ProtobufTypeSerializerTest {
         return result;
     }
 
+    /** Returns a value whose only field is a {@code bytes} value giving an exact payload size. */
+    private static ScalarMessage bytesPayload(int size, long seed) {
+        for (int prefix = 1; prefix <= 5; prefix++) {
+            int length = size - 1 - prefix;
+            if (CodedOutputStream.computeUInt32SizeNoTag(length) == prefix) {
+                return ScalarMessage.newBuilder().setBytesValue(randomBytes(length, seed)).build();
+            }
+        }
+        throw new IllegalArgumentException("No bytes length gives payload size " + size);
+    }
+
+    private static UnknownFieldSet unknownBytes(ByteString bytes) {
+        return UnknownFieldSet.newBuilder()
+                .addField(201, UnknownFieldSet.Field.newBuilder().addLengthDelimited(bytes).build())
+                .build();
+    }
+
     private static UnknownFieldSet unknownGroups(int depth) {
         UnknownFieldSet result = UnknownFieldSet.getDefaultInstance();
         for (int i = 0; i < depth; i++) {
@@ -890,17 +1038,68 @@ class ProtobufTypeSerializerTest {
         return ByteString.copyFrom(bytes);
     }
 
-    /** Overwrites the serializer's scratch array through every operation that uses it. */
-    private static <T extends Message> void assertDecodedValueSurvivesScratchReuse(
-            ProtobufTypeSerializer<T> serializer, T value, T overwrite) throws Exception {
+    /**
+     * Decodes a value, then overwrites the caller's frame and the serializer's arrays through every
+     * operation that reads a small and a large frame. No data view exposes the caller's array, so
+     * overwriting it is defensive; the large frame is shorter than a large value, so an array that
+     * the serializer kept for large frames would be reused.
+     */
+    private static <T extends Message> void assertDecodedValueSurvivesLaterReads(
+            String label, ProtobufTypeSerializer<T> serializer, T value, T small, T large)
+            throws Exception {
         byte[] expected = value.toByteArray();
-        T decoded = serializer.deserialize(input(encode(serializer, value)));
-        byte[] overwriteFrame = encode(serializer, overwrite);
-        assertThat(overwriteFrame.length - 4).isLessThanOrEqualTo(SCRATCH_SIZE);
-        assertThat(serializer.deserialize(input(overwriteFrame))).isEqualTo(overwrite);
-        serializer.copy(input(overwriteFrame), new DataOutputSerializer(1));
+        byte[] frame = encode(serializer, value);
+        byte[] smallFrame = encode(serializer, small);
+        byte[] largeFrame = encode(serializer, large);
+        assertThat(smallFrame.length - 4).as(label).isLessThanOrEqualTo(SCRATCH_SIZE);
+        assertThat(largeFrame.length - 4).as(label).isGreaterThan(SCRATCH_SIZE);
+        if (expected.length > SCRATCH_SIZE) {
+            assertThat(largeFrame.length).as(label).isLessThan(frame.length);
+        }
+        T decoded = serializer.deserialize(new DataInputDeserializer(frame));
+        Arrays.fill(frame, (byte) 0x55);
+        for (byte[] overwrite : List.of(smallFrame, largeFrame)) {
+            serializer.deserialize(new DataInputDeserializer(overwrite));
+            serializer.copy(input(overwrite), new DataOutputSerializer(1));
+        }
+        assertThat(decoded.toByteArray())
+                .as("%s %s after later reads", label, value.getDescriptorForType().getName())
+                .isEqualTo(expected);
         assertThat(decoded).isEqualTo(value);
-        assertThat(decoded.toByteArray()).isEqualTo(expected);
+    }
+
+    /** Returns the array that a ByteString passes to a lazy writer, which is its storage. */
+    private static byte[] backingArray(ByteString value) throws IOException {
+        byte[][] storage = new byte[1][];
+        UnsafeByteOperations.unsafeWriteTo(
+                value,
+                new ByteOutput() {
+                    @Override
+                    public void write(byte value) {
+                        throw new AssertionError("Expected a lazy array write");
+                    }
+
+                    @Override
+                    public void write(byte[] value, int offset, int length) {
+                        throw new AssertionError("Expected a lazy array write");
+                    }
+
+                    @Override
+                    public void writeLazy(byte[] value, int offset, int length) {
+                        storage[0] = value;
+                    }
+
+                    @Override
+                    public void write(ByteBuffer value) {
+                        throw new AssertionError("Expected a lazy array write");
+                    }
+
+                    @Override
+                    public void writeLazy(ByteBuffer value) {
+                        throw new AssertionError("Expected a lazy array write");
+                    }
+                });
+        return storage[0];
     }
 
     private static <T extends Message> byte[] encode(

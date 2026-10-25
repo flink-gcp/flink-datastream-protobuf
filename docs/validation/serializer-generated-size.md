@@ -124,6 +124,7 @@ The standard deviation of the candidate's five log native/Chill ratios is 0.38 t
 | Protobuf 3, 40 cells | candidate | 37 | 1 | 2 |
 
 The remaining misses on both profiles are large `deserialize` and `deserializeReuse`, at 1.255 to 1.274 times Chill's time, which [#113](https://github.com/flink-gcp/flink-datastream-protobuf/issues/113) addresses.
+The [large-read report](serializer-large-read.md) measures that later change.
 
 ### Reading and copying
 
