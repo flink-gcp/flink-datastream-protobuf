@@ -54,9 +54,26 @@ The inherited `of(TypeHint)` overload follows Flink's ordinary type extraction a
 Builder reuse does not change previously built type information or serializers.
 These limits constrain accepted inputs, not total heap usage or stack capacity.
 
-A payload above 4 KiB is read into its own array, and decoded `bytes` fields, proto2 strings, and unknown fields may share that array instead of copying it.
-Keeping any such value, including a `ByteString` taken from the message, keeps the whole payload array reachable.
-To keep a small part of a large message for long, copy it first, for example with `ByteString.copyFrom(value.asReadOnlyByteBuffer())`.
+## Memory of large decoded messages
+
+Aliasing of large payloads is enabled by default, and the current serializer always uses it.
+A payload above 4 KiB is read into its own array, and decoded `bytes` fields, unknown length-delimited fields, and proto2 strings without UTF-8 checking may share that array instead of copying it.
+[#123](https://github.com/flink-gcp/flink-datastream-protobuf/issues/123) tracks a planned setting to disable it, with aliasing still enabled by default.
+Payloads of at most 4 KiB never share storage, and aliasing changes neither the wire bytes, state compatibility, nor decoded values.
+
+| | With aliasing |
+|---|---|
+| Benefit | In the [large-read report](validation/serializer-large-read.md), reading a 64 KiB payload takes 0.43 to 0.44 times the previous serializer's time and 0.54 to 0.55 times Chill's, and allocates half as much |
+| Cost | Keeping any value that shares the array, including a `ByteString` taken from the message, keeps the whole payload array reachable |
+
+The cost matters only when an application keeps decoded values for long:
+
+- A small `ByteString` that shares a large message's array, such as a `bytes` field value, keeps that whole array while it is kept in a long-lived map, cache, or heap state.
+  Copy it first, for example with `ByteString.copyFrom(value.asReadOnlyByteBuffer())`.
+- Large messages kept in heap state, such as `HashMapStateBackend` values updated from records or restored from a checkpoint, keep their arrays when they hold a value that shares it.
+  When a message mixes such a value with large other content, such as proto3 strings or repeated numbers, the array also holds that content's wire form in addition to its decoded form; how much more memory this takes depends on the record's shape.
+
+Records that are processed and then dropped, and values read from RocksDB state for one access, keep their arrays only as long as the application keeps the values.
 
 ## Factory registration
 
