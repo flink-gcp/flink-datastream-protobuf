@@ -39,12 +39,19 @@ import java.util.Map;
 /**
  * Overflow-safe wire sizing and parser-depth validation before the caller writes a frame.
  *
+ * <p>The parser reads an unknown length-delimited field whose number belongs to a declared message
+ * or map field as that field's message, so its bytes can nest beyond the recursion limit; every
+ * check rejects such a value, and one with an unknown-field number above the specification's
+ * maximum, whose tag the writer would wrap to another number or to field zero. Other unknown fields
+ * are sized as opaque bytes; the parser keeps them unknown unless their number and wire type match
+ * a declared scalar, string, bytes, or packed field, which it reads them into.
+ *
  * <p>When the payload type graph is acyclic and its static height is within the recursion limit, a
- * value without unknown groups cannot exceed that limit. Such a value uses the runtime's memoized
- * generated size if it is at most the scratch size. Until one of the runtime's {@code int} sums
- * first exceeds {@link Integer#MAX_VALUE}, each addend is the exact length that the writer emits,
- * so a size that wrapped implies at least 2 GiB of output; encoding into the scratch array then
- * fails before the caller writes the frame.
+ * value without unknown groups or fields colliding with a message or map field cannot exceed that
+ * limit. Such a value uses the runtime's memoized generated size if it is at most the scratch size.
+ * Until one of the runtime's {@code int} sums first exceeds {@link Integer#MAX_VALUE}, each addend
+ * is the exact length that the writer emits, so a size that wrapped implies at least 2 GiB of
+ * output; encoding into the scratch array then fails before the caller writes the frame.
  *
  * <p>Otherwise, each check traverses the value graph iteratively over field layouts precomputed for
  * the message class. Values whose subtree sizing examined more than a small constant amount of
@@ -77,6 +84,13 @@ final class ProtobufMessageSize {
     private static final int UNMEASURED = -3;
     private static final int MEASURING = -2;
     private static final int UNBOUNDED = -1;
+
+    /**
+     * Largest field number in the Protobuf specification. A tag is {@code (number << 3) | wire
+     * type} in 32 bits, and the runtime's {@code int} shift wraps a larger unknown-field number to
+     * another number's tag or to an invalid tag for field zero.
+     */
+    private static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
 
     private final int maxSize;
     private final int recursionLimit;
@@ -255,15 +269,17 @@ final class ProtobufMessageSize {
      * Visits the message values of a statically bounded graph and returns the remaining budget, or
      * -1 if the value must be traversed instead.
      *
-     * <p>Unknown groups can nest without a static bound, and a value reporting another descriptor
-     * may need another layout. The budget counts repeated elements and singular values other than
-     * the default instance below the root; an absent singular value reads as that instance, which
-     * holds no fields.
+     * <p>Unknown groups can nest without a static bound, the traversal rejects unknown fields that
+     * the parser would read as a declared message or whose number exceeds the specification's
+     * maximum, and a value reporting another descriptor may need another layout. The budget counts
+     * repeated elements and singular values other than the default instance below the root; an
+     * absent singular value reads as that instance, which holds no fields.
      */
     private int visit(Message message, Layout layout, int budget) {
         if (budget < 0
                 || message.getDescriptorForType() != layout.descriptor
-                || hasGroups(message.getUnknownFields())) {
+                || hasGroupsOrInvalidNumbers(message.getUnknownFields())
+                || collision(layout, message.getUnknownFields()) != null) {
             return -1;
         }
         for (Field field : layout.strings) {
@@ -348,18 +364,42 @@ final class ProtobufMessageSize {
         return stringBytes <= generatedLimit;
     }
 
-    /** Returns whether a value's unknown fields hold a group, whose nesting is unbounded. */
-    private static boolean hasGroups(UnknownFieldSet unknown) {
+    /**
+     * Returns whether a value's unknown fields hold a group, whose nesting is unbounded, or a
+     * number above {@link #MAX_FIELD_NUMBER}, which the traversal rejects.
+     */
+    private static boolean hasGroupsOrInvalidNumbers(UnknownFieldSet unknown) {
         // Protobuf 3 copies even an empty set's map, so skip the shared empty instance.
         if (unknown == UnknownFieldSet.getDefaultInstance()) {
             return false;
         }
-        for (UnknownFieldSet.Field field : unknown.asMap().values()) {
-            if (!field.getGroupList().isEmpty()) {
+        for (Map.Entry<Integer, UnknownFieldSet.Field> entry : unknown.asMap().entrySet()) {
+            if (entry.getKey() > MAX_FIELD_NUMBER || !entry.getValue().getGroupList().isEmpty()) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Returns the message or map field whose number an unknown length-delimited value reuses, or
+     * null. The parser would read those bytes as that field's message, including any unknown groups
+     * nested in them, so their depth is not the opaque size that sizing counts. The lookup uses the
+     * containing message's layout, because a set shared by values of different types can collide in
+     * only some of them, and probes each declared number without copying the set.
+     */
+    private static Field collision(Layout layout, UnknownFieldSet unknown) {
+        if (unknown == UnknownFieldSet.getDefaultInstance()) {
+            return null;
+        }
+        for (Field field : layout.messageFields) {
+            if (!unknown.getField(field.descriptor.getNumber())
+                    .getLengthDelimitedList()
+                    .isEmpty()) {
+                return field;
+            }
+        }
+        return null;
     }
 
     /**
@@ -481,6 +521,16 @@ final class ProtobufMessageSize {
             UnknownFieldSet unknown = message.getUnknownFields();
             // Protobuf 3 copies even an empty set's map, so skip the shared empty instance.
             if (unknown != UnknownFieldSet.getDefaultInstance()) {
+                Field collision = collision(frame.layout, unknown);
+                if (collision != null) {
+                    throw new IOException(
+                            "Unknown length-delimited field "
+                                    + collision.descriptor.getNumber()
+                                    + " of "
+                                    + frame.layout.descriptor.getFullName()
+                                    + " would be parsed as message field "
+                                    + collision.descriptor.getFullName());
+                }
                 frame.edgeDepth = 0;
                 frame.edgeLayout = null;
                 return unknown;
@@ -539,6 +589,13 @@ final class ProtobufMessageSize {
     private void unknownFields(Frame frame, UnknownFieldSet unknown) throws IOException {
         List<UnknownFieldSet> groups = null;
         for (Map.Entry<Integer, UnknownFieldSet.Field> entry : unknown.asMap().entrySet()) {
+            if (entry.getKey() > MAX_FIELD_NUMBER) {
+                throw new IOException(
+                        "Unknown field number "
+                                + entry.getKey()
+                                + " exceeds the maximum field number "
+                                + MAX_FIELD_NUMBER);
+            }
             int tag = CodedOutputStream.computeTagSize(entry.getKey());
             UnknownFieldSet.Field field = entry.getValue();
             for (long number : field.getVarintList()) {
@@ -731,12 +788,16 @@ final class ProtobufMessageSize {
          */
         private final Field[] strings;
 
+        /** Message and map fields, whose numbers unknown length-delimited values must not reuse. */
+        private final Field[] messageFields;
+
         /** Message fields whose values can hold unknown fields; set once after linking. */
         private Field[] nested;
 
         /**
-         * Greatest parser depth of a value relative to this type without unknown groups, or {@link
-         * #UNBOUNDED} if the type graph from here reaches a cycle; set once after linking.
+         * Greatest parser depth of a value relative to this type without unknown groups or
+         * colliding unknown fields, or {@link #UNBOUNDED} if the type graph from here reaches a
+         * cycle; set once after linking.
          */
         private int height = UNMEASURED;
 
@@ -745,6 +806,7 @@ final class ProtobufMessageSize {
             List<FieldDescriptor> declared = descriptor.getFields();
             fields = new Field[declared.size()];
             List<Field> stringFields = new ArrayList<>();
+            List<Field> messages = new ArrayList<>();
             for (int i = 0; i < fields.length; i++) {
                 FieldDescriptor field = declared.get(i);
                 fields[i] = new Field(field);
@@ -752,8 +814,12 @@ final class ProtobufMessageSize {
                 if (field.isRepeated() && element.getType() == FieldDescriptor.Type.STRING) {
                     stringFields.add(fields[i]);
                 }
+                if (field.getType() == FieldDescriptor.Type.MESSAGE) {
+                    messages.add(fields[i]);
+                }
             }
             strings = stringFields.toArray(new Field[0]);
+            messageFields = messages.toArray(new Field[0]);
         }
     }
 

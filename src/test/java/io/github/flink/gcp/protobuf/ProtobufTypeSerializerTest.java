@@ -42,6 +42,9 @@ import com.google.protobuf.StringValue;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.UnknownFieldSet;
 import com.google.protobuf.UnsafeByteOperations;
+import io.github.flink.gcp.protobuf.generated.BoundedBranch;
+import io.github.flink.gcp.protobuf.generated.BoundedLeaf;
+import io.github.flink.gcp.protobuf.generated.BoundedMessage;
 import io.github.flink.gcp.protobuf.generated.ExtensionDeclaration;
 import io.github.flink.gcp.protobuf.generated.ExtensionHolder;
 import io.github.flink.gcp.protobuf.generated.LazyMessage;
@@ -277,7 +280,8 @@ class ProtobufTypeSerializerTest {
                                                                     randomBytes(48 * scale, 4))
                                                             .addGroup(unknownGroups(2))
                                                             .addGroup(
-                                                                    unknownBytes(
+                                                                    lengthDelimited(
+                                                                            201,
                                                                             randomBytes(
                                                                                     16 * scale, 5)))
                                                             .build())
@@ -489,6 +493,226 @@ class ProtobufTypeSerializerTest {
         ScalarMessage value =
                 ScalarMessage.newBuilder().setInt32Value(12).setUnknownFields(unknown).build();
         assertRoundTrip(new ProtobufTypeSerializer<>(ScalarMessage.class), value);
+    }
+
+    @Test
+    void unknownFieldsThatTheParserReadsAsMessagesAreRejectedBeforeWriting() throws Exception {
+        ProtobufTypeSerializer<BoundedMessage> bounded =
+                new ProtobufTypeSerializer<>(BoundedMessage.class);
+        String leaf = collision(7, "BoundedMessage", "BoundedMessage.leaf");
+        // Issue #120: the bytes of field 7 hold groups nested 150 deep, which the reader parses
+        // as BoundedMessage.leaf and rejects at the default recursion limit of 100.
+        BoundedMessage deep =
+                BoundedMessage.newBuilder()
+                        .setUnknownFields(lengthDelimited(7, unknownGroups(150).toByteString()))
+                        .build();
+        assertThatThrownBy(() -> BoundedMessage.parseFrom(deep.toByteArray()))
+                .hasMessageContaining("too many levels of nesting");
+        assertRejectedBeforeWrite(bounded, deep, leaf);
+        // A shallow collision is rejected too, at the root, in a nested value, and in a repeated
+        // value, whether or not the generated size would otherwise decide.
+        BoundedMessage shallow =
+                BoundedMessage.newBuilder()
+                        .setId(1)
+                        .setUnknownFields(lengthDelimited(7, ByteString.EMPTY))
+                        .build();
+        assertRejectedBeforeWrite(bounded, shallow, leaf);
+        // Reading such bytes, as from state that an earlier build wrote, merges them into the
+        // declared field, so the decoded value no longer collides.
+        BoundedMessage decoded = BoundedMessage.parseFrom(shallow.toByteArray());
+        assertThat(decoded.hasLeaf()).isTrue();
+        assertRoundTrip(bounded, decoded);
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder()
+                        .setUnknownFields(lengthDelimited(9, ByteString.EMPTY))
+                        .build(),
+                collision(9, "BoundedMessage", "BoundedMessage.branches"));
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder()
+                        .setUnknownFields(lengthDelimited(11, ByteString.EMPTY))
+                        .build(),
+                collision(11, "BoundedMessage", "BoundedMessage.selected"));
+        BoundedBranch branch =
+                BoundedBranch.newBuilder()
+                        .setUnknownFields(lengthDelimited(1, ByteString.EMPTY))
+                        .build();
+        String branchLeaf = collision(1, "BoundedBranch", "BoundedBranch.leaf");
+        assertRejectedBeforeWrite(
+                bounded, BoundedMessage.newBuilder().setBranch(branch).build(), branchLeaf);
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder()
+                        .addBranches(BoundedBranch.getDefaultInstance())
+                        .addBranches(branch)
+                        .build(),
+                branchLeaf);
+        // Map entries are parsed as messages, so a map field's number collides whatever its value
+        // type, and so does a message field of a map value.
+        ProtobufTypeSerializer<RecursiveMessage> recursive =
+                new ProtobufTypeSerializer<>(RecursiveMessage.class);
+        assertRejectedBeforeWrite(
+                recursive,
+                RecursiveMessage.newBuilder()
+                        .setUnknownFields(lengthDelimited(4, ByteString.EMPTY))
+                        .build(),
+                collision(4, "RecursiveMessage", "RecursiveMessage.counts"));
+        assertRejectedBeforeWrite(
+                recursive,
+                RecursiveMessage.newBuilder()
+                        .putNodes(
+                                "key",
+                                RecursiveMessage.newBuilder()
+                                        .setUnknownFields(lengthDelimited(1, ByteString.EMPTY))
+                                        .build())
+                        .build(),
+                collision(1, "RecursiveMessage", "RecursiveMessage.child"));
+
+        // The parser keeps other wire types, undeclared numbers, and group content unknown.
+        UnknownFieldSet kept =
+                UnknownFieldSet.newBuilder()
+                        .addField(
+                                7,
+                                UnknownFieldSet.Field.newBuilder()
+                                        .addVarint(1)
+                                        .addFixed32(2)
+                                        .addFixed64(3)
+                                        .addGroup(lengthDelimited(7, ByteString.copyFromUtf8("x")))
+                                        .build())
+                        .mergeFrom(lengthDelimited(100, ByteString.copyFromUtf8("y")))
+                        .build();
+        BoundedMessage opaque = BoundedMessage.newBuilder().setUnknownFields(kept).build();
+        assertRoundTrip(bounded, opaque);
+        assertThat(BoundedMessage.parseFrom(opaque.toByteArray()).getUnknownFields())
+                .isEqualTo(kept);
+        // Numbers of string, bytes, and packed fields are written unchanged, and the reader moves
+        // valid content into those fields (issue #127).
+        BoundedMessage scalar =
+                BoundedMessage.newBuilder()
+                        .setUnknownFields(
+                                UnknownFieldSet.newBuilder()
+                                        .mergeFrom(lengthDelimited(2, ByteString.copyFromUtf8("x")))
+                                        .mergeFrom(lengthDelimited(4, ByteString.copyFromUtf8("p")))
+                                        .mergeFrom(
+                                                lengthDelimited(
+                                                        5, ByteString.copyFrom(new byte[] {1})))
+                                        .mergeFrom(
+                                                lengthDelimited(13, ByteString.copyFromUtf8("c")))
+                                        .build())
+                        .build();
+        byte[] frame = encode(bounded, scalar);
+        assertThat(Arrays.copyOfRange(frame, 4, frame.length)).isEqualTo(scalar.toByteArray());
+        assertThat(bounded.deserialize(input(frame)))
+                .isEqualTo(
+                        BoundedMessage.newBuilder()
+                                .setText("x")
+                                .setPayload(ByteString.copyFromUtf8("p"))
+                                .addPacked(1)
+                                .addChunks(ByteString.copyFromUtf8("c"))
+                                .build());
+
+        // A set shared with a type that does not declare the number is still checked at the
+        // container that does, after the traversal has summarized it under the other type.
+        UnknownFieldSet.Builder sharedBuilder = UnknownFieldSet.newBuilder();
+        for (int number = 100; number <= 100 + ProtobufMessageSize.CACHE_THRESHOLD; number++) {
+            sharedBuilder.addField(
+                    number, UnknownFieldSet.Field.newBuilder().addVarint(number).build());
+        }
+        UnknownFieldSet shared =
+                sharedBuilder.mergeFrom(lengthDelimited(7, ByteString.EMPTY)).build();
+        BoundedLeaf holder = BoundedLeaf.newBuilder().setUnknownFields(shared).build();
+        assertRoundTrip(bounded, BoundedMessage.newBuilder().setLeaf(holder).build());
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder().setLeaf(holder).setUnknownFields(shared).build(),
+                leaf);
+    }
+
+    @Test
+    void unknownFieldNumbersAboveTheSpecificationMaximumAreRejectedBeforeWriting()
+            throws Exception {
+        int maximum = (1 << 29) - 1;
+        String rejected = "exceeds the maximum field number " + maximum;
+        // The writer's tag shift wraps 2^29 + 1 to field 1, RecursiveMessage.child, so the
+        // reader parses these groups as nested messages and exceeds its recursion limit.
+        RecursiveMessage aliased =
+                RecursiveMessage.newBuilder()
+                        .setUnknownFields(
+                                lengthDelimited(maximum + 2, unknownGroups(150).toByteString()))
+                        .build();
+        assertThatThrownBy(() -> RecursiveMessage.parseFrom(aliased.toByteArray()))
+                .hasMessageContaining("too many levels of nesting");
+        assertRejectedBeforeWrite(
+                new ProtobufTypeSerializer<>(RecursiveMessage.class),
+                aliased,
+                "Unknown field number " + (maximum + 2) + " " + rejected);
+        // 2^29 wraps to field zero, which the reader rejects as an invalid tag.
+        RecursiveMessage zero =
+                RecursiveMessage.newBuilder()
+                        .setUnknownFields(lengthDelimited(maximum + 1, ByteString.EMPTY))
+                        .build();
+        assertThatThrownBy(() -> RecursiveMessage.parseFrom(zero.toByteArray()))
+                .hasMessageContaining("invalid tag");
+        assertRejectedBeforeWrite(
+                new ProtobufTypeSerializer<>(RecursiveMessage.class),
+                zero,
+                "Unknown field number " + (maximum + 1) + " " + rejected);
+        // Any wire type is rejected, also where the generated size would otherwise decide and
+        // inside an unknown group.
+        ProtobufTypeSerializer<BoundedMessage> bounded =
+                new ProtobufTypeSerializer<>(BoundedMessage.class);
+        UnknownFieldSet varint =
+                UnknownFieldSet.newBuilder()
+                        .addField(
+                                maximum + 100,
+                                UnknownFieldSet.Field.newBuilder().addVarint(1).build())
+                        .build();
+        assertRejectedBeforeWrite(
+                bounded, BoundedMessage.newBuilder().setUnknownFields(varint).build(), rejected);
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder()
+                        .setUnknownFields(
+                                UnknownFieldSet.newBuilder()
+                                        .addField(
+                                                200,
+                                                UnknownFieldSet.Field.newBuilder()
+                                                        .addGroup(varint)
+                                                        .build())
+                                        .build())
+                        .build(),
+                rejected);
+        // The maximum itself is a valid number, through the generated size and through the
+        // traversal that the recursive type always uses.
+        UnknownFieldSet largest =
+                UnknownFieldSet.newBuilder()
+                        .addField(maximum, UnknownFieldSet.Field.newBuilder().addVarint(1).build())
+                        .build();
+        BoundedMessage valid = BoundedMessage.newBuilder().setUnknownFields(largest).build();
+        assertRoundTrip(bounded, valid);
+        assertThat(BoundedMessage.parseFrom(valid.toByteArray()).getUnknownFields())
+                .isEqualTo(largest);
+        assertRoundTrip(
+                new ProtobufTypeSerializer<>(RecursiveMessage.class),
+                RecursiveMessage.newBuilder().setUnknownFields(largest).build());
+    }
+
+    private static String collision(int number, String type, String field) {
+        return "Unknown length-delimited field "
+                + number
+                + " of flink.protobuf.serializer."
+                + type
+                + " would be parsed as message field flink.protobuf.serializer."
+                + field;
+    }
+
+    private static UnknownFieldSet lengthDelimited(int number, ByteString bytes) {
+        return UnknownFieldSet.newBuilder()
+                .addField(
+                        number,
+                        UnknownFieldSet.Field.newBuilder().addLengthDelimited(bytes).build())
+                .build();
     }
 
     @Test
@@ -940,12 +1164,6 @@ class ProtobufTypeSerializerTest {
             }
         }
         throw new IllegalArgumentException("No bytes length gives payload size " + size);
-    }
-
-    private static UnknownFieldSet unknownBytes(ByteString bytes) {
-        return UnknownFieldSet.newBuilder()
-                .addField(201, UnknownFieldSet.Field.newBuilder().addLengthDelimited(bytes).build())
-                .build();
     }
 
     private static UnknownFieldSet unknownGroups(int depth) {
