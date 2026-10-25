@@ -54,6 +54,10 @@ The inherited `of(TypeHint)` overload follows Flink's ordinary type extraction a
 Builder reuse does not change previously built type information or serializers.
 These limits constrain accepted inputs, not total heap usage or stack capacity.
 
+A payload above 4 KiB is read into its own array, and decoded `bytes` fields, proto2 strings, and unknown fields may share that array instead of copying it.
+Keeping any such value, including a `ByteString` taken from the message, keeps the whole payload array reachable.
+To keep a small part of a large message for long, copy it first, for example with `ByteString.copyFrom(value.asReadOnlyByteBuffer())`.
+
 ## Factory registration
 
 The example's [config.yaml](../examples/datastream/config/config.yaml) contains ordinary [Flink pipeline configuration](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/config/#pipeline-serialization-config).

@@ -27,13 +27,14 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
+import com.google.protobuf.UnsafeByteOperations;
 
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InvalidObjectException;
 import java.io.ObjectInputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -49,8 +50,10 @@ import java.util.Objects;
  * bounds checks must be used through Flink's framing and exception-conversion wrappers.
  *
  * <p>Payloads of at most 4 KiB are encoded and decoded through one lazily allocated 4 KiB array
- * that each instance retains and also uses for stream copy. Larger payloads are streamed through
- * per-record Protobuf coded-stream buffers without payload-sized storage in this serializer.
+ * that each instance retains and also uses as the chunk for stream copy and larger reads. Larger
+ * payloads are written through per-record Protobuf coded-stream buffers without payload-sized
+ * storage in this serializer, and each is read into a new array of its length that decoded values
+ * may share.
  *
  * <p>Each instance also retains a bounded stack of sizing frames, which hold record references only
  * during a write. Instances are not intended for concurrent use; call {@link #duplicate()} for
@@ -68,8 +71,13 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     private static final long serialVersionUID = 1L;
     static final int FRAMING_VERSION = 1;
 
-    /** Largest payload handled through the retained scratch array; also the stream-copy chunk. */
+    /**
+     * Largest payload handled in the retained scratch array; also the copy and large-read chunk.
+     */
     static final int SCRATCH_SIZE = 4096;
+
+    /** First array size for a larger payload, which then doubles until it reaches the length. */
+    static final int LARGE_READ_INITIAL_SIZE = 1 << 20;
 
     /**
      * The generated class represented by this instance.
@@ -259,8 +267,16 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      *
      * <p>The bounded input prevents reading into an adjacent frame. A payload of at most 4 KiB is
      * read completely into the retained scratch array before parsing; parsed values copy their
-     * bytes and do not refer to that array. A failed read may consume only part of the current
-     * frame; callers must not assume input resynchronization after failure.
+     * bytes and do not refer to that array. A larger payload is copied through the scratch array
+     * into a new array that the source never receives. That array starts at no more than 1 MiB and
+     * doubles as bytes arrive until it has the declared length, so the arrays allocated for a
+     * corrupt prefix total at most 1 MiB or less than four times the bytes present; a growth step
+     * that the heap or the JVM's array-size limit cannot satisfy still fails with an error rather
+     * than {@code IOException}. The serializer never writes that array again, reuses it, or exposes
+     * it. Values that the runtime decodes as {@code ByteString}, such as {@code bytes} fields,
+     * proto2 strings, and unknown length-delimited fields, may share that array instead of copying
+     * it, so keeping any of them keeps the whole array reachable. A failed read may consume only
+     * part of the current frame; callers must not assume input resynchronization after failure.
      *
      * @param source source positioned at a frame length prefix
      * @return an initialized message of the configured class
@@ -271,15 +287,18 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     public T deserialize(DataInputView source) throws IOException {
         int size = readLength(source);
         try {
-            FrameInputStream frame = new FrameInputStream(source, size);
             CodedInputStream input;
             if (size <= SCRATCH_SIZE) {
                 byte[] payload = scratch();
-                frame.readPayload(payload);
+                readPayload(source, payload, 0, size, size);
                 // This factory never aliases its mutable input, so decoded values copy their bytes.
                 input = CodedInputStream.newInstance(payload, 0, size);
             } else {
-                input = CodedInputStream.newInstance(frame);
+                byte[] payload = readLargePayload(source, size);
+                // Neither the source nor this serializer holds this array, so decoded bytes may
+                // share it; only a decoder created from a ByteString treats its input as immutable.
+                input = UnsafeByteOperations.unsafeWrap(payload).newCodedInput();
+                input.enableAliasing(true);
             }
             input.setSizeLimit(settings.maxMessageSize());
             input.setRecursionLimit(settings.recursionLimit());
@@ -287,7 +306,8 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
                     messageClass.cast(
                             parser.parseFrom(input, ExtensionRegistryLite.getEmptyRegistry()));
             input.checkLastTagWas(0);
-            if (!input.isAtEnd() || input.getTotalBytesRead() != size || frame.remaining != 0) {
+            // Both decoders are limited to the payload, which was read completely before parsing.
+            if (!input.isAtEnd()) {
                 throw new IOException("Protobuf parser did not consume the complete frame");
             }
             return result;
@@ -497,57 +517,45 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Bounds reads to one payload and turns premature view exhaustion into a truncation failure.
+     * Fills {@code bytes[offset, end)} from the frame, naming the bytes it lacks when truncated.
      */
-    private static final class FrameInputStream extends InputStream {
-        private final DataInputView source;
-        private int remaining;
-
-        private FrameInputStream(DataInputView source, int remaining) {
-            this.source = source;
-            this.remaining = remaining;
-        }
-
-        @Override
-        public int read() throws IOException {
-            if (remaining == 0) {
-                return -1;
-            }
-            try {
-                int value = source.readUnsignedByte();
-                remaining--;
-                return value;
-            } catch (EOFException e) {
-                throw new EOFException(
-                        "Truncated Protobuf payload; missing " + remaining + " bytes");
-            }
-        }
-
-        @Override
-        public int read(byte[] bytes, int offset, int length) throws IOException {
-            Objects.checkFromIndexSize(offset, length, bytes.length);
-            if (length == 0) {
-                return 0;
-            }
-            if (remaining == 0) {
-                return -1;
-            }
-            int count = source.read(bytes, offset, Math.min(length, remaining));
-            // Some Flink runtime views return zero, rather than -1, at exhaustion.
+    private static void readPayload(
+            DataInputView source, byte[] bytes, int offset, int end, int size) throws IOException {
+        while (offset < end) {
+            int count = source.read(bytes, offset, end - offset);
             if (count <= 0) {
-                throw new EOFException(
-                        "Truncated Protobuf payload; missing " + remaining + " bytes");
+                throw truncated(size - offset);
             }
-            remaining -= count;
-            return count;
+            offset += count;
         }
+    }
 
-        /** Reads the complete bounded payload into the start of the supplied array. */
-        private void readPayload(byte[] bytes) throws IOException {
-            int offset = 0;
-            while (remaining > 0) {
-                offset += read(bytes, offset, remaining);
+    /**
+     * Reads a payload above the scratch size through the scratch array into a new array, which
+     * grows only as bytes arrive and which the source never receives.
+     */
+    private byte[] readLargePayload(DataInputView source, int size) throws IOException {
+        byte[] chunk = scratch();
+        byte[] payload = new byte[Math.min(size, LARGE_READ_INITIAL_SIZE)];
+        int filled = 0;
+        while (filled < size) {
+            if (filled == payload.length) {
+                payload = Arrays.copyOf(payload, (int) Math.min(size, 2L * filled));
             }
+            int count = source.read(chunk, 0, Math.min(chunk.length, payload.length - filled));
+            if (count <= 0) {
+                throw truncated(size - filled);
+            }
+            System.arraycopy(chunk, 0, payload, filled, count);
+            filled += count;
         }
+        return payload;
+    }
+
+    /**
+     * Reports premature exhaustion, which some Flink runtime views signal by reading zero bytes.
+     */
+    private static EOFException truncated(int missing) {
+        return new EOFException("Truncated Protobuf payload; missing " + missing + " bytes");
     }
 }

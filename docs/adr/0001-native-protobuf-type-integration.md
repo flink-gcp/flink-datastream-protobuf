@@ -27,6 +27,7 @@ limitations under the License.
 - Frame buffering amended: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Sizing traversal amended: 2026-10-19, [issue #43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43)
 - Generated sizes for bounded types amended: 2026-10-22, [issue #112](https://github.com/flink-gcp/flink-datastream-protobuf/issues/112)
+- Large-frame reads amended: 2026-10-25, [issue #113](https://github.com/flink-gcp/flink-datastream-protobuf/issues/113)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -148,7 +149,7 @@ The length excludes its own four bytes; zero is valid for a message whose valid 
 There is no null sentinel, per-record class name, per-record version, or Protobuf varint-delimited outer envelope.
 Null and uninitialized messages are invalid inputs.
 Reject them with `IOException` before writing the length prefix.
-Do not allocate a payload byte array for each record.
+Do not allocate a payload byte array for each record written.
 A payload of at most 4 KiB may be encoded into one 4 KiB array that the serializer instance retains and reuses, then written after its exact size is confirmed; larger payloads are written incrementally to the target.
 Enable `CodedOutputStream.useDeterministicSerialization()` only when configured.
 Framing version 1 identifies this representation in the snapshot, independently of the snapshot format version.
@@ -157,6 +158,11 @@ Check serialized size so that integer overflow cannot accept a value, and enforc
 The write-side depth check must match the configured parser budget, including nested message/map-entry payloads and unknown groups, so an accepted value is not written beyond its own reader's limits.
 On reading, reject negative or excessive lengths before allocating storage from the length, use a stream bounded to that frame, and require complete valid parsing within it.
 A payload of at most 4 KiB may be read completely into the same retained array and parsed without aliasing, so decoded values never refer to reused storage.
+A larger payload may be read completely into a new array of exactly its length and parsed with aliasing enabled, through a decoder created from `UnsafeByteOperations.unsafeWrap`, because the public array factory treats its input as mutable and never aliases `ByteString` reads from it; that class is `@ExperimentalApi` in Protobuf 3.25.9 and not in 4.33.6.
+The payload is copied into that array through the retained 4 KiB array, so the source never receives an array that decoded values may share; like Protobuf's stream decoder, this keeps decoded values intact even when a source keeps or later writes the arrays it filled.
+The array starts at no more than 1 MiB and doubles as bytes arrive, so the arrays allocated for a corrupt prefix within the size limit total at most 1 MiB or less than four times the bytes present, and the read fails with `IOException` when the input ends; only bytes that arrive drive growth, and a growth step that the heap or the JVM's array-size limit cannot satisfy still fails with `OutOfMemoryError`.
+The serializer never writes to, reuses, or exposes that array, so values that the runtime decodes as `ByteString`, including `bytes` fields, proto2 strings, and unknown length-delimited fields, may share it instead of being copied.
+Any such value that an application keeps, including one taken from the message, keeps the whole array reachable.
 A parser buffer must not consume a subsequent frame; `CodedInputStream.pushLimit` alone does not bound reads from the underlying stream.
 Negative lengths, oversized/deep messages, malformed payloads, and truncated frames fail with `IOException` identifying the condition.
 No resynchronization after malformed input is promised.
@@ -422,5 +428,11 @@ Fingerprint equality alone is insufficient in either development milestone.
 
 Caching a method handle for each generated getter would make the remaining traversal cheaper, but it requires reproducing protoc's Java accessor names or reaching private accessor tables.
 The generated-size path removes reflective reads of scalar fields for bounded types without either, and recursive types keep the traversal.
+
+Streaming a payload above 4 KiB through Protobuf's coded-input buffer, as before issue #113, needs no payload-sized array, but the pinned runtimes' stream decoder copies a `bytes` value that does not fit in that buffer twice: into one array and then into its `ByteString`, or, for an unbuffered remainder of at least 4 KiB that the stream does not report as available, into chunks and then into one array.
+Reading into a new array and parsing it without aliasing still copies each value once after the frame copy.
+Reading directly into the final array would avoid one copy of the payload, but it would hand the source an array that decoded values share.
+Allocating the declared length before reading would avoid the growth copies above 1 MiB, but a corrupt prefix could then allocate up to the size limit and fail with `OutOfMemoryError` instead of `IOException`.
+Aliasing removes the value copies at the cost of retaining the frame array through decoded values; the [large-read report](../validation/serializer-large-read.md) measures aliasing against streaming.
 
 Cross-Flink-version savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.
