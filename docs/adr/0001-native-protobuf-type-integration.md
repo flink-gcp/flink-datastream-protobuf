@@ -102,9 +102,18 @@ DynamicMessage is deferred to 0.3.0; lite runtime, extension-registry support, T
 At `of` or `build`, require a public, concrete full-runtime message class using the supported `GeneratedMessageV3` or `GeneratedMessage` hierarchy.
 Require its public static `getDefaultInstance()` to return that concrete class, with a full descriptor and a parser for that message.
 The factory accepts only a concrete `Class<?>` satisfying the same checks, not interfaces, abstract bases, builders, parameterized types, DynamicMessage, or lite classes.
-Reject a payload message graph containing extension declarations, extension ranges, or MessageSet wire format, visiting referenced message types with cycle detection.
+Require every message type reachable from the payload, including types declared in imported files, to be declared in a file with `syntax = "proto3"`, visiting referenced message types with cycle detection.
+Reject a reached message declared in a proto2 file, including `google/protobuf/descriptor.proto`, whose syntax protoc leaves unset, or in an editions file.
+Proto3 cannot declare extension ranges or MessageSet wire format, so this also excludes payloads that depend on them; also reject a payload message that declares extensions, which proto3 permits for custom options.
 Imports used only for descriptor options do not by themselves make the payload extension-dependent; retain their descriptors and option content in the snapshot.
 Invalid classes or settings fail with `IllegalArgumentException` identifying the type or setting and the unsupported condition, before returning type information.
+
+Proto3 values have no required fields, declared groups, closed enums, explicit defaults, or strings without UTF-8 validation, so the serializer, its sizing, and the schema evaluator do not handle them.
+Unknown groups still reach proto3 values from the wire, and the size and depth checks below keep covering them.
+Development builds through 0.1.0 accepted proto2 payloads.
+Constructing type information for a payload type whose graph reaches a proto2 message now fails, so state written for it is restored only by a new schema with a proto3 root in which no path of fields that both schemas keep reaches a message that the saved schema declares in a proto2 file.
+Removing a field with a reserved number cuts the paths through it; moving a message on a retained path, or a proto2 root, to proto3 changes its declaring file's syntax, which the evaluator rejects, so an application that keeps such a path must start with fresh state or replay its input.
+The retained 0.1.0 development baselines use proto3 types only.
 
 The 0.1.0 acceptance surface includes Struct, Value, ListValue, Any, Timestamp, Duration, Empty, FieldMask, scalar wrappers, and generated OpenTelemetry AnyValue, ArrayValue, KeyValueList, and KeyValue, as tracked in [issue #18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18).
 Changing Struct keys or selecting a different AnyValue variant changes data within the declared schema.
@@ -147,7 +156,7 @@ Serializer equality is stricter than restore compatibility: unequal configuratio
 Write a four-byte, big-endian signed integer containing a nonnegative payload length, followed by exactly that many Protobuf wire bytes.
 The length excludes its own four bytes; zero is valid for a message whose valid wire representation is empty.
 There is no null sentinel, per-record class name, per-record version, or Protobuf varint-delimited outer envelope.
-Null and uninitialized messages are invalid inputs.
+Null messages are invalid inputs.
 Reject them with `IOException` before writing the length prefix.
 Do not allocate a payload byte array for each record written.
 A payload of at most 4 KiB may be encoded into one 4 KiB array that the serializer instance retains and reuses, then written after its exact size is confirmed; larger payloads are written incrementally to the target.
@@ -161,7 +170,7 @@ A payload of at most 4 KiB may be read completely into the same retained array a
 A larger payload may be read completely into a new array of exactly its length and parsed with aliasing enabled, through a decoder created from `UnsafeByteOperations.unsafeWrap`, because the public array factory treats its input as mutable and never aliases `ByteString` reads from it; that class is `@ExperimentalApi` in Protobuf 3.25.9 and not in 4.33.6.
 The payload is copied into that array through the retained 4 KiB array, so the source never receives an array that decoded values may share; like Protobuf's stream decoder, this keeps decoded values intact even when a source keeps or later writes the arrays it filled.
 The array starts at no more than 1 MiB and doubles as bytes arrive, so the arrays allocated for a corrupt prefix within the size limit total at most 1 MiB or less than four times the bytes present, and the read fails with `IOException` when the input ends; only bytes that arrive drive growth, and a growth step that the heap or the JVM's array-size limit cannot satisfy still fails with `OutOfMemoryError`.
-The serializer never writes to, reuses, or exposes that array, so values that the runtime decodes as `ByteString`, including `bytes` fields, proto2 strings, and unknown length-delimited fields, may share it instead of being copied.
+The serializer never writes to, reuses, or exposes that array, so values that the runtime decodes as `ByteString`, including `bytes` fields and unknown length-delimited fields, may share it instead of being copied.
 Any such value that an application keeps, including one taken from the message, keeps the whole array reachable.
 A parser buffer must not consume a subsequent frame; `CodedInputStream.pushLimit` alone does not bound reads from the underlying stream.
 Negative lengths, oversized/deep messages, malformed payloads, and truncated frames fail with `IOException` identifying the condition.
@@ -184,21 +193,15 @@ A shared child is counted at every occurrence and its depth is checked at each p
 Within one call, a subtree whose sizing examined more than a small constant amount of content is summarized by identity, so a large shared subgraph is not traversed again.
 A smaller shared subtree is sized again at each occurrence, which bounds that repeated work by the constant.
 The traversal does not trust `MessageLite.getSerializedSize()`, whose documented result can overflow for messages larger than `Integer.MAX_VALUE`, including wrapping to a small positive value; the generated-size path below trusts it only where the scratch encoding confirms it.
-Scalar sizing follows the wire encoding, including packed fields, map entries, UTF-8 strings, and retained proto2 string bytes.
-Ordinary values need one output encoding pass.
-For a proto2 string without UTF-8 validation, a decoded replacement character can hide retained invalid bytes, so the reflected String does not establish the wire length.
-The implementation computes a lower size bound and validates the entire graph, then counts the root's generated wire output through a bounded sink before writing the actual frame.
-That bound includes one byte for each UTF-16 unit of such a string, because the generated writer can size every string occurrence before the sink sees a byte, even when the occurrences share one String.
-This uses public runtime APIs and avoids reproducing protoc's Java getter naming rules or accessing private raw-field methods.
-The counting sink retains no payload bytes and uses one additional fixed-size encoder buffer; it counts the root once even when multiple nested strings are ambiguous.
+Scalar sizing follows the wire encoding, including packed fields, map entries, and UTF-8 strings.
+The calculation reads fields through public runtime reflection, so it does not reproduce protoc's Java getter naming rules or access private fields.
 Generated field accessors already cache their reflective methods in Protobuf's accessor table; the library does not maintain a second method cache.
-The dedicated calculation requires differential tests against both supported runtimes; performance measurements must distinguish ordinary values from the counting path.
+The dedicated calculation requires differential tests against both supported runtimes.
 
 A payload type whose reachable type graph is acyclic has a static height: the greatest parser depth that a value can reach without unknown groups.
 When that height is within the recursion limit, the serializer reads the value's message fields to find unknown groups and values reporting another descriptor, and its repeated strings and string-valued maps to bound their wire size from below; without either and within that bound, it uses the runtime's memoized `getSerializedSize()` if the result is at most 4 KiB and the size limit.
 Until one of the runtime's `int` sums first exceeds `Integer.MAX_VALUE`, each addend is the exact length that the generated writer emits, so a reported size that wrapped implies at least 2 GiB of output.
 Encoding such a value into the 4 KiB array fails before any frame byte reaches the target, and the serializer then runs the traversal, which reports the exceeded limit.
-Required fields are checked by generated `isInitialized()` on this path, as for every value after sizing; when that check fails, the traversal reports the first missing field.
 The traversal decides instead for a recursive type or one whose static height exceeds the recursion limit, and for a value with unknown groups, a value reporting another descriptor, more than 64 counted nested values, repeated strings or string-valued maps whose bound exceeds 4 KiB or the size limit, a generated size above 4 KiB or the size limit, or a runtime failure to compute the size.
 The runtime sizes every distinct value in full, including strings, lists, and unknown fields that values share, and measures a String again at each repeated or map occurrence; the count and the string bound limit that repeated work before the traversal rejects an oversized value.
 Field reads on this path use the same reflective accessors as the traversal, so it relies on no protoc getter names; the library still keeps no method cache of its own.
@@ -289,7 +292,7 @@ Unchanged-schema acceptance is about reading values; direct Protobuf keys remain
 The separate pure evaluator is added in 0.2.0 and tested with old/new descriptor pairs.
 Evaluate compatibility in the direction of restoring saved bytes with the new serializer.
 Accept supported wire-safe field additions, removals/reservations, and enum additions, with recursive checks of referenced types.
-Reject message or Java class renames, detected field-number reuse, required-field additions, incompatible type/cardinality changes, and moves into oneof.
+Reject message or Java class renames, detected field-number reuse, incompatible type/cardinality changes, and moves into oneof.
 Treat numeric type changes classed as conditionally safe by Protobuf conservatively as incompatible; parsing alone does not establish preservation of values.
 Descriptor pairs cannot prove that a reused number with an indistinguishable declaration still has the same business meaning, so reserving removed numbers remains an application schema obligation.
 Reject changes outside the evaluator's explicitly supported rules and apply the directional setting rules above; message keys remain unsupported.
@@ -316,13 +319,13 @@ Within the reached declarations, everything must match except the following supp
 
 | Supported difference | Condition |
 |---|---|
-| Field addition | The number is not a saved field, reservation, or extension number, the name is not a saved field's name or reservation, and the field is not required |
+| Field addition | The number is not a saved field or reservation, and the name is not a saved field's name or reservation |
 | Field removal | The new message reserves the removed number; reserving the name is optional |
 | Added reservation | Saved number and name reservations remain covered, even if ranges are split or merged |
 | Enum value addition | The name and number are new and unreserved, the number is not an alias of a saved value, the first declared value stays first, and saved values keep their relative order |
 | Oneof addition or extension | Every member of a new oneof, and every new member of an existing oneof, is an added field |
 
-Every other difference in reached declarations is incompatible, including renames, renumbering, type or cardinality changes, presence changes, moves into, out of, or between oneofs, defaults, JSON names, options, reordering of retained fields, oneofs, or enum values, and unknown descriptor content.
+Every other difference in reached declarations is incompatible, including renames, renumbering, type or cardinality changes, presence changes, moves into, out of, or between oneofs, JSON names, options, reordering of retained fields, oneofs, or enum values, and unknown descriptor content.
 Declaring-file syntax, edition, package, options, and unknown content must also match, because they determine inherited features such as presence, packing, enum openness, and UTF-8 validation.
 A type that moves to another file or enclosing scope is rejected even when its full name is unchanged.
 The descriptor set's own unknown content must be equal.
@@ -434,5 +437,11 @@ Reading into a new array and parsing it without aliasing still copies each value
 Reading directly into the final array would avoid one copy of the payload, but it would hand the source an array that decoded values share.
 Allocating the declared length before reading would avoid the growth copies above 1 MiB, but a corrupt prefix could then allocate up to the size limit and fail with `OutOfMemoryError` instead of `IOException`.
 Aliasing removes the value copies at the cost of retaining the frame array through decoded values; the [large-read report](../validation/serializer-large-read.md) measures aliasing against streaming.
+
+Supporting proto2 payloads, as development builds through 0.1.0 did, keeps required fields, declared groups, closed enums, explicit defaults, and strings without UTF-8 validation in the serializer, its sizing, and the schema evaluator.
+Proto2 also adds unknown fields that the parser reinterprets under a declared field, which the write-side depth check of [issue #120](https://github.com/flink-gcp/flink-datastream-protobuf/issues/120) would otherwise have to cover: parsing keeps a closed-enum map entry with an unknown value as an unknown field under the map's number, and an unknown group can match a declared group field.
+The maintainer chose to drop proto2 because no new application is expected to define its payload in it.
+Protobuf documents [editions](https://protobuf.dev/editions/overview/) as the successor to both proto2 and proto3, and editions files can express the same proto2 features.
+Accepting only editions files whose resolved features match proto3 would keep a migrated proto3 file usable, but it adds a feature-resolution rule that the maintainer declined; an application that converts a proto3 file to editions must keep it in proto3 to use this library.
 
 Cross-Flink-version savepoint fixtures, lite messages, extensions, renamed types, and a Kryo adapter are later design work, not current compatibility claims.

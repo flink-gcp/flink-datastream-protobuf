@@ -25,9 +25,10 @@ import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Message;
 import io.github.flink.gcp.protobuf.generated.ExtensionDeclaration;
 import io.github.flink.gcp.protobuf.generated.ExtensionHolder;
-import io.github.flink.gcp.protobuf.generated.ExtensionTarget;
-import io.github.flink.gcp.protobuf.generated.MessageSetRoot;
 import io.github.flink.gcp.protobuf.generated.OptionMessage;
+import io.github.flink.gcp.protobuf.generated.Proto2Message;
+import io.github.flink.gcp.protobuf.generated.ReachesDescriptor;
+import io.github.flink.gcp.protobuf.generated.ReachesProto2;
 import io.github.flink.gcp.protobuf.generated.ScalarMessage;
 import org.junit.jupiter.api.Test;
 
@@ -70,10 +71,11 @@ class ProtobufTypeInfoFactoryTest {
                         ProtobufTypeSerializerTest.WrongDefaultReturn.class,
                         ProtobufTypeSerializerTest.NullDefault.class,
                         ProtobufTypeSerializerTest.WrongParser.class,
-                        ExtensionTarget.class,
-                        ExtensionHolder.class,
+                        Proto2Message.class,
+                        ReachesProto2.class,
+                        ReachesDescriptor.class,
                         ExtensionDeclaration.class,
-                        MessageSetRoot.class)) {
+                        ExtensionHolder.class)) {
             assertThatThrownBy(() -> factory.createTypeInfo(type, Map.of()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(type.getName());

@@ -65,3 +65,12 @@ message RecursiveMessage {
   bytes payload = 5;
   repeated bytes chunks = 6;
 }
+
+// The full runtime parses lazy message fields eagerly.
+message LazyMessage {
+  LazyValue child = 1 [lazy = true];
+  LazyValue unchecked = 2 [unverified_lazy = true];
+}
+message LazyValue {
+  string value = 1;
+}

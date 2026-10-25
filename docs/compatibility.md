@@ -30,6 +30,11 @@ Milestone upgrade checks use fixed development artifacts and fixtures with exact
 
 The current source version is `0.2.0-SNAPSHOT`, a development build that restores supported schema changes.
 The 0.1.0 milestone accepted unchanged schemas only.
+It also accepted payload types whose graphs reach proto2 messages, which current builds reject.
+Restore compares the messages reached through fields that both schemas keep, starting at the root, together with their enclosing messages and declaring files.
+State that 0.1.0 wrote for such a type is therefore restored only when the new schema has a proto3 root and no such retained path still reaches a message that the saved schema declares in a proto2 file; removing a field and reserving its number cuts the paths through it, and the removed values remain unknown fields.
+Moving a message on a retained path, or a proto2 root, to proto3 changes its declaring file's syntax, which restore rejects, so an application that keeps such a path must start with fresh state or replay its input.
+The [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) uses proto3 types only.
 Compatibility between arbitrary development builds is not implied.
 Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by the tests that [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) adds for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks; see [verified coverage](#verified-coverage-and-upgrade-procedure) for the state that the current tests restore.
 The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
@@ -79,7 +84,7 @@ They describe the forward direction: the saved state was written with the old sc
 | Schema change | Protobuf binary-format rule | Current library state restore |
 |---|---|---|
 | Complete normalized schema unchanged | Same schema | Accepted |
-| Add a proto3 field with a fresh number | Wire-safe; new code must handle the field being absent in old data | Accepted when neither the number nor the name is a saved field or reservation, the number is not a saved extension number, and the field is not required |
+| Add a proto3 field with a fresh number | Wire-safe; new code must handle the field being absent in old data | Accepted when neither the number nor the name is a saved field or reservation |
 | Remove a field and reserve its number | Wire-safe when the number is not reused | Accepted; a removal without reserving the number is rejected |
 | Add an enum value | Wire-safe; application source code may still need changes | Accepted when the name and number are new and unreserved, the number is not an alias of a saved value, the first value stays first, and saved values keep their order |
 | Remove an enum value | Saved values may carry the removed number | Rejected, even when the number is reserved |
@@ -107,7 +112,7 @@ The [schema-evolution test](../src/test/java/io/github/flink/gcp/protobuf/Protob
 ## Java runtime version updates
 
 For existing generated Java code, upstream defines the following runtime compatibility window.
-Version numbers here refer to Java Protobuf releases, independently of `proto2`/`proto3` syntax.
+Version numbers here refer to Java Protobuf releases, independently of the `.proto` syntax, which must be `proto3` for this library.
 
 | Runtime update with existing generated code | Upstream guarantee |
 |---|---|

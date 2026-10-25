@@ -57,7 +57,7 @@ These limits constrain accepted inputs, not total heap usage or stack capacity.
 ## Memory of large decoded messages
 
 Aliasing of large payloads is enabled by default, and the current serializer always uses it.
-A payload above 4 KiB is read into its own array, and decoded `bytes` fields, unknown length-delimited fields, and proto2 strings without UTF-8 checking may share that array instead of copying it.
+A payload above 4 KiB is read into its own array, and decoded `bytes` fields and unknown length-delimited fields may share that array instead of copying it.
 [#123](https://github.com/flink-gcp/flink-datastream-protobuf/issues/123) tracks a planned setting to disable it, with aliasing still enabled by default.
 Payloads of at most 4 KiB never share storage, and aliasing changes neither the wire bytes, state compatibility, nor decoded values.
 
@@ -142,7 +142,9 @@ The [common-types guide](common-types.md) covers generated Google Struct/Value/L
 Struct keys and AnyValue variants are data within a fixed schema; they do not require DynamicMessage.
 Any payload bytes remain opaque, without automatic unpacking or schema validation.
 
-Current construction rejects DynamicMessage, lite messages, and payload graphs requiring extensions or MessageSet.
+Every message type that a payload reaches, including types in imported files, must be declared in a file with `syntax = "proto3"`.
+Construction rejects a payload graph that reaches a message declared in a proto2 or editions file, naming the first such message and its file; this includes `google/protobuf/descriptor.proto` types, while the well-known types such as Struct, Any, and Timestamp are proto3.
+Construction also rejects DynamicMessage, lite messages, and payload messages that declare extensions.
 DynamicMessage support is planned for the 0.3.0 milestone.
 The library concerns internal DataStream transport and managed values, not connector boundary encoders, ProtoJSON, OTLP export, or the separate Flink Table/SQL Protobuf format.
 

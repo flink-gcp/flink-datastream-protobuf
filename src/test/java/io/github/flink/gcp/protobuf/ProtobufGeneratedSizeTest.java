@@ -18,18 +18,19 @@ package io.github.flink.gcp.protobuf;
 
 import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 
+import com.google.protobuf.AbstractMessage;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.DescriptorProtos.SourceCodeInfo.Location;
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
+import com.google.protobuf.Parser;
 import com.google.protobuf.UnknownFieldSet;
 import io.github.flink.gcp.protobuf.generated.BoundedBranch;
 import io.github.flink.gcp.protobuf.generated.BoundedLeaf;
-import io.github.flink.gcp.protobuf.generated.BoundedLegacy;
 import io.github.flink.gcp.protobuf.generated.BoundedMessage;
-import io.github.flink.gcp.protobuf.generated.BoundedRequired;
-import io.github.flink.gcp.protobuf.generated.ReachesRequired;
-import io.github.flink.gcp.protobuf.generated.RequiredMessage;
+import io.github.flink.gcp.protobuf.generated.ReachesRecursive;
+import io.github.flink.gcp.protobuf.generated.RecursiveMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -38,6 +39,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.TreeSet;
 
@@ -65,14 +67,6 @@ class ProtobufGeneratedSizeTest {
                         .setLeaf(BoundedLeaf.newBuilder().setName("\udc00b"))
                         .build();
         assertBoundaries(BoundedMessage.class, surrogate, random);
-    }
-
-    @Test
-    void boundedProto2GraphsKeepTheTraversalsDecisions() throws Exception {
-        Random random = new Random(1120);
-        for (int iteration = 0; iteration < 150; iteration++) {
-            assertBoundaries(BoundedLegacy.class, legacy(random), random);
-        }
     }
 
     @Test
@@ -137,16 +131,6 @@ class ProtobufGeneratedSizeTest {
             assertThatThrownBy(() -> sizer(BoundedMessage.class, MAX_SIZE, 100).check(value))
                     .hasMessageContaining("maxMessageSize");
         }
-        // A replacement character can hide retained proto2 bytes, so the traversal counts the
-        // root's output, whose writer first sizes packed fields and every string occurrence.
-        String ambiguous = "\ufffd" + "x".repeat((1 << 20) - 1);
-        Location.Builder location = Location.newBuilder().addPath(1);
-        for (int i = 0; i < 1 << 18; i++) {
-            location.addLeadingDetachedComments(ambiguous);
-        }
-        Location raw = location.build();
-        assertThatThrownBy(() -> sizer(Location.class, MAX_SIZE, 100).check(raw))
-                .hasMessageContaining("maxMessageSize");
     }
 
     @Test
@@ -182,31 +166,19 @@ class ProtobufGeneratedSizeTest {
 
     @Test
     void onlyStaticallyBoundedValuesWithoutUnknownGroupsUseTheGeneratedSize() throws Exception {
-        // The generated size omits the required-field check that serialization performs later,
-        // so a missing field shows which path decided.
-        BoundedRequired missing = BoundedRequired.newBuilder().buildPartial();
-        BoundedLegacy grouped =
-                BoundedLegacy.newBuilder()
-                        .setId("root")
-                        .setItem(BoundedLegacy.Item.newBuilder().setValue(missing).buildPartial())
-                        .buildPartial();
-        assertGenerated(BoundedLegacy.class, grouped, 2);
-        // Serialization still names the missing field when the generated size decided.
-        assertThatThrownBy(
-                        () ->
-                                new ProtobufTypeSerializer<>(BoundedLegacy.class)
-                                        .serialize(
-                                                grouped,
-                                                new DataOutputViewStreamWrapper(
-                                                        new ByteArrayOutputStream())))
-                .hasMessage(
-                        "Uninitialized message: missing flink.protobuf.serializer.BoundedRequired.value");
-        // The group's value reaches the static height 2, so a lower limit needs a traversal even
-        // for a value of depth 1.
-        BoundedLegacy shallow =
-                BoundedLegacy.newBuilder().setId("root").setChild(missing).buildPartial();
-        assertGenerated(BoundedLegacy.class, shallow, 2);
-        assertTraversed(BoundedLegacy.class, shallow, 1);
+        // A map value under the branch reaches the static height 3.
+        BoundedLeaf leaf = BoundedLeaf.newBuilder().setName("leaf").build();
+        BoundedMessage nested =
+                BoundedMessage.newBuilder()
+                        .setId(1)
+                        .setLeaf(leaf)
+                        .setBranch(BoundedBranch.newBuilder().putNamed("key", leaf))
+                        .build();
+        assertGenerated(BoundedMessage.class, nested, MAX_SIZE, 3);
+        // A lower limit needs a traversal even for a value of depth 0.
+        BoundedMessage shallow = BoundedMessage.newBuilder().setId(1).build();
+        assertGenerated(BoundedMessage.class, shallow, MAX_SIZE, 3);
+        assertTraversed(BoundedMessage.class, shallow, MAX_SIZE, 2);
 
         UnknownFieldSet values =
                 UnknownFieldSet.newBuilder()
@@ -227,42 +199,66 @@ class ProtobufGeneratedSizeTest {
                                         .addGroup(UnknownFieldSet.getDefaultInstance())
                                         .build())
                         .build();
-        BoundedRequired opaque = missing.toBuilder().setUnknownFields(values).buildPartial();
-        BoundedRequired nested = missing.toBuilder().setUnknownFields(group).buildPartial();
-        assertGenerated(BoundedLegacy.class, with(grouped, opaque, 0), 2);
+        BoundedLeaf opaque = leaf.toBuilder().setUnknownFields(values).build();
+        BoundedLeaf grouped = leaf.toBuilder().setUnknownFields(group).build();
+        assertGenerated(
+                BoundedMessage.class, nested.toBuilder().setLeaf(opaque).build(), MAX_SIZE, 100);
         // A singular leaf, a repeated element, and the root are each checked for groups.
-        assertTraversed(BoundedLegacy.class, with(grouped, nested, 0), 100);
-        assertTraversed(BoundedLegacy.class, with(grouped, missing, 1, nested), 100);
         assertTraversed(
-                BoundedLegacy.class,
-                grouped.toBuilder().setUnknownFields(group).buildPartial(),
+                BoundedMessage.class, nested.toBuilder().setLeaf(grouped).build(), MAX_SIZE, 100);
+        assertTraversed(
+                BoundedMessage.class,
+                nested.toBuilder()
+                        .addBranches(BoundedBranch.getDefaultInstance())
+                        .addBranches(BoundedBranch.newBuilder().addLeaves(grouped))
+                        .build(),
+                MAX_SIZE,
+                100);
+        assertTraversed(
+                BoundedMessage.class,
+                nested.toBuilder().setUnknownFields(group).build(),
+                MAX_SIZE,
                 100);
 
-        // The group, its value, and 62 elements reach the budget; one more element exceeds it.
-        int counted = ProtobufMessageSize.GENERATED_SIZE_BUDGET - 2;
-        assertGenerated(BoundedLegacy.class, with(grouped, missing, counted), 100);
-        assertTraversed(BoundedLegacy.class, with(grouped, missing, counted + 1), 100);
+        // Repeated elements, even default ones, count toward the budget; one more exceeds it.
+        BoundedMessage.Builder counted = BoundedMessage.newBuilder();
+        for (int i = 0; i < ProtobufMessageSize.GENERATED_SIZE_BUDGET; i++) {
+            counted.addBranches(BoundedBranch.getDefaultInstance());
+        }
+        assertGenerated(BoundedMessage.class, counted.build(), MAX_SIZE, 100);
+        counted.addBranches(BoundedBranch.getDefaultInstance());
+        assertTraversed(BoundedMessage.class, counted.build(), MAX_SIZE, 100);
+        // A singular value other than the default instance counts too.
+        BoundedMessage.Builder singular = BoundedMessage.newBuilder().setLeaf(leaf);
+        for (int i = 1; i < ProtobufMessageSize.GENERATED_SIZE_BUDGET; i++) {
+            singular.addBranches(BoundedBranch.getDefaultInstance());
+        }
+        assertGenerated(BoundedMessage.class, singular.build(), MAX_SIZE, 100);
+        // Map entries without message fields are not visited, so the branch counts only itself.
+        singular.setBranch(BoundedBranch.newBuilder().putLabels(1, "label"));
+        assertTraversed(BoundedMessage.class, singular.build(), MAX_SIZE, 100);
 
         // A type reaching a recursive type is traversed even when its value is shallow.
         assertTraversed(
-                ReachesRequired.class,
-                ReachesRequired.newBuilder()
-                        .setNode(RequiredMessage.newBuilder().buildPartial())
-                        .buildPartial(),
+                ReachesRecursive.class,
+                ReachesRecursive.newBuilder()
+                        .setNode(RecursiveMessage.getDefaultInstance())
+                        .build(),
+                MAX_SIZE,
                 100);
         // A value reporting another descriptor than its layout's is traversed with its own.
-        assertTraversed(BoundedLegacy.class, RequiredMessage.newBuilder().buildPartial(), 100);
-        // Generated sizes up to the scratch size and the size limit decide; larger ones do not.
+        assertTraversed(BoundedMessage.class, leaf, MAX_SIZE, 100);
+        // Reported generated sizes up to the scratch size and the size limit decide; larger ones
+        // do not.
         int scratch = ProtobufTypeSerializer.SCRATCH_SIZE;
-        // Raw bytes after a one-byte tag and a two-byte length fill the rest of the scratch size.
-        BoundedLegacy full = padded(grouped, scratch - grouped.getSerializedSize() - 3);
-        BoundedLegacy over = padded(grouped, scratch - grouped.getSerializedSize() - 2);
-        assertThat(full.getSerializedSize()).isEqualTo(scratch);
-        assertThat(over.getSerializedSize()).isEqualTo(scratch + 1);
-        assertGenerated(BoundedLegacy.class, full, 100);
-        assertTraversed(BoundedLegacy.class, over, 100);
-        assertThatThrownBy(() -> sizer(BoundedLegacy.class, scratch - 1, 100).check(full))
-                .hasMessageContaining("missing");
+        // Payload bytes after a one-byte tag and a two-byte length fill the rest of the size.
+        BoundedMessage full = padded(shallow, scratch - shallow.getSerializedSize() - 4);
+        BoundedMessage over = padded(shallow, scratch - shallow.getSerializedSize() - 3);
+        assertThat(full.getSerializedSize()).isEqualTo(scratch - 1);
+        assertThat(over.getSerializedSize()).isEqualTo(scratch);
+        assertGenerated(BoundedMessage.class, full, MAX_SIZE, 100);
+        assertTraversed(BoundedMessage.class, over, MAX_SIZE, 100);
+        assertTraversed(BoundedMessage.class, full, scratch - 1, 100);
     }
 
     /** Compares decisions at size limits around the value and depth limits around its type. */
@@ -286,7 +282,7 @@ class ProtobufGeneratedSizeTest {
                         type.cast(
                                 ProtobufMessageType.resolve(type)
                                         .parser
-                                        .parsePartialFrom(value.toByteString()));
+                                        .parseFrom(value.toByteString()));
                 assertSameDecision(type, fresh, settings, "fresh");
             }
         }
@@ -301,11 +297,10 @@ class ProtobufGeneratedSizeTest {
             throws IOException {
         ProtobufMessageSize reference =
                 new ProtobufMessageSize(settings, ProtobufMessageType.resolve(type).layout);
-        String failure;
+        String failure = null;
         int size = -1;
         try {
             size = reference.traverse(value);
-            failure = value.isInitialized() ? null : "Uninitialized message";
         } catch (IOException e) {
             failure = e.getMessage();
         }
@@ -341,21 +336,24 @@ class ProtobufGeneratedSizeTest {
         return bytes.toByteArray();
     }
 
-    private static <T extends Message> void assertGenerated(
-            Class<T> type, T value, int recursionLimit) throws IOException {
-        assertThat(sizer(type, MAX_SIZE, recursionLimit).check(value))
+    /** Expects the generated size, which a marked value reports one byte larger. */
+    private static void assertGenerated(
+            Class<? extends Message> type, Message value, int maxSize, int recursionLimit)
+            throws IOException {
+        assertThat(sizer(type, maxSize, recursionLimit).check(new MarkedSize(value)))
+                .isEqualTo(value.getSerializedSize() + 1);
+    }
+
+    /** Expects the traversal's exact size, which a marked value's reported size does not alter. */
+    private static void assertTraversed(
+            Class<? extends Message> type, Message value, int maxSize, int recursionLimit)
+            throws IOException {
+        assertThat(sizer(type, maxSize, recursionLimit).check(new MarkedSize(value)))
                 .isEqualTo(value.getSerializedSize());
     }
 
-    private static <T extends Message> void assertTraversed(
-            Class<? extends Message> type, T value, int recursionLimit) {
-        assertThatThrownBy(() -> sizer(type, MAX_SIZE, recursionLimit).check(value))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("missing");
-    }
-
-    private static BoundedLegacy padded(BoundedLegacy value, int length) {
-        return value.toBuilder().setRawBytes(ByteString.copyFrom(new byte[length])).buildPartial();
+    private static BoundedMessage padded(BoundedMessage value, int length) {
+        return value.toBuilder().setPayload(ByteString.copyFrom(new byte[length])).build();
     }
 
     /** Returns unknown fields holding groups nested to the given depth. */
@@ -370,22 +368,6 @@ class ProtobufGeneratedSizeTest {
                             .build();
         }
         return result;
-    }
-
-    /** Adds repeated children to a value, optionally followed by one final child. */
-    private static BoundedLegacy with(
-            BoundedLegacy value, BoundedRequired child, int count, BoundedRequired... last) {
-        BoundedLegacy.Builder builder = value.toBuilder();
-        if (count == 0 && last.length == 0) {
-            return builder.setChild(child).buildPartial();
-        }
-        for (int i = 0; i < count; i++) {
-            builder.addChildren(child);
-        }
-        for (BoundedRequired element : last) {
-            builder.addChildren(element);
-        }
-        return builder.buildPartial();
     }
 
     private static BoundedMessage message(
@@ -486,47 +468,6 @@ class ProtobufGeneratedSizeTest {
         return result;
     }
 
-    private static BoundedLegacy legacy(Random random) {
-        BoundedLegacy.Builder builder = BoundedLegacy.newBuilder();
-        if (random.nextInt(8) != 0) {
-            builder.setId(text(random));
-        }
-        if (random.nextBoolean()) {
-            builder.setRawBytes(raw(random));
-        }
-        if (random.nextBoolean()) {
-            builder.setChild(required(random));
-        }
-        for (int i = random.nextInt(4); i > 0; i--) {
-            builder.addChildren(required(random));
-        }
-        if (random.nextBoolean()) {
-            BoundedLegacy.Item.Builder item = BoundedLegacy.Item.newBuilder();
-            if (random.nextBoolean()) {
-                item.setLabelBytes(raw(random));
-            }
-            if (random.nextBoolean()) {
-                item.setValue(required(random));
-            }
-            unknown(random, item);
-            builder.setItem(item.buildPartial());
-        }
-        unknown(random, builder);
-        return builder.buildPartial();
-    }
-
-    private static BoundedRequired required(Random random) {
-        BoundedRequired.Builder builder = BoundedRequired.newBuilder();
-        if (random.nextInt(8) != 0) {
-            builder.setValue(random.nextInt());
-        }
-        if (random.nextBoolean()) {
-            builder.setRawBytes(raw(random));
-        }
-        unknown(random, builder);
-        return builder.buildPartial();
-    }
-
     /** Sometimes sets unknown fields, which hold groups nested one to three deep in some cases. */
     private static void unknown(Random random, Message.Builder builder) {
         if (random.nextInt(4) != 0) {
@@ -545,13 +486,6 @@ class ProtobufGeneratedSizeTest {
                 UnknownFieldSet.newBuilder()
                         .addField(1000 + random.nextInt(100), field.build())
                         .build());
-    }
-
-    /** Returns string bytes that are sometimes invalid UTF-8, which proto2 retains unchecked. */
-    private static ByteString raw(Random random) {
-        return random.nextInt(3) == 0
-                ? ByteString.copyFrom(new byte[] {'x', (byte) 0xff, (byte) 0xfe})
-                : ByteString.copyFromUtf8(text(random));
     }
 
     private static ByteString bytes(Random random, int bound) {
@@ -581,5 +515,77 @@ class ProtobufGeneratedSizeTest {
         return new ProtobufMessageSize(
                 new ProtobufSerializerSettings(false, maxSize, recursionLimit),
                 ProtobufMessageType.resolve(type).layout);
+    }
+
+    /**
+     * Delegates reflection to a generated value but reports a generated size one byte larger, so a
+     * check's result shows whether the generated size or the traversal decided.
+     */
+    private static final class MarkedSize extends AbstractMessage {
+        private final Message value;
+
+        private MarkedSize(Message value) {
+            this.value = value;
+        }
+
+        @Override
+        public Descriptor getDescriptorForType() {
+            return value.getDescriptorForType();
+        }
+
+        @Override
+        public Map<FieldDescriptor, Object> getAllFields() {
+            return value.getAllFields();
+        }
+
+        @Override
+        public boolean hasField(FieldDescriptor field) {
+            return value.hasField(field);
+        }
+
+        @Override
+        public Object getField(FieldDescriptor field) {
+            return value.getField(field);
+        }
+
+        @Override
+        public int getRepeatedFieldCount(FieldDescriptor field) {
+            return value.getRepeatedFieldCount(field);
+        }
+
+        @Override
+        public Object getRepeatedField(FieldDescriptor field, int index) {
+            return value.getRepeatedField(field, index);
+        }
+
+        @Override
+        public UnknownFieldSet getUnknownFields() {
+            return value.getUnknownFields();
+        }
+
+        @Override
+        public Message getDefaultInstanceForType() {
+            return value.getDefaultInstanceForType();
+        }
+
+        @Override
+        public Message.Builder newBuilderForType() {
+            return value.newBuilderForType();
+        }
+
+        @Override
+        public Message.Builder toBuilder() {
+            return value.toBuilder();
+        }
+
+        @Override
+        public Parser<? extends Message> getParserForType() {
+            return value.getParserForType();
+        }
+
+        @Override
+        public int getSerializedSize() {
+            return value.getSerializedSize() + 1;
+        }
     }
 }

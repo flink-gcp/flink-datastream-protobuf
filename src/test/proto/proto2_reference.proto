@@ -13,29 +13,18 @@
 // limitations under the License.
 
 
-syntax = "proto2";
+syntax = "proto3";
 package flink.protobuf.serializer;
 option java_package = "io.github.flink.gcp.protobuf.generated";
 option java_multiple_files = true;
 
-import "legacy.proto";
+import "google/protobuf/descriptor.proto";
+import "proto2.proto";
 
-// An acyclic graph of height 2 through a group, with required fields and unchecked strings.
-message BoundedLegacy {
-  required string id = 1;
-  optional string raw = 2;
-  optional BoundedRequired child = 3;
-  repeated BoundedRequired children = 4;
-  optional group Item = 5 {
-    optional string label = 6;
-    optional BoundedRequired value = 7;
-  }
+// Proto3 roots whose graphs reach messages declared in proto2 files.
+message ReachesProto2 {
+  Proto2Message value = 1;
 }
-message BoundedRequired {
-  required int32 value = 1;
-  optional string raw = 2;
-}
-// Not recursive itself, but its graph reaches a recursive type with required fields.
-message ReachesRequired {
-  optional RequiredMessage node = 1;
+message ReachesDescriptor {
+  google.protobuf.DescriptorProto value = 1;
 }
