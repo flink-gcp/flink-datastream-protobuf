@@ -18,6 +18,8 @@ package flink.protobuf.serializer;
 option java_package = "io.github.flink.gcp.protobuf.generated";
 option java_multiple_files = true;
 
+import "serializer.proto";
+
 // An acyclic graph of height 3: a map value under a branch is the deepest message.
 message BoundedLeaf {
   int32 code = 1;
@@ -45,4 +47,8 @@ message BoundedMessage {
   map<string, int64> counts = 10;
   oneof choice { BoundedLeaf selected = 11; string selected_text = 12; }
   repeated bytes chunks = 13;
+}
+// Not recursive itself, but its graph reaches a recursive type.
+message ReachesRecursive {
+  RecursiveMessage node = 1;
 }

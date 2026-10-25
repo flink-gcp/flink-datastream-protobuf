@@ -30,13 +30,11 @@ import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Overflow-safe wire sizing and parser-depth validation before the caller writes a frame.
@@ -52,8 +50,7 @@ import java.util.Objects;
  * the message class. Values whose subtree sizing examined more than a small constant amount of
  * content are summarized by identity for that invocation only, so shared children are counted at
  * every occurrence without re-traversing large subgraphs. Smaller values are sized again at each
- * occurrence. Ordinary fields are sized without encoding; ambiguous proto2 strings require counting
- * generated wire output because decoded values can hide retained invalid UTF-8.
+ * occurrence. Fields are sized without encoding them.
  *
  * <p>Traversal frames are reused by later checks on the same instance, which is confined to one
  * serializer and thread. Every check clears their record references before returning.
@@ -92,7 +89,6 @@ final class ProtobufMessageSize {
     private final int generatedLimit;
 
     private Frame[] frames = new Frame[0];
-    private boolean requiresWireSize;
 
     /**
      * Wire-size lower bound of the repeated strings visited by the current generated-size check.
@@ -126,8 +122,7 @@ final class ProtobufMessageSize {
         pending.add(result);
         for (int i = 0; i < pending.size(); i++) {
             for (Field field : pending.get(i).fields) {
-                if (field.type == FieldDescriptor.Type.MESSAGE
-                        || field.type == FieldDescriptor.Type.GROUP) {
+                if (field.type == FieldDescriptor.Type.MESSAGE) {
                     Descriptor type = field.descriptor.getMessageType();
                     Layout child = layouts.get(type);
                     if (child == null) {
@@ -220,9 +215,8 @@ final class ProtobufMessageSize {
      * Checks parser depth and wire size, using the generated size when the caller can confirm it.
      *
      * <p>A result of at most {@link ProtobufTypeSerializer#SCRATCH_SIZE} may be the runtime's
-     * generated size without a required-field check. The caller must check initialization, encode
-     * the value into a scratch array of that size, and call {@link #traverse(Message)} if encoding
-     * fails or the output length differs.
+     * generated size. The caller must encode the value into a scratch array of that size and call
+     * {@link #traverse(Message)} if encoding fails or the output length differs.
      *
      * @param message generated message to validate
      * @return payload length, excluding the Flink frame prefix
@@ -369,20 +363,17 @@ final class ProtobufMessageSize {
     }
 
     /**
-     * Checks required fields, parser depth, and exact wire size by traversing the value.
+     * Checks parser depth and exact wire size by traversing the value.
      *
      * <p>Cached subtree depth is checked again at each occurrence, so sharing a message at a deeper
-     * path cannot bypass the recursion limit. If any proto2 string is ambiguous, the traversal
-     * computes a lower bound and validates the entire graph before one counting pass establishes
-     * its exact wire size.
+     * path cannot bypass the recursion limit.
      *
      * @param message generated message to validate
      * @return exact payload length, excluding the Flink frame prefix
-     * @throws IOException if required fields are absent or size/depth limits are exceeded
+     * @throws IOException if size/depth limits are exceeded
      */
     int traverse(Message message) throws IOException {
         Map<Object, Summary> completed = null;
-        requiresWireSize = false;
         int top = 0;
         int used = 1;
         try {
@@ -420,7 +411,7 @@ final class ProtobufMessageSize {
                 accept(parent, current.size, current.nesting, current.work);
                 current = parent;
             }
-            return requiresWireSize ? wireSize(message) : (int) current.size;
+            return (int) current.size;
         } finally {
             release(used);
         }
@@ -491,7 +482,6 @@ final class ProtobufMessageSize {
             // Protobuf 3 copies even an empty set's map, so skip the shared empty instance.
             if (unknown != UnknownFieldSet.getDefaultInstance()) {
                 frame.edgeDepth = 0;
-                frame.edgeDelimited = false;
                 frame.edgeLayout = null;
                 return unknown;
             }
@@ -501,27 +491,17 @@ final class ProtobufMessageSize {
 
     /** Describes a message-field edge and returns the tag bytes for one occurrence. */
     private static long edge(Frame frame, Field field) {
-        boolean group = field.type == FieldDescriptor.Type.GROUP;
         frame.edgeDepth = 1;
-        frame.edgeDelimited = !group;
         frame.edgeLayout = field.message;
-        return group ? 2L * field.tag : field.tag;
+        return field.tag;
     }
 
     /** Adds a completed child to its parent's size, nesting, and subtree work. */
     private void accept(Frame frame, long size, int nesting, long work) throws IOException {
-        frame.size = add(frame.size, frame.edgeDelimited ? delimited(size) : size);
+        // Message edges are length-delimited; unknown sets and groups have no layout.
+        frame.size = add(frame.size, frame.edgeLayout != null ? delimited(size) : size);
         frame.nesting = Math.max(frame.nesting, frame.edgeDepth + nesting);
         frame.work += work;
-    }
-
-    /** Validates required fields when a message frame starts. */
-    private static void requiredFields(Message message, Layout layout) throws IOException {
-        for (FieldDescriptor field : layout.required) {
-            if (!message.hasField(field)) {
-                throw new IOException("Uninitialized message: missing " + field.getFullName());
-            }
-        }
     }
 
     /** Counts a packed scalar block or adds individual unpacked occurrences. */
@@ -587,29 +567,19 @@ final class ProtobufMessageSize {
         if (groups != null) {
             frame.work += groups.size();
             frame.edgeDepth = 1;
-            frame.edgeDelimited = false;
             frame.edgeLayout = null;
             frame.elements = groups;
             frame.element = 0;
         }
     }
 
-    /** Adds one unpacked scalar occurrence, deferring ambiguous proto2 strings. */
+    /** Adds one unpacked scalar occurrence. */
     private void field(Frame frame, Field field, Object value) throws IOException {
         frame.size = add(frame.size, field.tag);
         if (field.type == FieldDescriptor.Type.STRING) {
             String string = (String) value;
             frame.work += string.length();
-            if (field.rawString && string.indexOf('\ufffd') >= 0) {
-                // Reflection exposes a decoded String, which may hide retained invalid UTF-8.
-                // Keep a lower bound, then count the root once after validating the whole graph.
-                // Each UTF-16 unit takes at least one wire byte, so the bound includes the
-                // length, which rejects shared strings before the runtime measures each copy.
-                requiresWireSize = true;
-                frame.size = add(frame.size, delimited(string.length()));
-            } else {
-                frame.size = add(frame.size, delimited(utf8Length(string)));
-            }
+            frame.size = add(frame.size, delimited(utf8Length(string)));
             return;
         }
         frame.size = add(frame.size, scalar(field.type, value, field.descriptor));
@@ -656,20 +626,6 @@ final class ProtobufMessageSize {
             case ENUM -> CodedOutputStream.computeEnumSizeNoTag(value);
             default -> CodedOutputStream.computeInt32SizeNoTag(value);
         };
-    }
-
-    /**
-     * Counts generated wire output when decoded string values cannot establish an exact size.
-     *
-     * <p>The caller has already checked this subtree for required fields and excessive depth. The
-     * output retains no payload bytes and stops as soon as the configured size is exceeded.
-     */
-    private int wireSize(Message message) throws IOException {
-        CountingOutputStream counter = new CountingOutputStream();
-        CodedOutputStream output = CodedOutputStream.newInstance(counter, 256);
-        message.writeTo(output);
-        output.flush();
-        return (int) counter.size;
     }
 
     /** Counts UTF-8 bytes using the runtime replacement behavior for unpaired Java surrogates. */
@@ -769,7 +725,6 @@ final class ProtobufMessageSize {
     static final class Layout {
         private final Descriptor descriptor;
         private final Field[] fields;
-        private final FieldDescriptor[] required;
 
         /**
          * Repeated string fields and maps with string values, whose elements can share a String.
@@ -789,20 +744,15 @@ final class ProtobufMessageSize {
             this.descriptor = descriptor;
             List<FieldDescriptor> declared = descriptor.getFields();
             fields = new Field[declared.size()];
-            List<FieldDescriptor> requiredFields = new ArrayList<>();
             List<Field> stringFields = new ArrayList<>();
             for (int i = 0; i < fields.length; i++) {
                 FieldDescriptor field = declared.get(i);
                 fields[i] = new Field(field);
-                if (field.isRequired()) {
-                    requiredFields.add(field);
-                }
                 FieldDescriptor element = fields[i].mapValue == null ? field : fields[i].mapValue;
                 if (field.isRepeated() && element.getType() == FieldDescriptor.Type.STRING) {
                     stringFields.add(fields[i]);
                 }
             }
-            required = requiredFields.toArray(new FieldDescriptor[0]);
             strings = stringFields.toArray(new Field[0]);
         }
     }
@@ -815,7 +765,6 @@ final class ProtobufMessageSize {
         private final boolean repeated;
         private final boolean copied;
         private final boolean packed;
-        private final boolean rawString;
 
         /** Whether presence is the value differing from its default, as in proto3 scalars. */
         private final boolean implicit;
@@ -825,7 +774,7 @@ final class ProtobufMessageSize {
         /** Value field of a map entry, or null for a field that is not a map. */
         private final FieldDescriptor mapValue;
 
-        /** Layout of a message or group field; set once while linking the layout graph. */
+        /** Layout of a message field; set once while linking the layout graph. */
         private Layout message;
 
         private Field(FieldDescriptor descriptor) {
@@ -835,7 +784,6 @@ final class ProtobufMessageSize {
             repeated = descriptor.isRepeated();
             copied = descriptor.isMapField() || type == FieldDescriptor.Type.ENUM;
             packed = descriptor.isPacked();
-            rawString = type == FieldDescriptor.Type.STRING && !descriptor.needsUtf8Check();
             // Map entries report both fields as present, and the runtime writes both.
             implicit =
                     !repeated
@@ -849,15 +797,10 @@ final class ProtobufMessageSize {
         }
     }
 
-    /**
-     * Stores a subtree byte lower bound and exact additional parser depth for a completed value.
-     */
+    /** Stores the exact byte size and additional parser depth of a completed value. */
     private record Summary(long size, int depth) {}
 
-    /**
-     * Tracks one value's iterative traversal; size is a lower bound until ambiguous strings are
-     * counted.
-     */
+    /** Tracks one value's iterative traversal. */
     private final class Frame {
         private Object value;
         private Message message;
@@ -867,7 +810,6 @@ final class ProtobufMessageSize {
         private List<?> elements;
         private int element;
         private int edgeDepth;
-        private boolean edgeDelimited;
         private Layout edgeLayout;
         private int nesting;
         private long size;
@@ -886,7 +828,6 @@ final class ProtobufMessageSize {
             if (value instanceof Message candidate) {
                 message = candidate;
                 work = layout.fields.length;
-                requiredFields(candidate, layout);
             } else {
                 message = null;
                 work = 0;
@@ -902,22 +843,6 @@ final class ProtobufMessageSize {
             elements = null;
             layout = null;
             edgeLayout = null;
-        }
-    }
-
-    /** Counts bulk writes without allocating a buffer proportional to the payload. */
-    private final class CountingOutputStream extends OutputStream {
-        private long size;
-
-        @Override
-        public void write(int value) throws IOException {
-            size = add(size, 1);
-        }
-
-        @Override
-        public void write(byte[] bytes, int offset, int length) throws IOException {
-            Objects.checkFromIndexSize(offset, length, bytes.length);
-            size = add(size, length);
         }
     }
 }

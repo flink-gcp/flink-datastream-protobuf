@@ -21,6 +21,7 @@ import org.apache.flink.annotation.Internal;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.GeneratedMessage;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Message;
@@ -112,8 +113,7 @@ final class ProtobufMessageType {
             if (parser == null) {
                 throw new IllegalArgumentException("Missing message parser");
             }
-            // Partial parsing also supports proto2 defaults with missing required fields.
-            Message parsed = parser.parsePartialFrom(new byte[0]);
+            Message parsed = parser.parseFrom(new byte[0]);
             if (parsed == null
                     || parsed.getClass() != type
                     || !parsed.getDescriptorForType().equals(descriptor)) {
@@ -144,9 +144,14 @@ final class ProtobufMessageType {
     }
 
     /**
-     * Rejects extension-dependent messages reachable through fields, including recursive graphs.
+     * Rejects payload graphs that reach a message outside a proto3 file or one that declares
+     * extensions, visiting referenced message types with cycle detection.
+     *
+     * <p>Proto3 has no extension ranges or MessageSet wire format, so the syntax check also
+     * excludes payloads that depend on them. Proto3 permits extension declarations nested in a
+     * message, such as custom options, and those are still rejected.
      */
-    private static void validatePayloadGraph(Descriptor root) {
+    static void validatePayloadGraph(Descriptor root) {
         Set<Descriptor> visited = new HashSet<>();
         ArrayDeque<Descriptor> remaining = new ArrayDeque<>();
         remaining.add(root);
@@ -155,9 +160,20 @@ final class ProtobufMessageType {
             if (!visited.add(descriptor)) {
                 continue;
             }
-            if (!descriptor.getExtensions().isEmpty()
-                    || !descriptor.toProto().getExtensionRangeList().isEmpty()
-                    || descriptor.getOptions().getMessageSetWireFormat()) {
+            FileDescriptor file = descriptor.getFile();
+            String syntax = file.toProto().getSyntax();
+            if (!syntax.equals("proto3")) {
+                // protoc leaves the syntax of a proto2 file empty.
+                throw new IllegalArgumentException(
+                        "Payload message "
+                                + descriptor.getFullName()
+                                + " is declared in "
+                                + file.getName()
+                                + " with syntax "
+                                + (syntax.isEmpty() ? "proto2" : syntax)
+                                + "; only proto3 is supported");
+            }
+            if (!descriptor.getExtensions().isEmpty()) {
                 throw new IllegalArgumentException(
                         "Extension-dependent payload message: " + descriptor.getFullName());
             }

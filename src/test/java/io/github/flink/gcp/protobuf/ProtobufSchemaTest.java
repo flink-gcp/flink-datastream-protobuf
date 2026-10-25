@@ -198,7 +198,7 @@ class ProtobufSchemaTest {
     }
 
     private static FileDescriptorProto file(String name) {
-        return FileDescriptorProto.newBuilder().setName(name).setSyntax("proto2").build();
+        return FileDescriptorProto.newBuilder().setName(name).setSyntax("proto3").build();
     }
 
     private static FileDescriptor build(FileDescriptorProto file, FileDescriptor... dependencies)

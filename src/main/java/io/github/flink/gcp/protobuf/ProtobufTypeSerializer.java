@@ -41,10 +41,9 @@ import java.util.Objects;
  * Native serializer for immutable, generated full-runtime Protobuf values.
  *
  * <p>Frames contain a four-byte big-endian payload length and exactly that many wire bytes. The
- * serialization operation rejects null and uninitialized values, and enforces configured payload
- * and parser-depth limits before writing a frame. These limits do not bound total heap usage or
- * stack capacity. Deterministic writing does not provide canonical bytes or make messages supported
- * Flink keys.
+ * serialization operation rejects null values and enforces configured payload and parser-depth
+ * limits before writing a frame. These limits do not bound total heap usage or stack capacity.
+ * Deterministic writing does not provide canonical bytes or make messages supported Flink keys.
  *
  * <p>Data views must honor their DataInput/DataOutput contracts. Runtime views that omit their own
  * bounds checks must be used through Flink's framing and exception-conversion wrappers.
@@ -156,8 +155,6 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     /**
      * Returns the generated default instance.
      *
-     * <p>A proto2 default with missing required fields is allowed here but cannot be serialized.
-     *
      * @return the default instance of the exact configured class
      */
     @Override
@@ -211,7 +208,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * frame. An I/O failure of the target can leave a partial frame for any payload. Generated
      * runtime operations may allocate their own storage.
      *
-     * @param value non-null initialized message of the exact configured class
+     * @param value non-null message of the exact configured class
      * @param target destination for the frame
      * @throws IOException if validation fails, writing fails, or the writer emits an unexpected
      *     size
@@ -222,11 +219,6 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
             throw new IOException("Expected non-null message of type " + messageClass.getName());
         }
         int size = messageSize.check(value);
-        if (!value.isInitialized()) {
-            // A generated size skips required fields; the traversal names the first missing one.
-            messageSize.traverse(value);
-            throw new IOException("Uninitialized message: " + messageClass.getName());
-        }
         if (size <= SCRATCH_SIZE) {
             byte[] payload = scratch();
             CodedOutputStream output = CodedOutputStream.newInstance(payload, 0, size);
@@ -273,13 +265,13 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * corrupt prefix total at most 1 MiB or less than four times the bytes present; a growth step
      * that the heap or the JVM's array-size limit cannot satisfy still fails with an error rather
      * than {@code IOException}. The serializer never writes that array again, reuses it, or exposes
-     * it. Values that the runtime decodes as {@code ByteString}, such as {@code bytes} fields,
-     * proto2 strings, and unknown length-delimited fields, may share that array instead of copying
-     * it, so keeping any of them keeps the whole array reachable. A failed read may consume only
-     * part of the current frame; callers must not assume input resynchronization after failure.
+     * it. Values that the runtime decodes as {@code ByteString}, such as {@code bytes} fields and
+     * unknown length-delimited fields, may share that array instead of copying it, so keeping any
+     * of them keeps the whole array reachable. A failed read may consume only part of the current
+     * frame; callers must not assume input resynchronization after failure.
      *
      * @param source source positioned at a frame length prefix
-     * @return an initialized message of the configured class
+     * @return a message of the configured class
      * @throws IOException if the prefix or payload is invalid, truncated, exceeds limits, or cannot
      *     be read
      */

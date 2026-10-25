@@ -33,6 +33,7 @@ On Flink 1.20, supply explicit `ListTypeInfo` for lists of messages; `TypeHint<L
 ## Native type information
 
 Use `ProtobufTypeInformation.of(MyMessage.class)` or its builder for explicit sources, `.returns(...)`, and state descriptors.
+The message and every message type it reaches must be declared with `syntax = "proto3"`; a reached message in a proto2 or editions file is rejected.
 Alternatively, register `ProtobufTypeInfoFactory` against `com.google.protobuf.AbstractMessage` before type extraction.
 Always disable generic types, and use stable scalar keys.
 

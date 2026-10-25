@@ -22,7 +22,6 @@ import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 import io.github.flink.gcp.protobuf.generated.RecursiveMessage;
-import io.github.flink.gcp.protobuf.generated.RequiredMessage;
 import io.github.flink.gcp.protobuf.generated.ScalarMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -241,21 +240,6 @@ class ProtobufMessageSizeTest {
         RecursiveMessage nested = recursive(900);
         assertThat(deep.check(nested)).isEqualTo(nested.getSerializedSize());
         assertThat(deep.check(valid)).isEqualTo(valid.getSerializedSize());
-
-        ProtobufMessageSize required = sizer(RequiredMessage.class, 4096, 100);
-        RequiredMessage missing =
-                RequiredMessage.newBuilder()
-                        .setValue("root")
-                        .setChild(RequiredMessage.newBuilder().buildPartial())
-                        .buildPartial();
-        RequiredMessage complete =
-                RequiredMessage.newBuilder()
-                        .setValue("root")
-                        .setChild(RequiredMessage.newBuilder().setValue("child"))
-                        .build();
-        assertThatThrownBy(() -> required.check(missing))
-                .hasMessageContaining("missing flink.protobuf.serializer.RequiredMessage.value");
-        assertThat(required.check(complete)).isEqualTo(complete.getSerializedSize());
     }
 
     @Test
@@ -271,8 +255,6 @@ class ProtobufMessageSizeTest {
         released.add(failInRepeatedField(track(sizers, 100)));
         released.add(failInMapField(track(sizers, 100)));
         released.add(failInUnknownGroup(track(sizers, 100)));
-        ProtobufMessageSize required = sizer(RequiredMessage.class, 4096, 100);
-        released.add(checkMissingUnreferenced(required));
         for (int attempt = 0;
                 attempt < 100 && released.stream().anyMatch(r -> r.get() != null);
                 attempt++) {
@@ -282,7 +264,6 @@ class ProtobufMessageSizeTest {
         assertThat(released).allSatisfy(reference -> assertThat(reference.get()).isNull());
         // Only the frames retained by these live instances could keep the values reachable.
         Reference.reachabilityFence(sizers);
-        Reference.reachabilityFence(required);
     }
 
     @Test
@@ -375,17 +356,6 @@ class ProtobufMessageSizeTest {
         return RecursiveMessage.newBuilder()
                 .setPayload(ByteString.copyFrom(new byte[8192]))
                 .build();
-    }
-
-    /** Fails on a child's missing required field, returning only a weak reference to it. */
-    private static WeakReference<Object> checkMissingUnreferenced(ProtobufMessageSize sizer) {
-        RequiredMessage value =
-                RequiredMessage.newBuilder()
-                        .setValue("root")
-                        .setChild(RequiredMessage.newBuilder().buildPartial())
-                        .buildPartial();
-        assertThatThrownBy(() -> sizer.check(value)).hasMessageContaining("missing");
-        return new WeakReference<>(value.getChild());
     }
 
     /** Checks a value built here, returning only a weak reference to it. */

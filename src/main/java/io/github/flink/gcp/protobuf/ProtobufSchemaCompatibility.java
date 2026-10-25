@@ -238,17 +238,10 @@ final class ProtobufSchemaCompatibility {
                 if (saved.isReservedName(next.getName())) {
                     throw new Incompatible(describe(next) + " reuses a reserved field name");
                 }
-                // Saved bytes may contain extensions, which an empty registry keeps as unknown.
-                if (saved.isExtensionNumber(next.getNumber())) {
-                    throw new Incompatible(describe(next) + " uses a saved extension number");
-                }
                 FieldDescriptor renumbered = saved.findFieldByName(next.getName());
                 if (renumbered != null) {
                     throw new Incompatible(
                             describe(renumbered) + " is renumbered to " + next.getNumber());
-                }
-                if (next.isRequired()) {
-                    throw new Incompatible(describe(next) + " adds a required field");
                 }
             }
             requireRetainedOrder(
@@ -277,9 +270,7 @@ final class ProtobufSchemaCompatibility {
             if (!saved.getName().equals(current.getName())) {
                 throw new Incompatible(field + " is renamed to " + current.getName());
             }
-            if (saved.isRepeated() != current.isRepeated()
-                    || saved.isRequired() != current.isRequired()
-                    || savedProto.getLabel() != currentProto.getLabel()) {
+            if (savedProto.getLabel() != currentProto.getLabel()) {
                 throw new Incompatible(
                         field
                                 + " changes cardinality from "
@@ -328,9 +319,6 @@ final class ProtobufSchemaCompatibility {
             }
             if (!Objects.equals(oneofName(saved), oneofName(current))) {
                 throw new Incompatible(field + " changes its synthetic oneof");
-            }
-            if (!savedProto.getDefaultValue().equals(currentProto.getDefaultValue())) {
-                throw new Incompatible(field + " changes its default value");
             }
             // The oneof index depends on unrelated oneof declarations; membership is checked above.
             if (!savedProto.toBuilder()
@@ -413,7 +401,7 @@ final class ProtobufSchemaCompatibility {
                             name + " value " + next.getName() + " reuses a reserved name");
                 }
             }
-            // The first declared value is the proto2 default for fields without an explicit one.
+            // The first value is the default; with aliases, reordering can change its name.
             if (!saved.getValues().get(0).getName().equals(current.getValues().get(0).getName())) {
                 throw new Incompatible(name + " changes its first declared value");
             }
@@ -530,7 +518,7 @@ final class ProtobufSchemaCompatibility {
     }
 
     private static String cardinality(FieldDescriptor field) {
-        return field.isRepeated() ? "repeated" : field.isRequired() ? "required" : "singular";
+        return field.isRepeated() ? "repeated" : "singular";
     }
 
     /**

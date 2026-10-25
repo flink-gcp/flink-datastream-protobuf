@@ -48,7 +48,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProtobufSchemaCompatibilityTest {
     private static final String ROOT = "t.Root";
     private static final String REPEATED = "label: LABEL_REPEATED";
-    private static final String REQUIRED = "label: LABEL_REQUIRED";
     private static final String OPTIONAL3 = "proto3_optional: true";
     private static final String ID = field("id", 1, "INT32");
     private static final String ID2 = field("n", 2, "INT32");
@@ -119,11 +118,6 @@ class ProtobufSchemaCompatibilityTest {
                         proto3(message("Root", ID)),
                         proto3(message("Root", ID, oneofField("a", 2, 0), oneof("choice")))),
                 oneWay(
-                        "adds a proto2 optional field with a default",
-                        "Field 2 (n) of t.Root is removed without reserving its number",
-                        proto2(message("Root", ID)),
-                        proto2(message("Root", ID, field("n", 2, "INT32", "default_value: '7'")))),
-                oneWay(
                         "inserts a field before retained fields",
                         "Field 2 (first) of t.Root is removed without reserving its number",
                         proto3(message("Root", ID)),
@@ -143,11 +137,6 @@ class ProtobufSchemaCompatibilityTest {
                         "Message t.Root no longer reserves field numbers 2 to 2",
                         proto3(message("Root", ID, oneofField("a", 2, 0), oneof("choice"))),
                         proto3(message("Root", ID, reserved(2, 3)))),
-                oneWay(
-                        "removes a proto2 required field and reserves its number",
-                        "Message t.Root no longer reserves field numbers 2 to 2",
-                        proto2(message("Root", ID, field("r", 2, "INT32", REQUIRED))),
-                        proto2(message("Root", ID, reserved(2, 3)))),
                 oneWay(
                         "adds a reservation",
                         "Message t.Root no longer reserves field numbers 5 to 9",
@@ -179,15 +168,6 @@ class ProtobufSchemaCompatibilityTest {
                                         value("UNKNOWN", 0),
                                         value("A", 1),
                                         value("B", 2)))),
-                oneWay(
-                        "adds an enum value to a closed proto2 enum",
-                        "Enum t.Kind removes or renames value SECOND",
-                        proto2(
-                                message("Root", ID, enumField("kind", 2, ".t.Kind")),
-                                enumType("Kind", value("FIRST", 1))),
-                        proto2(
-                                message("Root", ID, enumField("kind", 2, ".t.Kind")),
-                                enumType("Kind", value("FIRST", 1), value("SECOND", 2)))),
                 oneWay(
                         "adds a field to a nested message",
                         "Field 2 (y) of t.Child is removed without reserving its number",
@@ -307,19 +287,6 @@ class ProtobufSchemaCompatibilityTest {
                         proto3(message("Root", ID, field("child", 2, "BYTES")), child),
                         "changes type from MESSAGE to BYTES"),
                 rejected(
-                        "changes a group to a message",
-                        proto2(
-                                message(
-                                        "Root",
-                                        field("g", 1, "GROUP", "type_name: '.t.Root.G'"),
-                                        nested("G", field("x", 2, "INT32")))),
-                        proto2(
-                                message(
-                                        "Root",
-                                        messageField("g", 1, ".t.Root.G"),
-                                        nested("G", field("x", 2, "INT32")))),
-                        "changes type from GROUP to MESSAGE"),
-                rejected(
                         "changes the referenced message",
                         proto3(
                                 message("Root", ID, messageField("child", 2, ".t.Child")),
@@ -358,16 +325,6 @@ class ProtobufSchemaCompatibilityTest {
                         proto3(message("Root", ID)),
                         proto3(message("Root", field("id", 1, "INT32", REPEATED))),
                         "changes cardinality from singular to repeated"),
-                rejected(
-                        "changes optional to required",
-                        proto2(message("Root", ID)),
-                        proto2(message("Root", field("id", 1, "INT32", REQUIRED))),
-                        "changes cardinality from singular to required"),
-                rejected(
-                        "adds a required field",
-                        proto2(message("Root", ID)),
-                        proto2(message("Root", ID, field("r", 2, "INT32", REQUIRED))),
-                        "Field 2 (r) of t.Root adds a required field"),
                 rejected(
                         "adds proto3 explicit presence",
                         proto3(message("Root", ID)),
@@ -414,11 +371,6 @@ class ProtobufSchemaCompatibilityTest {
                                         oneofField("b", 3, 1),
                                         oneofField("c", 4, 0))),
                         "moves from oneof left to right"),
-                rejected(
-                        "changes a proto2 default value",
-                        proto2(message("Root", field("n", 1, "INT32", "default_value: '1'"))),
-                        proto2(message("Root", field("n", 1, "INT32", "default_value: '2'"))),
-                        "Field 1 (n) of t.Root changes its default value"),
                 rejected(
                         "changes a field option",
                         proto3(message("Root", ID)),
@@ -532,15 +484,6 @@ class ProtobufSchemaCompatibilityTest {
                                         value("ALSO_A", 1))),
                         "Enum t.Kind adds alias ALSO_A for existing number 1"),
                 rejected(
-                        "changes the first proto2 enum value",
-                        proto2(
-                                message("Root", ID, enumField("kind", 2, ".t.Kind")),
-                                enumType("Kind", value("FIRST", 1))),
-                        proto2(
-                                message("Root", ID, enumField("kind", 2, ".t.Kind")),
-                                enumType("Kind", value("ZERO", 0), value("FIRST", 1))),
-                        "Enum t.Kind changes its first declared value"),
-                rejected(
                         "reorders retained enum values",
                         proto3(
                                 enumRoot,
@@ -551,6 +494,23 @@ class ProtobufSchemaCompatibilityTest {
                                 enumType(
                                         "Kind", value("UNKNOWN", 0), value("B", 2), value("A", 1))),
                         "Enum t.Kind reorders retained values"),
+                rejected(
+                        "puts another alias of the default value first",
+                        proto3(
+                                enumRoot,
+                                enumType(
+                                        "Kind",
+                                        "options { allow_alias: true }",
+                                        value("UNKNOWN", 0),
+                                        value("UNSET", 0))),
+                        proto3(
+                                enumRoot,
+                                enumType(
+                                        "Kind",
+                                        "options { allow_alias: true }",
+                                        value("UNSET", 0),
+                                        value("UNKNOWN", 0))),
+                        "Enum t.Kind changes its first declared value"),
                 rejected(
                         "reuses a reserved enum number",
                         proto3(
@@ -602,16 +562,6 @@ class ProtobufSchemaCompatibilityTest {
                         proto3(message("Root", ID, "reserved_name: 'n'")),
                         proto3(message("Root", ID, "reserved_name: 'n'", ID2)),
                         "Field 2 (n) of t.Root reuses a reserved field name"),
-                rejected(
-                        "adds a field inside a saved extension range",
-                        proto2(message("Root", ID, "extension_range { start: 100 end: 200 }")),
-                        proto2(
-                                message(
-                                        "Root",
-                                        ID,
-                                        "extension_range { start: 100 end: 200 }",
-                                        field("n", 150, "STRING"))),
-                        "Field 150 (n) of t.Root uses a saved extension number"),
                 rejected(
                         "resolves an unchanged relative type name to a new type",
                         proto3(
@@ -1114,21 +1064,91 @@ class ProtobufSchemaCompatibilityTest {
     }
 
     @Test
+    void savedProto2MessagesAreReadableOnlyWithoutARetainedPathToThem() throws Exception {
+        String wrapper = message("Wrapper", messageField("child", 1, ".t.Legacy"));
+        FileDescriptorSet saved =
+                withLegacy(
+                        "proto2",
+                        message("Root", ID, messageField("old", 2, ".t.Wrapper")),
+                        wrapper);
+        // Removing and reserving the field cuts the only retained path to the proto2 message.
+        assertThat(
+                        evaluate(saved, withLegacy("proto2", message("Root", ID, reserved(2, 3))))
+                                .reason())
+                .isNull();
+        // The evaluator follows only fields that both schemas keep, so a fresh field that reaches
+        // the same types does not compare them, even after the message moved to proto3.
+        assertThat(
+                        evaluate(
+                                        saved,
+                                        withLegacy(
+                                                "proto3",
+                                                message(
+                                                        "Root",
+                                                        ID,
+                                                        reserved(2, 3),
+                                                        messageField(
+                                                                "replacement", 3, ".t.Wrapper")),
+                                                wrapper))
+                                .reason())
+                .isNull();
+        // On a retained path, moving the message to proto3 changes its declaring file.
+        assertThat(
+                        evaluate(
+                                        saved,
+                                        withLegacy(
+                                                "proto3",
+                                                message(
+                                                        "Root",
+                                                        ID,
+                                                        messageField("old", 2, ".t.Wrapper")),
+                                                wrapper))
+                                .reason())
+                .isEqualTo(
+                        "File legacy.proto changes its package, syntax, edition, options, or metadata");
+        // A proto2 root cannot become proto3.
+        assertThat(
+                        evaluate(
+                                        schema(proto2(message("Root", ID))),
+                                        schema(proto3(message("Root", ID))))
+                                .reason())
+                .startsWith("File case.proto changes");
+    }
+
+    /** Returns a proto3 root file that imports a legacy.proto declaring t.Legacy. */
+    private static FileDescriptorSet withLegacy(String syntax, String... declarations)
+            throws Exception {
+        return FileDescriptorSet.newBuilder()
+                .addFile(
+                        parse(
+                                "name: 'legacy.proto' package: 't' syntax: '"
+                                        + syntax
+                                        + "' "
+                                        + message("Legacy", field("x", 1, "INT32"))))
+                .addFile(
+                        parse(
+                                "name: 'case.proto' package: 't' syntax: 'proto3'"
+                                        + " dependency: 'legacy.proto' "
+                                        + String.join(" ", declarations)))
+                .build();
+    }
+
+    @Test
     void reachedEnumsCompareTheirDeclaringFile() throws Exception {
-        String kind = enumType("Kind", value("FIRST", 1));
+        String kind = enumType("Kind", value("UNKNOWN", 0));
         String root =
-                "name: 'case.proto' package: 't' syntax: 'proto2' dependency: 'kind.proto' "
+                "name: 'case.proto' package: 't' syntax: 'proto3' dependency: 'kind.proto' "
                         + message("Root", ID, enumField("kind", 2, ".t.Kind"));
         FileDescriptorSet saved =
                 FileDescriptorSet.newBuilder()
-                        .addFile(parse("name: 'kind.proto' package: 't' syntax: 'proto2' " + kind))
+                        .addFile(parse("name: 'kind.proto' package: 't' syntax: 'proto3' " + kind))
                         .addFile(parse(root))
                         .build();
         FileDescriptorSet current =
                 FileDescriptorSet.newBuilder()
                         .addFile(
                                 parse(
-                                        "name: 'kind.proto' package: 't' syntax: 'proto2' "
+                                        "name: 'kind.proto' package: 't' syntax: 'proto3' "
                                                 + "options { java_package: 'changed' } "
                                                 + kind))
                         .addFile(parse(root))

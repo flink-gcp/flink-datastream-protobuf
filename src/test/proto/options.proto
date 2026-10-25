@@ -13,13 +13,20 @@
 // limitations under the License.
 
 
-syntax = "proto2";
+syntax = "proto3";
 package flink.protobuf.serializer;
 option java_package = "io.github.flink.gcp.protobuf.generated";
 option java_multiple_files = true;
 import "google/protobuf/descriptor.proto";
-extend google.protobuf.MessageOptions { optional string marker = 50000; }
+extend google.protobuf.MessageOptions { string marker = 50000; }
 message OptionMessage {
   option (marker) = "retained metadata";
-  optional string value = 1;
+  string value = 1;
+}
+// Proto3 permits an extension declaration nested in a message; the payload graph rejects it.
+message ExtensionDeclaration {
+  extend google.protobuf.MessageOptions { string nested_marker = 50001; }
+}
+message ExtensionHolder {
+  ExtensionDeclaration declaration = 1;
 }

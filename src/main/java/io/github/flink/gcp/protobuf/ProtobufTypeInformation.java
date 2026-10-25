@@ -30,6 +30,10 @@ import java.util.Objects;
 /**
  * Native type information for immutable, generated full-runtime Protobuf values.
  *
+ * <p>The message and every message type that it reaches, including types in imported files, must be
+ * declared in a file with {@code syntax = "proto3"}; construction rejects a message type declared
+ * in a proto2 or editions file.
+ *
  * <p>Use {@link #of(Class)} for defaults or {@link #newBuilder(Class)} for per-type settings, for
  * example in {@code .returns(ProtobufTypeInformation.of(MyMessage.class))}. Explicit construction
  * does not register a factory. Disable Flink generic types to reject accidental generic serializer

@@ -29,9 +29,7 @@ import com.google.protobuf.Message;
 import io.github.flink.gcp.protobuf.ProtobufSchemaCompatibility.Metadata;
 import io.github.flink.gcp.protobuf.ProtobufSchemaCompatibility.Result;
 import io.github.flink.gcp.protobuf.generated.CommonTypesEnvelope;
-import io.github.flink.gcp.protobuf.generated.LegacyMessage;
 import io.github.flink.gcp.protobuf.generated.RecursiveMessage;
-import io.github.flink.gcp.protobuf.generated.RequiredMessage;
 import io.github.flink.gcp.protobuf.generated.ScalarMessage;
 import io.github.flink.gcp.protobuf.snapshotgenerated.SnapshotMessages.Envelope;
 import org.assertj.core.api.AbstractStringAssert;
@@ -62,9 +60,7 @@ class ProtobufSchemaCompatibilityPropertyTest {
                 Envelope.getDescriptor(),
                 CommonTypesEnvelope.getDescriptor(),
                 RecursiveMessage.getDescriptor(),
-                ScalarMessage.getDescriptor(),
-                LegacyMessage.getDescriptor(),
-                RequiredMessage.getDescriptor());
+                ScalarMessage.getDescriptor());
     }
 
     @ParameterizedTest(name = "{0}")

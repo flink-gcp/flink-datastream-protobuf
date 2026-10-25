@@ -27,8 +27,10 @@ import com.google.protobuf.ByteOutput;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Empty;
 import com.google.protobuf.ExtensionRegistryLite;
@@ -37,18 +39,18 @@ import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
 import com.google.protobuf.StringValue;
+import com.google.protobuf.TextFormat;
 import com.google.protobuf.UnknownFieldSet;
 import com.google.protobuf.UnsafeByteOperations;
-import io.github.flink.gcp.protobuf.generated.AmbiguousStringNames;
 import io.github.flink.gcp.protobuf.generated.ExtensionDeclaration;
 import io.github.flink.gcp.protobuf.generated.ExtensionHolder;
-import io.github.flink.gcp.protobuf.generated.ExtensionTarget;
 import io.github.flink.gcp.protobuf.generated.LazyMessage;
-import io.github.flink.gcp.protobuf.generated.LegacyMessage;
-import io.github.flink.gcp.protobuf.generated.MessageSetRoot;
+import io.github.flink.gcp.protobuf.generated.LazyValue;
 import io.github.flink.gcp.protobuf.generated.OptionMessage;
+import io.github.flink.gcp.protobuf.generated.Proto2Message;
+import io.github.flink.gcp.protobuf.generated.ReachesDescriptor;
+import io.github.flink.gcp.protobuf.generated.ReachesProto2;
 import io.github.flink.gcp.protobuf.generated.RecursiveMessage;
-import io.github.flink.gcp.protobuf.generated.RequiredMessage;
 import io.github.flink.gcp.protobuf.generated.ScalarMessage;
 import org.junit.jupiter.api.Test;
 
@@ -70,6 +72,7 @@ import java.util.concurrent.TimeUnit;
 import static io.github.flink.gcp.protobuf.ProtobufTypeSerializer.LARGE_READ_INITIAL_SIZE;
 import static io.github.flink.gcp.protobuf.ProtobufTypeSerializer.SCRATCH_SIZE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProtobufTypeSerializerTest {
@@ -117,69 +120,36 @@ class ProtobufTypeSerializerTest {
     }
 
     @Test
-    void unicodeAndProto2RawStringsRetainTheirWireSize() throws Exception {
-        ProtobufTypeSerializer<LegacyMessage> serializer =
-                new ProtobufTypeSerializer<>(LegacyMessage.class);
-        for (ByteString value :
-                List.of(
-                        ByteString.copyFromUtf8("ascii é 中 😀 �"),
-                        ByteString.copyFrom(new byte[] {(byte) 0xff, (byte) 0xfe}))) {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            CodedOutputStream wire = CodedOutputStream.newInstance(bytes);
-            for (FieldDescriptor field : LegacyMessage.getDescriptor().getFields()) {
-                if (field.getType() == FieldDescriptor.Type.STRING) {
+    void unicodeStringsRetainTheirWireSize() throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        ByteString value = ByteString.copyFromUtf8("ascii é 中 😀 �");
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        CodedOutputStream wire = CodedOutputStream.newInstance(bytes);
+        for (FieldDescriptor field : ScalarMessage.getDescriptor().getFields()) {
+            if (field.getType() == FieldDescriptor.Type.STRING) {
+                wire.writeBytes(field.getNumber(), value);
+                if (field.isRepeated()) {
                     wire.writeBytes(field.getNumber(), value);
-                    if (field.isRepeated()) {
-                        wire.writeBytes(field.getNumber(), value);
-                    }
                 }
             }
-            wire.flush();
-            LegacyMessage message = LegacyMessage.parseFrom(bytes.toByteArray());
-            byte[] expected = message.toByteArray();
-            byte[] actual = encode(serializer, message);
-            assertThat(Arrays.copyOfRange(actual, 4, actual.length)).isEqualTo(expected);
-            assertThat(serializer.deserialize(input(actual)).toByteArray()).isEqualTo(expected);
         }
+        wire.flush();
+        ScalarMessage message = ScalarMessage.parseFrom(bytes.toByteArray());
+        byte[] expected = message.toByteArray();
+        byte[] actual = encode(serializer, message);
+        assertThat(Arrays.copyOfRange(actual, 4, actual.length)).isEqualTo(expected);
+        assertThat(serializer.deserialize(input(actual)).toByteArray()).isEqualTo(expected);
         // Java strings with unpaired surrogates use the runtime replacement-byte fallback.
         String broken = "a" + (char) 0xd800 + "b";
         assertPayload(new ProtobufTypeSerializer<>(StringValue.class), StringValue.of(broken));
     }
 
     @Test
-    void ambiguousFieldNamesRetainTheirRawWireBytes() throws Exception {
-        // Construct wire fields directly, independently of protoc's Java accessor naming rules.
-        byte[] wire = {26, 2, (byte) 0xff, (byte) 0xfe, 34, 1, (byte) 0xff, 42, 1, 97};
-        AmbiguousStringNames value = AmbiguousStringNames.parseFrom(wire);
-        ProtobufTypeSerializer<AmbiguousStringNames> serializer =
-                new ProtobufTypeSerializer<>(AmbiguousStringNames.class);
-        assertPayload(serializer, value);
-        assertThat(serializer.deserialize(input(encode(serializer, value))).toByteArray())
-                .isEqualTo(value.toByteArray());
-    }
-
-    @Test
-    void rawProto2StringsRespectExactSizeAndNestedDepthLimits() throws Exception {
-        byte[] wire = {10, 2, (byte) 0xff, (byte) 0xfe};
-        LegacyMessage leaf = LegacyMessage.parseFrom(wire);
-        assertRoundTrip(configured(LegacyMessage.class, false, wire.length, 2), leaf);
-        assertRejectedBeforeWrite(
-                configured(LegacyMessage.class, false, wire.length - 1, 2), leaf, "maxMessageSize");
-        LegacyMessage nested =
-                LegacyMessage.newBuilder(leaf)
-                        .setGroupValue(LegacyMessage.GroupValue.newBuilder().setChild(leaf))
-                        .build();
-        assertRoundTrip(configured(LegacyMessage.class, false, 4096, 2), nested);
-        assertRejectedBeforeWrite(
-                configured(LegacyMessage.class, false, 4096, 1), nested, "recursionLimit");
-        assertPayload(new ProtobufTypeSerializer<>(LegacyMessage.class), nested);
-    }
-
-    @Test
     void independentlyConstructedSerializersReuseValidatedClassMetadata() {
         ProtobufMessageType first = ProtobufMessageType.resolve(ScalarMessage.class);
         assertThat(ProtobufMessageType.resolve(ScalarMessage.class)).isSameAs(first);
-        assertThat(ProtobufMessageType.resolve(LegacyMessage.class)).isNotSameAs(first);
+        assertThat(ProtobufMessageType.resolve(RecursiveMessage.class)).isNotSameAs(first);
         assertThat(new ProtobufTypeSerializer<>(ScalarMessage.class).createInstance())
                 .isSameAs(first.defaultInstance);
     }
@@ -330,14 +300,14 @@ class ProtobufTypeSerializerTest {
                     ScalarMessage.newBuilder()
                             .setBytesValue(filledBytes(2 * SCRATCH_SIZE))
                             .build());
-            // The full runtime parses lazy fields eagerly; their proto2 strings alias the frame.
+            // The full runtime parses lazy fields eagerly, so they are decoded with the frame.
             LazyMessage lazy =
                     LazyMessage.newBuilder()
                             .setChild(
-                                    RequiredMessage.newBuilder()
+                                    LazyValue.newBuilder()
                                             .setValue("lazy child ".repeat(32 * scale)))
                             .setUnchecked(
-                                    RequiredMessage.newBuilder()
+                                    LazyValue.newBuilder()
                                             .setValue("unverified ".repeat(32 * scale)))
                             .build();
             assertThat(lazy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
@@ -347,33 +317,11 @@ class ProtobufTypeSerializerTest {
                     lazy,
                     LazyMessage.newBuilder()
                             .setChild(
-                                    RequiredMessage.newBuilder()
-                                            .setValue("x".repeat(SCRATCH_SIZE - 16)))
+                                    LazyValue.newBuilder().setValue("x".repeat(SCRATCH_SIZE - 16)))
                             .build(),
                     LazyMessage.newBuilder()
-                            .setChild(
-                                    RequiredMessage.newBuilder()
-                                            .setValue("x".repeat(2 * SCRATCH_SIZE)))
+                            .setChild(LazyValue.newBuilder().setValue("x".repeat(2 * SCRATCH_SIZE)))
                             .build());
-            // Proto2 strings retain their wire bytes, and the group nests another message.
-            LegacyMessage legacy =
-                    LegacyMessage.newBuilder()
-                            .setText("legacy é ".repeat(32 * scale))
-                            .addTexts("listed ".repeat(32 * scale))
-                            .setGroupValue(
-                                    LegacyMessage.GroupValue.newBuilder()
-                                            .setNumber(-1)
-                                            .setChild(
-                                                    LegacyMessage.newBuilder()
-                                                            .setText("nested ".repeat(32 * scale))))
-                            .build();
-            assertThat(legacy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
-            assertDecodedValueSurvivesLaterReads(
-                    label,
-                    new ProtobufTypeSerializer<>(LegacyMessage.class),
-                    legacy,
-                    LegacyMessage.newBuilder().setText("x".repeat(SCRATCH_SIZE - 3)).build(),
-                    LegacyMessage.newBuilder().setText("x".repeat(2 * SCRATCH_SIZE)).build());
         }
     }
 
@@ -541,14 +489,6 @@ class ProtobufTypeSerializerTest {
         ScalarMessage value =
                 ScalarMessage.newBuilder().setInt32Value(12).setUnknownFields(unknown).build();
         assertRoundTrip(new ProtobufTypeSerializer<>(ScalarMessage.class), value);
-        LegacyMessage group =
-                LegacyMessage.newBuilder()
-                        .setGroupValue(
-                                LegacyMessage.GroupValue.newBuilder()
-                                        .setNumber(-1)
-                                        .setChild(LegacyMessage.newBuilder().setText("nested")))
-                        .build();
-        assertRoundTrip(new ProtobufTypeSerializer<>(LegacyMessage.class), group);
     }
 
     @Test
@@ -662,33 +602,11 @@ class ProtobufTypeSerializerTest {
     }
 
     @Test
-    void veryDeepValuesFailBeforeRecursiveRuntimeSizeOrInitialization() throws Exception {
+    void veryDeepValuesFailBeforeRecursiveRuntimeSize() throws Exception {
         assertRejectedBeforeWrite(
                 new ProtobufTypeSerializer<>(RecursiveMessage.class),
                 recursive(10000),
                 "recursionLimit");
-        RequiredMessage required = RequiredMessage.newBuilder().setValue("leaf").buildPartial();
-        for (int i = 0; i < 10000; i++) {
-            // build() would recursively initialize and memoize the fixture before the test.
-            required =
-                    RequiredMessage.newBuilder().setValue("node").setChild(required).buildPartial();
-        }
-        assertRejectedBeforeWrite(
-                new ProtobufTypeSerializer<>(RequiredMessage.class), required, "recursionLimit");
-        LegacyMessage raw = LegacyMessage.parseFrom(new byte[] {10, 2, (byte) 0xff, (byte) 0xfe});
-        LegacyMessage deepRaw = raw;
-        for (int i = 0; i < 10000; i++) {
-            deepRaw =
-                    LegacyMessage.newBuilder(raw)
-                            .setGroupValue(
-                                    LegacyMessage.GroupValue.newBuilder()
-                                            .setChild(deepRaw)
-                                            .buildPartial())
-                            .buildPartial();
-        }
-        // Root wire counting must wait until the iterative depth check has rejected this graph.
-        assertRejectedBeforeWrite(
-                new ProtobufTypeSerializer<>(LegacyMessage.class), deepRaw, "recursionLimit");
     }
 
     @Test
@@ -711,11 +629,6 @@ class ProtobufTypeSerializerTest {
         }
         // A frame can end at a valid tag boundary but still be shorter than its declared length.
         assertReadRejected(serializer, frame(3, 40, 1));
-        assertReadRejected(new ProtobufTypeSerializer<>(RequiredMessage.class), frame(0));
-        assertRejectedBeforeWrite(
-                new ProtobufTypeSerializer<>(RequiredMessage.class),
-                RequiredMessage.newBuilder().buildPartial(),
-                "Uninitialized");
         assertRejectedBeforeWrite(serializer, null, "non-null");
     }
 
@@ -852,11 +765,7 @@ class ProtobufTypeSerializerTest {
                         MissingDefault.class,
                         WrongDefaultReturn.class,
                         NullDefault.class,
-                        WrongParser.class,
-                        ExtensionTarget.class,
-                        ExtensionHolder.class,
-                        ExtensionDeclaration.class,
-                        MessageSetRoot.class)) {
+                        WrongParser.class)) {
             assertThatThrownBy(() -> constructUnsupported(type))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(type.getName());
@@ -880,6 +789,65 @@ class ProtobufTypeSerializerTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void constructUnsupported(Class<?> type) {
         new ProtobufTypeSerializer((Class) type);
+    }
+
+    @Test
+    void payloadGraphsReachingMessagesOutsideProto3FilesNameTheTypeAndFile() throws Exception {
+        String proto2 =
+                "Payload message flink.protobuf.serializer.Proto2Message is declared in"
+                        + " proto2.proto with syntax proto2; only proto3 is supported";
+        for (Class<? extends Message> type : List.of(Proto2Message.class, ReachesProto2.class)) {
+            assertThatThrownBy(() -> new ProtobufTypeSerializer<>(type))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(type.getName())
+                    .hasMessageEndingWith(proto2);
+        }
+        // protoc leaves the syntax of a proto2 file empty, including descriptor.proto's.
+        assertThatThrownBy(() -> new ProtobufTypeSerializer<>(ReachesDescriptor.class))
+                .hasMessageEndingWith(
+                        "Payload message google.protobuf.DescriptorProto is declared in"
+                                + " google/protobuf/descriptor.proto with syntax proto2; only"
+                                + " proto3 is supported");
+        // Both runtimes build editions descriptors without generated editions classes.
+        FileDescriptor editions =
+                FileDescriptor.buildFrom(
+                        TextFormat.parse(
+                                "name: 'editions.proto' package: 't' syntax: 'editions'"
+                                        + " edition: EDITION_2023 message_type { name: 'Leaf' }",
+                                FileDescriptorProto.class),
+                        new FileDescriptor[0]);
+        FileDescriptor reaching =
+                FileDescriptor.buildFrom(
+                        TextFormat.parse(
+                                "name: 'root.proto' package: 't' syntax: 'proto3'"
+                                        + " dependency: 'editions.proto' message_type { name: 'Root'"
+                                        + " field { name: 'leaf' number: 1 label: LABEL_OPTIONAL"
+                                        + " type: TYPE_MESSAGE type_name: '.t.Leaf' } }",
+                                FileDescriptorProto.class),
+                        new FileDescriptor[] {editions});
+        for (Descriptor root :
+                List.of(
+                        editions.findMessageTypeByName("Leaf"),
+                        reaching.findMessageTypeByName("Root"))) {
+            assertThatThrownBy(() -> ProtobufMessageType.validatePayloadGraph(root))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage(
+                            "Payload message t.Leaf is declared in editions.proto with syntax"
+                                    + " editions; only proto3 is supported");
+        }
+        // Proto3 permits extension declarations nested in a message, which are still rejected.
+        for (Class<? extends Message> type :
+                List.of(ExtensionDeclaration.class, ExtensionHolder.class)) {
+            assertThatThrownBy(() -> new ProtobufTypeSerializer<>(type))
+                    .hasMessageEndingWith(
+                            "Extension-dependent payload message:"
+                                    + " flink.protobuf.serializer.ExtensionDeclaration");
+        }
+        assertThatCode(
+                        () ->
+                                ProtobufMessageType.validatePayloadGraph(
+                                        OptionMessage.getDescriptor()))
+                .doesNotThrowAnyException();
     }
 
     @Test
