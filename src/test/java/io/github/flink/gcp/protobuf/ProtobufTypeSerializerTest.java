@@ -586,31 +586,6 @@ class ProtobufTypeSerializerTest {
         assertRoundTrip(bounded, opaque);
         assertThat(BoundedMessage.parseFrom(opaque.toByteArray()).getUnknownFields())
                 .isEqualTo(kept);
-        // Numbers of string, bytes, and packed fields are written unchanged, and the reader moves
-        // valid content into those fields (issue #127).
-        BoundedMessage scalar =
-                BoundedMessage.newBuilder()
-                        .setUnknownFields(
-                                UnknownFieldSet.newBuilder()
-                                        .mergeFrom(lengthDelimited(2, ByteString.copyFromUtf8("x")))
-                                        .mergeFrom(lengthDelimited(4, ByteString.copyFromUtf8("p")))
-                                        .mergeFrom(
-                                                lengthDelimited(
-                                                        5, ByteString.copyFrom(new byte[] {1})))
-                                        .mergeFrom(
-                                                lengthDelimited(13, ByteString.copyFromUtf8("c")))
-                                        .build())
-                        .build();
-        byte[] frame = encode(bounded, scalar);
-        assertThat(Arrays.copyOfRange(frame, 4, frame.length)).isEqualTo(scalar.toByteArray());
-        assertThat(bounded.deserialize(input(frame)))
-                .isEqualTo(
-                        BoundedMessage.newBuilder()
-                                .setText("x")
-                                .setPayload(ByteString.copyFromUtf8("p"))
-                                .addPacked(1)
-                                .addChunks(ByteString.copyFromUtf8("c"))
-                                .build());
 
         // A set shared with a type that does not declare the number is still checked at the
         // container that does, after the traversal has summarized it under the other type.
@@ -627,6 +602,160 @@ class ProtobufTypeSerializerTest {
                 bounded,
                 BoundedMessage.newBuilder().setLeaf(holder).setUnknownFields(shared).build(),
                 leaf);
+    }
+
+    @Test
+    void unknownFieldsThatTheParserReadsIntoDeclaredFieldsAreRejectedBeforeWriting()
+            throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> scalar =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        ByteString text = ByteString.copyFromUtf8("x");
+        ByteString one = ByteString.copyFrom(new byte[] {1});
+        // Each row reuses a declared number with a wire type that the field accepts.
+        List<Reinterpreted> rejected =
+                List.of(
+                        new Reinterpreted("int32_value", varint(5, 9), false),
+                        new Reinterpreted("bool_value", varint(8, 1), false),
+                        new Reinterpreted("choice", varint(16, 99), false),
+                        new Reinterpreted("fixed32_value", fixed32(7), false),
+                        new Reinterpreted("sfixed32_value", fixed32(12), false),
+                        new Reinterpreted("float_value", fixed32(2), false),
+                        new Reinterpreted("fixed64_value", fixed64(6), false),
+                        new Reinterpreted("sfixed64_value", fixed64(13), false),
+                        new Reinterpreted("double_value", fixed64(1), false),
+                        new Reinterpreted("string_value", lengthDelimited(9, text), false),
+                        new Reinterpreted(
+                                "string_value",
+                                lengthDelimited(9, ByteString.copyFrom(new byte[] {(byte) 0xff})),
+                                true),
+                        new Reinterpreted("bytes_value", lengthDelimited(10, text), false),
+                        new Reinterpreted("strings", lengthDelimited(19, text), false),
+                        new Reinterpreted("blobs", lengthDelimited(20, text), false),
+                        new Reinterpreted("selected_string", lengthDelimited(21, text), false),
+                        new Reinterpreted(
+                                "selected_message", lengthDelimited(22, ByteString.EMPTY), false),
+                        new Reinterpreted("packed_values", lengthDelimited(17, one), false),
+                        new Reinterpreted("packed_values", varint(17, 4), false),
+                        new Reinterpreted("unpacked_values", lengthDelimited(18, one), false),
+                        new Reinterpreted(
+                                "packed_fixed32",
+                                lengthDelimited(36, ByteString.copyFrom(new byte[] {1, 2, 3})),
+                                true),
+                        new Reinterpreted("packed_fixed32", fixed32(36), false));
+        for (Reinterpreted row : rejected) {
+            ScalarMessage value =
+                    ScalarMessage.newBuilder()
+                            .setInt32Value(1)
+                            .setUnknownFields(row.unknown())
+                            .build();
+            String label = row.field() + " " + row.unknown();
+            // The rows match the runtime: the parser reads the value or, for malformed content,
+            // fails, and never keeps it unknown.
+            if (row.readFails()) {
+                assertThatThrownBy(() -> ScalarMessage.parseFrom(value.toByteArray()))
+                        .as(label)
+                        .isInstanceOf(IOException.class);
+            } else {
+                assertThat(ScalarMessage.parseFrom(value.toByteArray()).getUnknownFields())
+                        .as(label)
+                        .isEqualTo(UnknownFieldSet.getDefaultInstance());
+            }
+            int number = row.unknown().asMap().keySet().iterator().next();
+            String wireType = wireType(row.unknown().getField(number));
+            assertRejectedBeforeWrite(
+                    scalar,
+                    value,
+                    collision(wireType, number, "ScalarMessage", "ScalarMessage." + row.field()));
+        }
+        // Read back, such a value replaces a value already set or selects another oneof member.
+        assertThat(
+                        ScalarMessage.parseFrom(
+                                        ScalarMessage.newBuilder()
+                                                .setInt32Value(1)
+                                                .setUnknownFields(varint(5, 9))
+                                                .build()
+                                                .toByteArray())
+                                .getInt32Value())
+                .isEqualTo(9);
+        assertThat(
+                        ScalarMessage.parseFrom(
+                                        ScalarMessage.newBuilder()
+                                                .setSelectedMessage(
+                                                        ScalarMessage.getDefaultInstance())
+                                                .setUnknownFields(lengthDelimited(21, text))
+                                                .build()
+                                                .toByteArray())
+                                .getSelectionCase())
+                .isEqualTo(ScalarMessage.SelectionCase.SELECTED_STRING);
+        // A wire type that the declared field does not accept stays unknown and is written as is.
+        UnknownFieldSet kept =
+                UnknownFieldSet.newBuilder()
+                        .mergeFrom(fixed64(7))
+                        .mergeFrom(fixed32(1))
+                        .mergeFrom(varint(6, 1))
+                        .mergeFrom(varint(9, 1))
+                        .mergeFrom(fixed32(5))
+                        .mergeFrom(lengthDelimited(5, text))
+                        .addField(
+                                3,
+                                UnknownFieldSet.Field.newBuilder()
+                                        .addGroup(UnknownFieldSet.getDefaultInstance())
+                                        .build())
+                        .mergeFrom(varint(22, 1))
+                        .mergeFrom(fixed64(36))
+                        .mergeFrom(fixed32(17))
+                        .mergeFrom(varint(20, 1))
+                        .mergeFrom(lengthDelimited(100, text))
+                        .build();
+        ScalarMessage opaque = ScalarMessage.newBuilder().setUnknownFields(kept).build();
+        assertThat(ScalarMessage.parseFrom(opaque.toByteArray()).getUnknownFields())
+                .isEqualTo(kept);
+        assertRoundTrip(scalar, opaque);
+        // The rule also applies where the generated size would otherwise decide, and nested.
+        ProtobufTypeSerializer<BoundedMessage> bounded =
+                new ProtobufTypeSerializer<>(BoundedMessage.class);
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder().setUnknownFields(varint(1, 9)).build(),
+                collision("varint", 1, "BoundedMessage", "BoundedMessage.id"));
+        assertRejectedBeforeWrite(
+                bounded,
+                BoundedMessage.newBuilder()
+                        .setLeaf(BoundedLeaf.newBuilder().setUnknownFields(varint(1, 9)))
+                        .build(),
+                collision("varint", 1, "BoundedLeaf", "BoundedLeaf.code"));
+    }
+
+    /** An unknown field that the parser reads into a declared field, or fails to read. */
+    private record Reinterpreted(String field, UnknownFieldSet unknown, boolean readFails) {}
+
+    /** Names the wire type of the single kind of value that an unknown field holds. */
+    private static String wireType(UnknownFieldSet.Field values) {
+        if (!values.getVarintList().isEmpty()) {
+            return "varint";
+        }
+        if (!values.getFixed32List().isEmpty()) {
+            return "fixed32";
+        }
+        return values.getFixed64List().isEmpty() ? "length-delimited" : "fixed64";
+    }
+
+    private static UnknownFieldSet varint(int number, long value) {
+        return UnknownFieldSet.newBuilder()
+                .addField(number, UnknownFieldSet.Field.newBuilder().addVarint(value).build())
+                .build();
+    }
+
+    private static UnknownFieldSet fixed32(int number) {
+        return UnknownFieldSet.newBuilder()
+                .addField(number, UnknownFieldSet.Field.newBuilder().addFixed32(1).build())
+                .build();
+    }
+
+    private static UnknownFieldSet fixed64(int number) {
+        return UnknownFieldSet.newBuilder()
+                .addField(number, UnknownFieldSet.Field.newBuilder().addFixed64(1).build())
+                .build();
     }
 
     @Test
@@ -699,11 +828,17 @@ class ProtobufTypeSerializerTest {
     }
 
     private static String collision(int number, String type, String field) {
-        return "Unknown length-delimited field "
+        return collision("length-delimited", number, type, field);
+    }
+
+    private static String collision(String wireType, int number, String type, String field) {
+        return "Unknown "
+                + wireType
+                + " field "
                 + number
                 + " of flink.protobuf.serializer."
                 + type
-                + " would be parsed as message field flink.protobuf.serializer."
+                + " would be parsed as declared field flink.protobuf.serializer."
                 + field;
     }
 

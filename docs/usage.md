@@ -55,15 +55,15 @@ Builder reuse does not change previously built type information or serializers.
 These limits constrain accepted inputs, not total heap usage or stack capacity.
 
 Serialization rejects a value that exceeds either limit with `IOException` before writing its frame.
-It also rejects a value with an unknown length-delimited field whose number belongs to a message or map field that the containing message declares, naming the field number and the declared field.
-The reader would parse those bytes as that field's message, so their nesting could exceed the recursion limit that the writer checked.
+It also rejects a value with an unknown field that reuses the number of a field that the containing message declares, with a wire type that field accepts, naming the wire type, the field number, and the declared field.
+The reader would parse such a field into the declared one.
+A length-delimited value of a message or map field becomes that field's message, whose nesting could exceed the recursion limit that the writer checked; any other value becomes that field's value, which replaces a singular value already set, adds an element to a repeated field, selects another oneof member, or fails the read for invalid UTF-8 or a malformed packed value.
+A repeated numeric or enum field accepts both its packed and its unpacked encoding.
 Parsing never produces such a field, because the parser merges those bytes into the declared field; only a value whose unknown fields the application set or merged directly can carry one, for example unknown fields copied from a message of another type.
 Earlier development builds, including 0.1.0, wrote such values, so an application that builds them now fails when serializing them.
-State that those builds wrote is not affected: reading merges the bytes into the declared field, so restored values no longer carry the collision.
+State that those builds wrote is not affected: reading either merges the bytes into the declared field, so restored values no longer carry the collision, or fails for malformed content, as it already did with those builds.
 Serialization likewise rejects an unknown-field number above 536,870,911, the [largest field number](https://protobuf.dev/programming-guides/proto3/#assigning), because its wire tag would wrap to another field's tag, which the reader then parses as that field, or to an invalid tag for field zero, which fails the read.
-Other unknown fields are written unchanged.
-The reader keeps those with undeclared numbers, those with a wire type that the declared field does not accept, and everything inside unknown groups as unknown fields.
-It reads one whose number and wire type match a declared scalar, string, bytes, or packed field into that field instead, and invalid UTF-8 or a truncated packed value there makes the read fail; whether serialization should reject such fields is tracked in [#127](https://github.com/flink-gcp/flink-datastream-protobuf/issues/127).
+Other unknown fields are written unchanged, and the reader keeps them as unknown fields: those with undeclared numbers, those with a wire type that the declared field does not accept, and everything inside unknown groups.
 
 ## Memory of large decoded messages
 
