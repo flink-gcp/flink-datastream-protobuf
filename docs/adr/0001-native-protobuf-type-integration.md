@@ -165,6 +165,13 @@ Framing version 1 identifies this representation in the snapshot, independently 
 
 Check serialized size so that integer overflow cannot accept a value, and enforce the configured size and recursion limits before emitting a frame.
 The write-side depth check must match the configured parser budget, including nested message/map-entry payloads and unknown groups, so an accepted value is not written beyond its own reader's limits.
+The parser reads an unknown length-delimited field whose number belongs to a declared message or map field of the containing message as that field's message, including any unknown groups nested in its bytes, and a map entry is such a message whatever the map's value type.
+Writing rejects a value with such a field with `IOException` before emitting a frame, naming the field number and the declared field, at the root and at every nested or map value; the check uses the containing message's type, so an unknown-field set shared with a type that leaves the number undeclared is still rejected where it collides.
+Parsing a proto3 value never produces this state, because the parser merges those bytes into the declared field; only a value whose unknown fields an application set or merged directly can carry one.
+Writing also rejects an unknown-field number above 536,870,911, the [largest field number](https://protobuf.dev/programming-guides/proto3/#assigning), at any depth including unknown groups.
+A tag is the number shifted left by three bits and combined with the wire type in 32 bits; `UnknownFieldSet` accepts any positive number, and the runtime's `int` shift wraps a larger one either to another number's tag, which the parser then reads as that field, or to a tag for field zero, which the parser rejects as invalid.
+The parser keeps unknown fields with undeclared numbers, other wire types, and the content of unknown groups unknown, so they are still sized and written as opaque bytes.
+Unknown fields whose number and wire type match a declared scalar, string, bytes, or packed field are also written as opaque bytes, but the parser reads them into that field, where invalid UTF-8 or a truncated packed value fails the read; [issue #127](https://github.com/flink-gcp/flink-datastream-protobuf/issues/127) tracks whether writing should reject them.
 On reading, reject negative or excessive lengths before allocating storage from the length, use a stream bounded to that frame, and require complete valid parsing within it.
 A payload of at most 4 KiB may be read completely into the same retained array and parsed without aliasing, so decoded values never refer to reused storage.
 A larger payload may be read completely into a new array of exactly its length and parsed with aliasing enabled, through a decoder created from `UnsafeByteOperations.unsafeWrap`, because the public array factory treats its input as mutable and never aliases `ByteString` reads from it; that class is `@ExperimentalApi` in Protobuf 3.25.9 and not in 4.33.6.
@@ -198,11 +205,11 @@ The calculation reads fields through public runtime reflection, so it does not r
 Generated field accessors already cache their reflective methods in Protobuf's accessor table; the library does not maintain a second method cache.
 The dedicated calculation requires differential tests against both supported runtimes.
 
-A payload type whose reachable type graph is acyclic has a static height: the greatest parser depth that a value can reach without unknown groups.
-When that height is within the recursion limit, the serializer reads the value's message fields to find unknown groups and values reporting another descriptor, and its repeated strings and string-valued maps to bound their wire size from below; without either and within that bound, it uses the runtime's memoized `getSerializedSize()` if the result is at most 4 KiB and the size limit.
+A payload type whose reachable type graph is acyclic has a static height: the greatest parser depth that a value can reach without unknown groups or colliding unknown fields.
+When that height is within the recursion limit, the serializer reads the value's message fields to find unknown groups, colliding unknown fields, and values reporting another descriptor, and its repeated strings and string-valued maps to bound their wire size from below; without either and within that bound, it uses the runtime's memoized `getSerializedSize()` if the result is at most 4 KiB and the size limit.
 Until one of the runtime's `int` sums first exceeds `Integer.MAX_VALUE`, each addend is the exact length that the generated writer emits, so a reported size that wrapped implies at least 2 GiB of output.
 Encoding such a value into the 4 KiB array fails before any frame byte reaches the target, and the serializer then runs the traversal, which reports the exceeded limit.
-The traversal decides instead for a recursive type or one whose static height exceeds the recursion limit, and for a value with unknown groups, a value reporting another descriptor, more than 64 counted nested values, repeated strings or string-valued maps whose bound exceeds 4 KiB or the size limit, a generated size above 4 KiB or the size limit, or a runtime failure to compute the size.
+The traversal decides instead for a recursive type or one whose static height exceeds the recursion limit, and for a value with unknown groups, an unknown field that collides with a declared message or map field, or an unknown-field number above the maximum, a value reporting another descriptor, more than 64 counted nested values, repeated strings or string-valued maps whose bound exceeds 4 KiB or the size limit, a generated size above 4 KiB or the size limit, or a runtime failure to compute the size.
 The runtime sizes every distinct value in full, including strings, lists, and unknown fields that values share, and measures a String again at each repeated or map occurrence; the count and the string bound limit that repeated work before the traversal rejects an oversized value.
 Field reads on this path use the same reflective accessors as the traversal, so it relies on no protoc getter names; the library still keeps no method cache of its own.
 
@@ -431,6 +438,10 @@ Fingerprint equality alone is insufficient in either development milestone.
 
 Caching a method handle for each generated getter would make the remaining traversal cheaper, but it requires reproducing protoc's Java accessor names or reaching private accessor tables.
 The generated-size path removes reflective reads of scalar fields for bounded types without either, and recursive types keep the traversal.
+
+Validating a colliding unknown field instead of rejecting it, by parsing its bytes as the declared field's message within the remaining recursion budget, would accept every such value that its reader accepts.
+It would allocate a message for each collision, and a parse reports only whether the bytes fit the budget, not their depth, so per-call summaries could not reuse the result at a deeper path.
+Rejecting costs one lookup of each declared message or map field number in a value's non-empty unknown-field set, without copying the set, and never affects a value that parsing produced; documenting the gap instead would leave the write-side depth guarantee open for these values.
 
 Streaming a payload above 4 KiB through Protobuf's coded-input buffer, as before issue #113, needs no payload-sized array, but the pinned runtimes' stream decoder copies a `bytes` value that does not fit in that buffer twice: into one array and then into its `ByteString`, or, for an unbuffered remainder of at least 4 KiB that the stream does not report as available, into chunks and then into one array.
 Reading into a new array and parsing it without aliasing still copies each value once after the frame copy.
