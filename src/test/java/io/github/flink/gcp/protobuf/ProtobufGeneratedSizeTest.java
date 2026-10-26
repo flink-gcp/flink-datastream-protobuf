@@ -219,6 +219,22 @@ class ProtobufGeneratedSizeTest {
                 nested.toBuilder().setUnknownFields(group).build(),
                 MAX_SIZE,
                 100);
+        // An unknown field with a wire type that its declared number does not accept stays unknown,
+        // so the generated size still decides.
+        assertGenerated(
+                BoundedMessage.class,
+                nested.toBuilder()
+                        .setUnknownFields(
+                                UnknownFieldSet.newBuilder()
+                                        .addField(
+                                                1,
+                                                UnknownFieldSet.Field.newBuilder()
+                                                        .addFixed32(1)
+                                                        .build())
+                                        .build())
+                        .build(),
+                MAX_SIZE,
+                100);
         // An unknown field that the parser would read as a declared message also needs the
         // traversal, which rejects it; the generated size would have accepted its opaque bytes.
         BoundedMessage colliding =
@@ -237,7 +253,7 @@ class ProtobufGeneratedSizeTest {
                                 sizer(BoundedMessage.class, MAX_SIZE, 100)
                                         .check(new MarkedSize(colliding)))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("would be parsed as message field");
+                .hasMessageContaining("would be parsed as declared field");
 
         // Repeated elements, even default ones, count toward the budget; one more exceeds it.
         BoundedMessage.Builder counted = BoundedMessage.newBuilder();
