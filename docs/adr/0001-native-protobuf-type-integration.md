@@ -68,7 +68,7 @@ public static <T> ProtobufTypeInformation<T> of(Class<T> messageClass);
 public static <T extends Message> Builder<T> newBuilder(Class<T> messageClass);
 ```
 
-The public static nested `Builder<T extends Message>` provides `deterministicSerialization(boolean)`, `maxMessageSize(int)`, and `recursionLimit(int)`, each returning the same builder, and `build()` returning a new immutable `ProtobufTypeInformation<T>`.
+The public static nested `Builder<T extends Message>` provides `deterministicSerialization(boolean)`, `maxMessageSize(int)`, `recursionLimit(int)`, and `largePayloadAliasing(boolean)`, each returning the same builder, and `build()` returning a new immutable `ProtobufTypeInformation<T>`.
 For supported message classes, `of(messageClass)` is equivalent to `newBuilder(messageClass).build()` with the defaults below.
 The construction API, descriptor snapshots, and managed-state acceptance tests for unchanged and supported changed schemas are implemented.
 
@@ -127,6 +127,7 @@ Supporting these generated types does not implement DynamicMessage, ProtoJSON, O
 | `deterministicSerialization` | `false` | Explicit opt-in for deterministic payload writing |
 | `maxMessageSize` | `67108864` bytes (64 MiB) | Payload byte limit, from 1 through `Integer.MAX_VALUE`, inclusive |
 | `recursionLimit` | `100` | Positive integer; the Protobuf parser's recursion budget |
+| `largePayloadAliasing` | `true` | Whether values decoded from a payload above 4 KiB may share its array |
 
 Validate settings at `build()`.
 Builder reuse must not mutate previously built type information or serializers.
@@ -145,7 +146,7 @@ Deterministic serialization cannot repair that hash instability and does not pro
 The earlier proposed message-key opt-in is withdrawn before any production API or snapshot is published; there is no released opt-in API or state format to remove.
 Future message-key support requires a separate design proving stable hashing, equality, serialized identity, and recovery across processes; it is not implied by the DynamicMessage release.
 
-Both TypeInformation and serializer equality/hashCode include the concrete Java class identity, Protobuf full name, complete normalized descriptor content, framing/normalization versions, and all three settings.
+Both TypeInformation and serializer equality/hashCode include the concrete Java class identity, Protobuf full name, complete normalized descriptor content, framing/normalization versions, and all four settings.
 Class identity here includes the defining classloader; snapshot restore compares the saved Java binary name against the class resolved with the supplied user-code classloader.
 `canEqual` follows the same TypeInformation implementation boundary.
 Parser/cache object identity and the stored fingerprint are not substitutes for schema content or settings.
@@ -175,11 +176,12 @@ A tag is the number shifted left by three bits and combined with the wire type i
 The parser keeps unknown fields with undeclared numbers, other wire types, and the content of unknown groups unknown, so they are still sized and written as opaque bytes.
 On reading, reject negative or excessive lengths before allocating storage from the length, use a stream bounded to that frame, and require complete valid parsing within it.
 A payload of at most 4 KiB may be read completely into the same retained array and parsed without aliasing, so decoded values never refer to reused storage.
-A larger payload may be read completely into a new array of exactly its length and parsed with aliasing enabled, through a decoder created from `UnsafeByteOperations.unsafeWrap`, because the public array factory treats its input as mutable and never aliases `ByteString` reads from it; that class is `@ExperimentalApi` in Protobuf 3.25.9 and not in 4.33.6.
+A larger payload may be read completely into a new array of exactly its length and parsed through a decoder created from `UnsafeByteOperations.unsafeWrap`, with aliasing when `largePayloadAliasing` is enabled, because the public array factory treats its input as mutable and never aliases `ByteString` reads from it; that class is `@ExperimentalApi` in Protobuf 3.25.9 and not in 4.33.6.
 The payload is copied into that array through the retained 4 KiB array, so the source never receives an array that decoded values may share; like Protobuf's stream decoder, this keeps decoded values intact even when a source keeps or later writes the arrays it filled.
 The array starts at no more than 1 MiB and doubles as bytes arrive, so the arrays allocated for a corrupt prefix within the size limit total at most 1 MiB or less than four times the bytes present, and the read fails with `IOException` when the input ends; only bytes that arrive drive growth, and a growth step that the heap or the JVM's array-size limit cannot satisfy still fails with `OutOfMemoryError`.
 The serializer never writes to, reuses, or exposes that array, so values that the runtime decodes as `ByteString`, including `bytes` fields and unknown length-delimited fields, may share it instead of being copied.
 Any such value that an application keeps, including one taken from the message, keeps the whole array reachable.
+With `largePayloadAliasing` disabled, the same array is parsed without aliasing, so each such value copies its bytes and the array becomes unreachable after parsing.
 A parser buffer must not consume a subsequent frame; `CodedInputStream.pushLimit` alone does not bound reads from the underlying stream.
 Negative lengths, oversized/deep messages, malformed payloads, and truncated frames fail with `IOException` identifying the condition.
 No resynchronization after malformed input is promised.
@@ -238,13 +240,13 @@ Use deterministic serialization to write the normalized FileDescriptorSet and SH
 The fingerprint permits integrity checks and comparison optimizations; a digest match alone never establishes compatibility, and a difference between stored fingerprints alone never establishes incompatibility across descriptor readers.
 In particular, file iteration order and SourceCodeInfo changes normalize away, while reordered declarations, option changes, or changes to an imported built-in descriptor do not.
 
-### Snapshot format version 1
+### Snapshot format version 2
 
 The 0.1.0 snapshot class is `io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot`, with a public no-argument constructor.
 Later releases that support reading this snapshot must retain a loadable reader under that class name.
 Published format identifiers must never be reused for a different layout: changing the payload requires a new format version or snapshot class, even during 0.x development.
-Flink writes its snapshot-class envelope and the integer returned by `getCurrentVersion()`; return `1`, and do not duplicate that envelope inside `writeSnapshot`.
-The version-1 payload has this fixed order:
+Flink writes its snapshot-class envelope and the integer returned by `getCurrentVersion()`; return `2`, and do not duplicate that envelope inside `writeSnapshot`.
+The version-2 payload has this fixed order:
 
 | Field | Encoding |
 |---|---|
@@ -255,10 +257,12 @@ The version-1 payload has this fixed order:
 | Deterministic serialization | One byte, `0` or `1` |
 | Maximum payload size | Big-endian positive `int32` |
 | Recursion limit | Big-endian positive `int32` |
+| Large-payload aliasing | One byte, `0` or `1` |
 | Descriptor byte length | Big-endian positive `int32` |
 | Normalized FileDescriptorSet | Exactly the declared number of bytes |
 | Descriptor fingerprint | Exactly 32 SHA-256 bytes, without a length prefix |
 
+Version 1, which development builds wrote before the aliasing setting existed, has the same order without the aliasing byte; read it with aliasing enabled, the default.
 The names must be nonempty and fit `writeUTF`'s 65535-byte modified-UTF encoding limit.
 The descriptor block has a fixed 64 MiB maximum independent of `maxMessageSize`; validate its length before allocation on read and its size before writing a snapshot.
 Reject unsupported snapshot, framing, or normalization versions, invalid flag bytes/settings, invalid or incomplete descriptor graphs, missing named root messages, digest mismatches, and truncated data explicitly.
@@ -281,12 +285,15 @@ Corrupt or unsupported snapshot data fails during reading rather than becoming a
 |---|---|
 | `maxMessageSize` equal or increased, and `recursionLimit` equal or increased | `compatibleAsIs` |
 | Either limit decreased, even if the other increased | `incompatible` |
-| `deterministicSerialization` changed in either direction | Does not change compatibility; apply the limit rules above |
+| `deterministicSerialization` or `largePayloadAliasing` changed in either direction | Does not change compatibility; apply the limit rules above |
 
 These rules apply to value serializers, including MapState values; they do not grant compatibility for Protobuf MapState user keys, which are unsupported.
 Both resource limits must be nondecreasing because the snapshot records permitted input bounds, not the actual maximum size/depth of every saved value.
 For example, increasing 64 MiB to 128 MiB permits restoration of state written under the old limit; reducing it to 32 MiB cannot be accepted without knowing that every saved value fits.
 Deterministic mode affects future write ordering, not the readability of previously serialized values.
+Aliasing affects only whether decoded values share the payload array.
+Heap state backends and operator state read restored values with the serializer from `restoreSerializer()` before the application registers its new one, so those values follow the setting recorded when the state was saved; a changed setting reaches them from the next restore after a new snapshot, for state that the restored job registers again.
+RocksDB reads keyed state with the new serializer once the result is `compatibleAsIs`, so the new setting applies immediately there.
 On `compatibleAsIs`, the new serializer keeps its explicitly requested settings; `restoreSerializer()` reconstructs a reader with the settings recorded by its own snapshot.
 Snapshots subsequently emitted by the new serializer record its new settings, so lowering them on a later restart is not implicitly allowed by an older restore decision.
 These directional setting rules also apply in 0.2.0, together with its schema evaluator.
@@ -450,6 +457,10 @@ Reading into a new array and parsing it without aliasing still copies each value
 Reading directly into the final array would avoid one copy of the payload, but it would hand the source an array that decoded values share.
 Allocating the declared length before reading would avoid the growth copies above 1 MiB, but a corrupt prefix could then allocate up to the size limit and fail with `OutOfMemoryError` instead of `IOException`.
 Aliasing removes the value copies at the cost of retaining the frame array through decoded values; the [large-read report](../validation/serializer-large-read.md) measures aliasing against streaming.
+
+Leaving `largePayloadAliasing` out of the snapshot would keep the snapshot format, but a restored serializer could then only use a fixed choice for heap-restored values, which are the values kept longest, regardless of what the application configured.
+Recording it lets those values follow the application's setting from the next restore on.
+The disabled path reads the same array as the enabled one and only parses it without aliasing, so it was not measured on the paired GCE protocol; no timing claim is made for it.
 
 Supporting proto2 payloads, as development builds through 0.1.0 did, keeps required fields, declared groups, closed enums, explicit defaults, and strings without UTF-8 validation in the serializer, its sizing, and the schema evaluator.
 Proto2 also adds unknown fields that the parser reinterprets under a declared field, which the write-side depth check of [issue #120](https://github.com/flink-gcp/flink-datastream-protobuf/issues/120) would otherwise have to cover: parsing keeps a closed-enum map entry with an unknown value as an unknown field under the map's number, and an unknown group can match a declared group field.

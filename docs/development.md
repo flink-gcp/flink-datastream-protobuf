@@ -251,8 +251,8 @@ The limits constrain accepted inputs; they do not promise a bound on total heap 
 
 Reading validates the prefix before allocating from its value and bounds underlying reads to the current frame.
 A payload of at most 4 KiB is read completely into the same retained array and parsed by an array decoder without aliasing.
-A larger payload is copied through that array into a new array that starts at no more than 1 MiB and doubles until it holds the payload, then parsed with aliasing through `UnsafeByteOperations.unsafeWrap(...).newCodedInput()`; decoded `ByteString` values may share that array ([ADR-0001](adr/0001-native-protobuf-type-integration.md#message-framing-version-1)).
-Tests check that the two `bytes` values of a large frame share one array and those of a small frame do not, that payloads just below, at, and above 1 MiB grow to their exact length without reading an adjacent frame, that decoded values survive a source that overwrites every array it filled, and that truncated frames declaring `Integer.MAX_VALUE` bytes fail with `IOException`.
+A larger payload is copied through that array into a new array that starts at no more than 1 MiB and doubles until it holds the payload, then parsed through `UnsafeByteOperations.unsafeWrap(...).newCodedInput()` with aliasing unless `largePayloadAliasing` is disabled; decoded `ByteString` values may share that array ([ADR-0001](adr/0001-native-protobuf-type-integration.md#message-framing-version-1)).
+Tests check that the two `bytes` values of a large frame share one array and those of a small frame do not, that large-frame values share no array with `largePayloadAliasing` disabled, that payloads just below, at, and above 1 MiB grow to their exact length without reading an adjacent frame, that decoded values survive a source that overwrites every array it filled, and that truncated frames declaring `Integer.MAX_VALUE` bytes fail with `IOException`.
 For both sizes, tests overwrite the caller's frame and then read small and large frames through the same serializer after decoding, and check that bytes, strings, unknown fields and groups, lazy fields (which the full runtime parses eagerly), and nested values are unchanged.
 Object copy returns the immutable input instance; stream copy preserves frame bytes and checks length and truncation without parsing payload semantics or nesting.
 Stream copy reuses the same 4 KiB array in chunks so Flink memory output views can grow as needed.
@@ -268,8 +268,8 @@ The [generated-size report](validation/serializer-generated-size.md) measures th
 The [large-read report](validation/serializer-large-read.md) measures the aliased large-frame read against the streamed one.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
-`snapshotConfiguration()` returns an internal version-1 `ProtobufTypeSerializerSnapshot`.
-It stores both names, framing/normalization versions, all three settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
+`snapshotConfiguration()` returns an internal version-2 `ProtobufTypeSerializerSnapshot`, which also reads version 1.
+It stores both names, framing/normalization versions, all four settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
 The snapshot class/version envelope is written by Flink; the payload follows ADR-0001 exactly, including the independent 64 MiB descriptor limit.
 Reading validates metadata without resolving the saved generated class.
 Restoration resolves the class through the supplied user-code classloader and checks that it can read the saved schema before constructing a serializer with the recorded settings.

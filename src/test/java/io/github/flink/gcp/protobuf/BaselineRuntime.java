@@ -293,8 +293,9 @@ public final class BaselineRuntime {
     /**
      * Restores a snapshot fixture's framed value with the loaded library at the fixture's settings.
      *
-     * <p>The loaded library must also write byte-identical snapshot metadata, which shows that the
-     * snapshot format, settings, and test schema are unchanged rather than merely compatible.
+     * <p>A loaded library with the fixture's snapshot version must also write byte-identical
+     * snapshot metadata, which shows that the snapshot format, settings, and test schema are
+     * unchanged rather than merely compatible.
      */
     static void checkSnapshot(Properties fixture) throws Exception {
         var serializer =
@@ -308,9 +309,13 @@ public final class BaselineRuntime {
                         .build()
                         .createSerializer(new SerializerConfigImpl());
         byte[] bytes = Base64.getDecoder().decode(fixture.getProperty("snapshot.base64"));
-        DataOutputSerializer current = new DataOutputSerializer(32);
-        TypeSerializerSnapshot.writeVersionedSnapshot(current, serializer.snapshotConfiguration());
-        assertThat(current.getCopyOfBuffer()).as("Current snapshot bytes").isEqualTo(bytes);
+        if (serializer.snapshotConfiguration().getCurrentVersion()
+                == Integer.parseInt(fixture.getProperty("snapshot.version"))) {
+            DataOutputSerializer current = new DataOutputSerializer(32);
+            TypeSerializerSnapshot.writeVersionedSnapshot(
+                    current, serializer.snapshotConfiguration());
+            assertThat(current.getCopyOfBuffer()).as("Current snapshot bytes").isEqualTo(bytes);
+        }
         TypeSerializerSnapshot<Envelope> saved =
                 TypeSerializerSnapshot.readVersionedSnapshot(
                         new DataInputDeserializer(bytes), BaselineRuntime.class.getClassLoader());

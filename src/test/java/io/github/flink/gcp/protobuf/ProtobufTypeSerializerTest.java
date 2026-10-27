@@ -259,73 +259,93 @@ class ProtobufTypeSerializerTest {
     @Test
     void decodedValuesShareNoReusedOrCallerStorage() throws Exception {
         // Scale 1 parses from the scratch array; scale 16 parses from a fresh frame array that
-        // decoded bytes may share. Each value then survives later small and large reads.
+        // decoded bytes may share only with aliasing. Each value survives later reads.
         for (int scale : List.of(1, 16)) {
-            String label = "scale " + scale;
-            ScalarMessage scalar =
-                    ScalarMessage.newBuilder()
-                            .setStringValue("first é 中 😀".repeat(scale))
-                            .setBytesValue(randomBytes(512 * scale, 1))
-                            .addBlobs(randomBytes(64 * scale, 2))
-                            .addStrings("listed".repeat(scale))
-                            .setSelectedMessage(
-                                    ScalarMessage.newBuilder()
-                                            .setBytesValue(randomBytes(32 * scale, 3)))
-                            .setUnknownFields(
-                                    UnknownFieldSet.newBuilder()
-                                            .addField(
-                                                    200,
-                                                    UnknownFieldSet.Field.newBuilder()
-                                                            .addLengthDelimited(
-                                                                    randomBytes(48 * scale, 4))
-                                                            .addGroup(unknownGroups(2))
-                                                            .addGroup(
-                                                                    lengthDelimited(
-                                                                            201,
-                                                                            randomBytes(
-                                                                                    16 * scale, 5)))
-                                                            .build())
-                                            .build())
-                            .build();
-            assertThat(scalar.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
-            ProtobufTypeSerializer<ScalarMessage> serializer =
-                    new ProtobufTypeSerializer<>(ScalarMessage.class);
-            ScalarMessage decoded =
-                    serializer.deserialize(new DataInputDeserializer(encode(serializer, scalar)));
-            // Only the large path aliases, so its bytes values share one frame array.
-            assertThat(backingArray(decoded.getBytesValue()) == backingArray(decoded.getBlobs(0)))
-                    .as("%s shares the frame array", label)
-                    .isEqualTo(scale > 1);
-            assertDecodedValueSurvivesLaterReads(
-                    label,
-                    serializer,
-                    scalar,
-                    ScalarMessage.newBuilder().setBytesValue(filledBytes(SCRATCH_SIZE - 3)).build(),
-                    ScalarMessage.newBuilder()
-                            .setBytesValue(filledBytes(2 * SCRATCH_SIZE))
-                            .build());
-            // The full runtime parses lazy fields eagerly, so they are decoded with the frame.
-            LazyMessage lazy =
-                    LazyMessage.newBuilder()
-                            .setChild(
-                                    LazyValue.newBuilder()
-                                            .setValue("lazy child ".repeat(32 * scale)))
-                            .setUnchecked(
-                                    LazyValue.newBuilder()
-                                            .setValue("unverified ".repeat(32 * scale)))
-                            .build();
-            assertThat(lazy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
-            assertDecodedValueSurvivesLaterReads(
-                    label,
-                    new ProtobufTypeSerializer<>(LazyMessage.class),
-                    lazy,
-                    LazyMessage.newBuilder()
-                            .setChild(
-                                    LazyValue.newBuilder().setValue("x".repeat(SCRATCH_SIZE - 16)))
-                            .build(),
-                    LazyMessage.newBuilder()
-                            .setChild(LazyValue.newBuilder().setValue("x".repeat(2 * SCRATCH_SIZE)))
-                            .build());
+            for (boolean aliasing : List.of(true, false)) {
+                String label = "scale " + scale + ", aliasing " + aliasing;
+                ProtobufSerializerSettings settings =
+                        new ProtobufSerializerSettings(false, 64 * 1024 * 1024, 100, aliasing);
+                ScalarMessage scalar =
+                        ScalarMessage.newBuilder()
+                                .setStringValue("first é 中 😀".repeat(scale))
+                                .setBytesValue(randomBytes(512 * scale, 1))
+                                .addBlobs(randomBytes(64 * scale, 2))
+                                .addStrings("listed".repeat(scale))
+                                .setSelectedMessage(
+                                        ScalarMessage.newBuilder()
+                                                .setBytesValue(randomBytes(32 * scale, 3)))
+                                .setUnknownFields(
+                                        UnknownFieldSet.newBuilder()
+                                                .addField(
+                                                        200,
+                                                        UnknownFieldSet.Field.newBuilder()
+                                                                .addLengthDelimited(
+                                                                        randomBytes(48 * scale, 4))
+                                                                .addGroup(unknownGroups(2))
+                                                                .addGroup(
+                                                                        lengthDelimited(
+                                                                                201,
+                                                                                randomBytes(
+                                                                                        16 * scale,
+                                                                                        5)))
+                                                                .build())
+                                                .build())
+                                .build();
+                assertThat(scalar.getSerializedSize() > SCRATCH_SIZE)
+                        .as(label)
+                        .isEqualTo(scale > 1);
+                ProtobufTypeSerializer<ScalarMessage> serializer =
+                        new ProtobufTypeSerializer<>(ScalarMessage.class, settings);
+                ScalarMessage decoded =
+                        serializer.deserialize(
+                                new DataInputDeserializer(encode(serializer, scalar)));
+                // Only the large path aliases, so with aliasing its bytes values share one array.
+                assertThat(
+                                backingArray(decoded.getBytesValue())
+                                        == backingArray(decoded.getBlobs(0)))
+                        .as("%s shares the frame array", label)
+                        .isEqualTo(scale > 1 && aliasing);
+                if (!aliasing) {
+                    assertThat(backingArray(decoded.getBytesValue()))
+                            .as("%s owns its bytes", label)
+                            .hasSize(decoded.getBytesValue().size());
+                }
+                assertDecodedValueSurvivesLaterReads(
+                        label,
+                        serializer,
+                        scalar,
+                        ScalarMessage.newBuilder()
+                                .setBytesValue(filledBytes(SCRATCH_SIZE - 3))
+                                .build(),
+                        ScalarMessage.newBuilder()
+                                .setBytesValue(filledBytes(2 * SCRATCH_SIZE))
+                                .build());
+                // The full runtime parses lazy fields eagerly, so they are decoded with the frame.
+                LazyMessage lazy =
+                        LazyMessage.newBuilder()
+                                .setChild(
+                                        LazyValue.newBuilder()
+                                                .setValue("lazy child ".repeat(32 * scale)))
+                                .setUnchecked(
+                                        LazyValue.newBuilder()
+                                                .setValue("unverified ".repeat(32 * scale)))
+                                .build();
+                assertThat(lazy.getSerializedSize() > SCRATCH_SIZE).as(label).isEqualTo(scale > 1);
+                assertDecodedValueSurvivesLaterReads(
+                        label,
+                        new ProtobufTypeSerializer<>(LazyMessage.class, settings),
+                        lazy,
+                        LazyMessage.newBuilder()
+                                .setChild(
+                                        LazyValue.newBuilder()
+                                                .setValue("x".repeat(SCRATCH_SIZE - 16)))
+                                .build(),
+                        LazyMessage.newBuilder()
+                                .setChild(
+                                        LazyValue.newBuilder()
+                                                .setValue("x".repeat(2 * SCRATCH_SIZE)))
+                                .build());
+            }
         }
     }
 

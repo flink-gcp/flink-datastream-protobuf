@@ -84,8 +84,8 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
     }
 
     /**
-     * Creates type information with deterministic writing disabled, a 64 MiB payload limit, and a
-     * recursion limit of 100.
+     * Creates type information with deterministic writing disabled, a 64 MiB payload limit, a
+     * recursion limit of 100, and large-payload aliasing enabled.
      *
      * @param messageClass public concrete full-runtime generated message class
      * @param <T> concrete generated message type
@@ -269,6 +269,8 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
                 ProtobufSerializerSettings.DEFAULT.deterministicSerialization();
         private int maxMessageSize = ProtobufSerializerSettings.DEFAULT.maxMessageSize();
         private int recursionLimit = ProtobufSerializerSettings.DEFAULT.recursionLimit();
+        private boolean largePayloadAliasing =
+                ProtobufSerializerSettings.DEFAULT.largePayloadAliasing();
 
         private Builder(Class<T> messageClass) {
             this.messageClass = messageClass;
@@ -309,6 +311,24 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
         }
 
         /**
+         * Sets whether values decoded from a payload above 4 KiB may share the array that holds it.
+         *
+         * <p>The reader copies such a payload into a new array; with aliasing enabled, values that
+         * the runtime decodes as {@code ByteString}, such as {@code bytes} fields and unknown
+         * length-delimited fields, share it instead of copying their bytes, so keeping any of them
+         * keeps the whole array reachable. Disable aliasing when an application keeps such values
+         * for long. The setting changes neither the wire bytes, the decoded values, nor state
+         * compatibility.
+         *
+         * @param enabled whether decoded values may share the payload array; default true
+         * @return this builder
+         */
+        public Builder<T> largePayloadAliasing(boolean enabled) {
+            largePayloadAliasing = enabled;
+            return this;
+        }
+
+        /**
          * Validates the generated class and settings and captures an independent immutable result.
          *
          * @return new type information unaffected by subsequent builder changes
@@ -318,7 +338,10 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
             return new ProtobufTypeInformation<>(
                     messageClass,
                     new ProtobufSerializerSettings(
-                            deterministicSerialization, maxMessageSize, recursionLimit));
+                            deterministicSerialization,
+                            maxMessageSize,
+                            recursionLimit,
+                            largePayloadAliasing));
         }
     }
 }

@@ -27,17 +27,29 @@ import java.io.Serializable;
  *     not promise canonical bytes or support for message keys
  * @param maxMessageSize maximum payload bytes, excluding the four-byte frame prefix
  * @param recursionLimit maximum nested parser depth, with the root at depth zero
+ * @param largePayloadAliasing whether values decoded from a payload above 4 KiB may share its
+ *     array; this does not change the wire bytes or decoded values
  */
 @Internal
 record ProtobufSerializerSettings(
-        boolean deterministicSerialization, int maxMessageSize, int recursionLimit)
+        boolean deterministicSerialization,
+        int maxMessageSize,
+        int recursionLimit,
+        boolean largePayloadAliasing)
         implements Serializable {
 
     /**
-     * Defaults disable deterministic mode and set a 64 MiB payload limit and depth limit of 100.
+     * Defaults disable deterministic mode, set a 64 MiB payload limit and depth limit of 100, and
+     * enable large-payload aliasing.
      */
     static final ProtobufSerializerSettings DEFAULT =
-            new ProtobufSerializerSettings(false, 64 * 1024 * 1024, 100);
+            new ProtobufSerializerSettings(false, 64 * 1024 * 1024, 100, true);
+
+    /** Creates settings with large-payload aliasing enabled. */
+    ProtobufSerializerSettings(
+            boolean deterministicSerialization, int maxMessageSize, int recursionLimit) {
+        this(deterministicSerialization, maxMessageSize, recursionLimit, true);
+    }
 
     /**
      * Validates positive size and depth limits.

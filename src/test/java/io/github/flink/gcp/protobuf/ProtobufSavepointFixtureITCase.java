@@ -203,7 +203,9 @@ class ProtobufSavepointFixtureITCase {
         manifest.setProperty("settings.maxMessageSize", Integer.toString(settings.size()));
         manifest.setProperty("settings.recursionLimit", Integer.toString(settings.depth()));
         manifest.setProperty("snapshot.class", ProtobufTypeSerializerSnapshot.class.getName());
-        manifest.setProperty("snapshot.version", "1");
+        manifest.setProperty(
+                "snapshot.version",
+                Integer.toString(new ProtobufTypeSerializerSnapshot<>().getCurrentVersion()));
         manifest.setProperty("job.parallelism", "2");
         manifest.setProperty("job.maxParallelism", "16");
         manifest.setProperty("job.uids", "input,messages,values,output");
