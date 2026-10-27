@@ -61,7 +61,7 @@ class ProtobufTypeSerializerSnapshotTest {
                 new DataInputDeserializer(versioned(serializer.snapshotConfiguration()));
         assertThat(in.readUTF())
                 .isEqualTo("io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot");
-        assertThat(in.readInt()).isEqualTo(1);
+        assertThat(in.readInt()).isEqualTo(2);
         Payload payload = Payload.read(in);
         assertThat(payload.framing).isEqualTo(1);
         assertThat(payload.normalization).isEqualTo(1);
@@ -70,6 +70,7 @@ class ProtobufTypeSerializerSnapshotTest {
         assertThat(payload.flag).isZero();
         assertThat(payload.sizeLimit).isEqualTo(67108864);
         assertThat(payload.depthLimit).isEqualTo(100);
+        assertThat(payload.aliasing).isOne();
         assertThat(payload.fingerprint).hasSize(32).isEqualTo(sha256(payload.descriptors));
         assertThat(in.available()).isZero();
         assertThat(payload.schema()).isEqualTo(ProtobufMessageType.resolve(Envelope.class).schema);
@@ -81,7 +82,7 @@ class ProtobufTypeSerializerSnapshotTest {
     @Test
     void restoredSerializerReadsSavedValuesAndKeepsItsSettings() throws Exception {
         for (ProtobufSerializerSettings settings :
-                List.of(DEFAULT, new ProtobufSerializerSettings(true, 1024, 8))) {
+                List.of(DEFAULT, new ProtobufSerializerSettings(true, 1024, 8, false))) {
             ProtobufTypeSerializer<Envelope> original = serializer(settings);
             TypeSerializer<Envelope> restored =
                     readVersioned(versioned(original.snapshotConfiguration()), LOADER)
@@ -114,18 +115,20 @@ class ProtobufTypeSerializerSnapshotTest {
     }
 
     @Test
-    void readerLimitsAreDirectionalAndDeterministicModeCanChangeEitherWay() throws Exception {
+    void readerLimitsAreDirectionalAndModeFlagsCanChangeEitherWay() throws Exception {
         for (boolean before : List.of(false, true)) {
             for (boolean after : List.of(false, true)) {
                 TypeSerializerSnapshot<Envelope> old =
-                        snapshot(new ProtobufSerializerSettings(before, 100, 10));
+                        snapshot(new ProtobufSerializerSettings(before, 100, 10, before));
                 for (int size : List.of(99, 100, 101)) {
                     for (int depth : List.of(9, 10, 11)) {
                         TypeSerializerSnapshot<Envelope> next =
-                                snapshot(new ProtobufSerializerSettings(after, size, depth));
+                                snapshot(new ProtobufSerializerSettings(after, size, depth, after));
                         var result = next.resolveSchemaCompatibility(old);
                         assertThat(result.isCompatibleAsIs())
-                                .as("%s -> %s, size=%s depth=%s", before, after, size, depth)
+                                .as(
+                                        "both flags %s -> %s, size=%s depth=%s",
+                                        before, after, size, depth)
                                 .isEqualTo(size >= 100 && depth >= 10);
                         assertThat(result.isIncompatible()).isEqualTo(size < 100 || depth < 10);
                         assertThat(result.isCompatibleAfterMigration()).isFalse();
@@ -465,7 +468,7 @@ class ProtobufTypeSerializerSnapshotTest {
 
     @Test
     void unsupportedVersionsFailBeforeDecodingFurtherData() throws Exception {
-        for (int version : List.of(-1, 0, 2, Integer.MAX_VALUE)) {
+        for (int version : List.of(-1, 0, 3, Integer.MAX_VALUE)) {
             assertThatThrownBy(
                             () ->
                                     new ProtobufTypeSerializerSnapshot<>()
@@ -495,7 +498,10 @@ class ProtobufTypeSerializerSnapshotTest {
         for (int value : List.of(2, 127, 255)) {
             saved = payload();
             saved.flag = value;
-            assertReadFails(saved, "flag");
+            assertReadFails(saved, "deterministic serialization flag");
+            saved = payload();
+            saved.aliasing = value;
+            assertReadFails(saved, "large-payload aliasing flag");
         }
         for (int value : List.of(0, -1, Integer.MIN_VALUE)) {
             saved = payload();
@@ -526,7 +532,7 @@ class ProtobufTypeSerializerSnapshotTest {
                             () ->
                                     new ProtobufTypeSerializerSnapshot<>()
                                             .readSnapshot(
-                                                    1,
+                                                    2,
                                                     new DataInputDeserializer(truncated),
                                                     LOADER))
                     .as("length %s", length)
@@ -612,7 +618,7 @@ class ProtobufTypeSerializerSnapshotTest {
         serializer(DEFAULT).snapshotConfiguration().writeSnapshot(out);
         out.writeInt(0x12345678);
         DataInputDeserializer in = new DataInputDeserializer(out.getCopyOfBuffer());
-        new ProtobufTypeSerializerSnapshot<>().readSnapshot(1, in, LOADER);
+        new ProtobufTypeSerializerSnapshot<>().readSnapshot(2, in, LOADER);
         assertThat(in.readInt()).isEqualTo(0x12345678);
     }
 
@@ -623,7 +629,7 @@ class ProtobufTypeSerializerSnapshotTest {
         assertThatThrownBy(
                         () ->
                                 snapshot.readSnapshot(
-                                        2, new DataInputDeserializer(new byte[0]), LOADER))
+                                        3, new DataInputDeserializer(new byte[0]), LOADER))
                 .isInstanceOf(IOException.class);
         assertThatThrownBy(snapshot::restoreSerializer)
                 .isInstanceOf(IllegalStateException.class)
@@ -752,7 +758,7 @@ class ProtobufTypeSerializerSnapshotTest {
     private static TypeSerializerSnapshot<Envelope> read(Payload payload, ClassLoader loader)
             throws Exception {
         ProtobufTypeSerializerSnapshot<Envelope> result = new ProtobufTypeSerializerSnapshot<>();
-        result.readSnapshot(1, new DataInputDeserializer(payload.bytes()), loader);
+        result.readSnapshot(2, new DataInputDeserializer(payload.bytes()), loader);
         return result;
     }
 
@@ -797,6 +803,7 @@ class ProtobufTypeSerializerSnapshotTest {
         int flag;
         int sizeLimit;
         int depthLimit;
+        int aliasing;
         int declaredLength;
         byte[] descriptors;
         byte[] fingerprint;
@@ -810,6 +817,7 @@ class ProtobufTypeSerializerSnapshotTest {
             p.flag = in.readUnsignedByte();
             p.sizeLimit = in.readInt();
             p.depthLimit = in.readInt();
+            p.aliasing = in.readUnsignedByte();
             p.declaredLength = in.readInt();
             p.descriptors = new byte[p.declaredLength];
             in.readFully(p.descriptors);
@@ -837,6 +845,7 @@ class ProtobufTypeSerializerSnapshotTest {
             out.writeByte(flag);
             out.writeInt(sizeLimit);
             out.writeInt(depthLimit);
+            out.writeByte(aliasing);
             out.writeInt(declaredLength);
             out.write(descriptors);
             out.write(fingerprint);

@@ -48,7 +48,12 @@ class ProtobufTypeInformationTest {
         assertThat(info.getTotalFields()).isOne();
         assertThat(info.isKeyType()).isFalse();
         assertThat(info.toString())
-                .contains(ScalarMessage.class.getName(), "67108864", "100", "false");
+                .contains(
+                        ScalarMessage.class.getName(),
+                        "67108864",
+                        "100",
+                        "false",
+                        "largePayloadAliasing=true");
         var config = new SerializerConfigImpl();
         config.setGenericTypes(false);
         var first = info.createSerializer(config);
@@ -67,20 +72,26 @@ class ProtobufTypeInformationTest {
         assertThat(builder.deterministicSerialization(true)).isSameAs(builder);
         assertThat(builder.maxMessageSize(128)).isSameAs(builder);
         assertThat(builder.recursionLimit(3)).isSameAs(builder);
+        assertThat(builder.largePayloadAliasing(false)).isSameAs(builder);
         var configured = builder.build();
         assertThat(configured).isNotEqualTo(defaults);
         assertThat(configured.createSerializer(new SerializerConfigImpl()))
                 .isEqualTo(
                         new ProtobufTypeSerializer<>(
-                                ScalarMessage.class, new ProtobufSerializerSettings(true, 128, 3)));
+                                ScalarMessage.class,
+                                new ProtobufSerializerSettings(true, 128, 3, false)));
         assertThat(defaults).isEqualTo(ProtobufTypeInformation.of(ScalarMessage.class));
         assertThat(serializer).isEqualTo(new ProtobufTypeSerializer<>(ScalarMessage.class));
         assertThat(builder.build()).isEqualTo(configured).isNotSameAs(configured);
-        builder.deterministicSerialization(false).maxMessageSize(1).recursionLimit(1);
+        builder.deterministicSerialization(false)
+                .maxMessageSize(1)
+                .recursionLimit(1)
+                .largePayloadAliasing(true);
         assertThat(configured.createSerializer(new SerializerConfigImpl()))
                 .isEqualTo(
                         new ProtobufTypeSerializer<>(
-                                ScalarMessage.class, new ProtobufSerializerSettings(true, 128, 3)));
+                                ScalarMessage.class,
+                                new ProtobufSerializerSettings(true, 128, 3, false)));
     }
 
     @Test
@@ -98,6 +109,9 @@ class ProtobufTypeInformationTest {
                                 .build(),
                         ProtobufTypeInformation.newBuilder(ScalarMessage.class)
                                 .recursionLimit(101)
+                                .build(),
+                        ProtobufTypeInformation.newBuilder(ScalarMessage.class)
+                                .largePayloadAliasing(false)
                                 .build(),
                         ProtobufTypeInformation.of(Empty.class))) {
             assertThat(defaults).isNotEqualTo(other);

@@ -78,7 +78,7 @@ These are Protobuf binary-format properties, not this library's state-restore po
 See the [Protobuf schema-update rules](https://protobuf.dev/programming-guides/proto3/#updating).
 
 The state-restore results below assume supported snapshot formats, unchanged Java/message names, and nondecreasing size/depth limits.
-Deterministic-writing mode may change in either direction.
+Deterministic-writing mode and large-payload aliasing may change in either direction.
 They describe the forward direction: the saved state was written with the old schema and is restored by an application containing only the new generated classes.
 
 | Schema change | Protobuf binary-format rule | Current library state restore |

@@ -36,7 +36,7 @@ The base revision identifies the starting repository state; source hashes identi
 
 Both Protobuf 3.25.8 and 4.33.6 writers are retained.
 The test schemas have matching normalized descriptors across these profiles; this does not promise restore across changed built-in descriptors or Flink savepoint versions.
-Tests read all four fixtures, assert values including unknown fields, and compare the current writer's snapshot/message bytes against the fixed baseline.
+Tests read all four fixtures, restore them with large-payload aliasing enabled, assert values including unknown fields, and compare the current writer's message bytes against the fixed baseline; the current writer emits snapshot version 2.
 Snapshot compatibility tests separately cover equal/increased limits and both deterministic-mode transitions as compatible, decreased limits and schema/name changes as incompatible, and corruption as an explicit read failure.
 Tests also reject lowering either limit from each saved fixture's settings.
 
@@ -67,6 +67,7 @@ mise x -- java -cp "/tmp/snapshot-fixture-writer:target/classes:target/test-clas
 ```
 
 Compare `snapshot.base64`, `message.base64`, and their hashes with the checked-in baseline.
+Only a writer that emits snapshot version 1, such as the recorded base revision with the original sources, reproduces the snapshot bytes; a later writer that emits version 2 reproduces only the message bytes.
 Source hashes and JDK provenance can differ when reproducing bytes using revised sources or another JDK patch; those results are attributable to the new writer, not to the original one.
 Ordinary tests only read fixtures and never invoke this generator.
 When capturing published fixtures, use the published artifact as the writer and record its coordinates/checksum and source tag/commit in a new fixture directory for each artifact line.
@@ -119,7 +120,7 @@ public class SnapshotFixtureWriter {
             properties.put("settings.maxMessageSize", Integer.toString(settings.maxMessageSize()));
             properties.put("settings.recursionLimit", Integer.toString(settings.recursionLimit()));
             properties.put("snapshot.class", serializer.snapshotConfiguration().getClass().getName());
-            properties.put("snapshot.version", "1");
+            properties.put("snapshot.version", Integer.toString(serializer.snapshotConfiguration().getCurrentVersion()));
             properties.put("snapshot.base64", Base64.getEncoder().encodeToString(snapshot.getCopyOfBuffer()));
             properties.put("snapshot.sha256", hash(snapshot.getCopyOfBuffer()));
             properties.put("message.base64", Base64.getEncoder().encodeToString(message.getCopyOfBuffer()));

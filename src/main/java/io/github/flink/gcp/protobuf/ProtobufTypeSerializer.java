@@ -52,7 +52,7 @@ import java.util.Objects;
  * that each instance retains and also uses as the chunk for stream copy and larger reads. Larger
  * payloads are written through per-record Protobuf coded-stream buffers without payload-sized
  * storage in this serializer, and each is read into a new array of its length that decoded values
- * may share.
+ * may share unless large-payload aliasing is disabled.
  *
  * <p>Each instance also retains a bounded stack of sizing frames, which hold record references only
  * during a write. Instances are not intended for concurrent use; call {@link #duplicate()} for
@@ -265,10 +265,11 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * corrupt prefix total at most 1 MiB or less than four times the bytes present; a growth step
      * that the heap or the JVM's array-size limit cannot satisfy still fails with an error rather
      * than {@code IOException}. The serializer never writes that array again, reuses it, or exposes
-     * it. Values that the runtime decodes as {@code ByteString}, such as {@code bytes} fields and
-     * unknown length-delimited fields, may share that array instead of copying it, so keeping any
-     * of them keeps the whole array reachable. A failed read may consume only part of the current
-     * frame; callers must not assume input resynchronization after failure.
+     * it. With large-payload aliasing enabled, values that the runtime decodes as {@code
+     * ByteString}, such as {@code bytes} fields and unknown length-delimited fields, may share that
+     * array instead of copying it, so keeping any of them keeps the whole array reachable; with it
+     * disabled, they copy their bytes. A failed read may consume only part of the current frame;
+     * callers must not assume input resynchronization after failure.
      *
      * @param source source positioned at a frame length prefix
      * @return a message of the configured class
@@ -290,7 +291,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
                 // Neither the source nor this serializer holds this array, so decoded bytes may
                 // share it; only a decoder created from a ByteString treats its input as immutable.
                 input = UnsafeByteOperations.unsafeWrap(payload).newCodedInput();
-                input.enableAliasing(true);
+                input.enableAliasing(settings.largePayloadAliasing());
             }
             input.setSizeLimit(settings.maxMessageSize());
             input.setRecursionLimit(settings.recursionLimit());

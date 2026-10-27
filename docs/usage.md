@@ -45,7 +45,7 @@ var configured = ProtobufTypeInformation.newBuilder(Event.class)
         .build();
 ```
 
-The defaults disable deterministic writing and allow a 64 MiB payload and parser recursion depth of 100.
+The defaults disable deterministic writing, allow a 64 MiB payload and parser recursion depth of 100, and enable [large-payload aliasing](#memory-of-large-decoded-messages).
 Numeric limits must be positive; `build()` validates settings and the generated class.
 `of(Class<T>)` matches Flink's unbounded static factory signature, so unsupported classes can compile but fail with `IllegalArgumentException` at construction.
 The builder also enforces `T extends Message` at compile time.
@@ -67,24 +67,35 @@ Other unknown fields are written unchanged, and the reader keeps them as unknown
 
 ## Memory of large decoded messages
 
-Aliasing of large payloads is enabled by default, and the current serializer always uses it.
+Aliasing of large payloads is enabled by default.
 A payload above 4 KiB is read into its own array, and decoded `bytes` fields and unknown length-delimited fields may share that array instead of copying it.
-[#123](https://github.com/flink-gcp/flink-datastream-protobuf/issues/123) tracks a planned setting to disable it, with aliasing still enabled by default.
-Payloads of at most 4 KiB never share storage, and aliasing changes neither the wire bytes, state compatibility, nor decoded values.
+Disable it with `largePayloadAliasing(false)` on the builder:
 
-| | With aliasing |
-|---|---|
-| Benefit | In the [large-read report](validation/serializer-large-read.md), reading a 64 KiB payload takes 0.43 to 0.44 times the previous serializer's time and 0.54 to 0.55 times Chill's, and allocates half as much |
-| Cost | Keeping any value that shares the array, including a `ByteString` taken from the message, keeps the whole payload array reachable |
+```java
+var copying = ProtobufTypeInformation.newBuilder(Event.class)
+        .largePayloadAliasing(false)
+        .build();
+```
 
-The cost matters only when an application keeps decoded values for long:
+Payloads of at most 4 KiB never share storage, and the setting changes neither the wire bytes, state compatibility, nor decoded values.
+
+| | Aliasing enabled (default) | Aliasing disabled |
+|---|---|---|
+| Large-payload read | In the [large-read report](validation/serializer-large-read.md), reading a 64 KiB payload takes 0.43 to 0.44 times the previous serializer's time and 0.54 to 0.55 times Chill's | Each shared value is copied again after the payload is read; not measured on the benchmark protocol |
+| Allocation per large read | About the payload size for a 64 KiB `bytes` payload in the same report | The payload array plus a copy of each shared value |
+| Memory of kept values | Keeping any value that shares the array, including a `ByteString` taken from the message, keeps the whole payload array reachable | Each value owns its own copy |
+
+Disable aliasing when an application keeps decoded values for long:
 
 - A small `ByteString` that shares a large message's array, such as a `bytes` field value, keeps that whole array while it is kept in a long-lived map, cache, or heap state.
-  Copy it first, for example with `ByteString.copyFrom(value.asReadOnlyByteBuffer())`.
+  With aliasing enabled, copying that one value instead also works, for example with `ByteString.copyFrom(value.asReadOnlyByteBuffer())`.
 - Large messages kept in heap state, such as `HashMapStateBackend` values updated from records or restored from a checkpoint, keep their arrays when they hold a value that shares it.
   When a message mixes such a value with large other content, such as proto3 strings or repeated numbers, the array also holds that content's wire form in addition to its decoded form; how much more memory this takes depends on the record's shape.
 
-Records that are processed and then dropped, and values read from RocksDB state for one access, keep their arrays only as long as the application keeps the values.
+Records that are processed and then dropped, and values read from RocksDB state for one access, keep their arrays only as long as the application keeps the values, so aliasing costs no retained memory there.
+
+HashMap state and operator state restored from a checkpoint or savepoint are read with the setting recorded when that state was saved, and RocksDB keyed state with the new setting.
+A changed setting reaches those restored heap values from the next restore after a new checkpoint or savepoint, for state that the restored job registers again.
 
 ## Factory registration
 
@@ -135,7 +146,7 @@ Register against `AbstractMessage`: superclass lookup reaches generated classes,
 The registry is process-global and offers no per-job isolation.
 Explicit construction neither registers the factory nor changes its defaults.
 The factory uses the default settings; per-type settings require [explicit TypeInformation](#explicit-type-information).
-Do not add `maxMessageSize`, `recursionLimit`, or `deterministicSerialization` to this YAML entry; configure those library settings through `ProtobufTypeInformation.newBuilder(...)`.
+Do not add `maxMessageSize`, `recursionLimit`, `deterministicSerialization`, or `largePayloadAliasing` to this YAML entry; configure those library settings through `ProtobufTypeInformation.newBuilder(...)`.
 
 ## Nested values and supported types
 
@@ -195,7 +206,7 @@ For an intentional stop and restart, including a restart with a supported schema
 Here `Application` is the application's entrypoint, not the bounded demonstration job.
 Keep the generated Java class and Protobuf message names, operator UIDs, state names, and matching runtime/artifact line unchanged.
 The schema may stay the same or change as listed in [supported schema changes](compatibility.md#schema-changes); the restored job rejects other changes to the declarations that saved values reach.
-Reader size/depth limits may stay the same or increase; deterministic-writing mode may change in either direction.
+Reader size/depth limits may stay the same or increase; deterministic-writing mode and large-payload aliasing may change in either direction.
 A successful Protobuf parse alone does not establish state compatibility.
 
 The [MiniCluster recovery suite](validation/runtime-recovery.md) verifies completed-checkpoint recovery and separate-job savepoint restoration for HashMap and RocksDB, including continued processing.

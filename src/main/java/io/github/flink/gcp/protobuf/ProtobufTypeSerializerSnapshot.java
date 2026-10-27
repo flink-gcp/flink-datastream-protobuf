@@ -35,13 +35,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * Version-1 metadata for restoring generated Protobuf value serializers.
+ * Version-2 metadata for restoring generated Protobuf value serializers, which also reads version
+ * 1.
  *
  * <p>The persisted class name and payload layout are state-format identities. Reading metadata does
  * not load a generated class. Restoration uses Flink's supplied user-code classloader. Both
  * compatibility resolution and restoration delegate to the directional schema evaluator, which
  * accepts unchanged descriptors and the supported schema changes and permits only nondecreasing
- * reader limits; deterministic writing may change in either direction.
+ * reader limits; deterministic writing and large-payload aliasing may change in either direction. A
+ * version-1 snapshot, which predates the aliasing setting, restores with aliasing enabled.
  *
  * @param <T> concrete generated message type
  */
@@ -49,7 +51,7 @@ import java.security.NoSuchAlgorithmException;
 public final class ProtobufTypeSerializerSnapshot<T extends Message>
         implements TypeSerializerSnapshot<T> {
     static final int MAX_DESCRIPTOR_BYTES = 64 * 1024 * 1024;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
 
     private String className;
     private String fullName;
@@ -79,7 +81,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
     }
 
     /**
-     * Writes the fixed version-1 payload with deterministic descriptor bytes and their SHA-256.
+     * Writes the fixed version-2 payload with deterministic descriptor bytes and their SHA-256.
      *
      * @param out destination immediately after Flink's snapshot version
      * @throws IOException if metadata is uninitialized, exceeds format limits, or cannot be written
@@ -105,6 +107,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         out.writeByte(settings.deterministicSerialization() ? 1 : 0);
         out.writeInt(settings.maxMessageSize());
         out.writeInt(settings.recursionLimit());
+        out.writeByte(settings.largePayloadAliasing() ? 1 : 0);
         out.writeInt(bytes.length);
         out.write(bytes);
         out.write(digest(bytes));
@@ -125,19 +128,23 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         schema = null;
         this.userCodeClassLoader = null;
         try {
-            requireVersion(readVersion, VERSION, "snapshot");
+            if (readVersion != 1 && readVersion != VERSION) {
+                throw new IOException("Unsupported Protobuf snapshot version: " + readVersion);
+            }
             requireVersion(in.readInt(), ProtobufTypeSerializer.FRAMING_VERSION, "framing");
             requireVersion(in.readInt(), ProtobufSchema.NORMALIZATION_VERSION, "normalization");
             String savedClass = in.readUTF();
             String savedName = in.readUTF();
             validateName(savedClass, "Java binary class name");
             validateName(savedName, "Protobuf message full name");
-            int deterministic = in.readUnsignedByte();
-            if (deterministic > 1) {
-                throw new IOException("Invalid deterministic serialization flag: " + deterministic);
-            }
+            boolean deterministic = readFlag(in, "deterministic serialization");
+            int maxMessageSize = in.readInt();
+            int recursionLimit = in.readInt();
+            // Version 1 predates the setting; restore it with the default, aliasing enabled.
+            boolean aliasing = readVersion == 1 || readFlag(in, "large-payload aliasing");
             ProtobufSerializerSettings savedSettings =
-                    new ProtobufSerializerSettings(deterministic == 1, in.readInt(), in.readInt());
+                    new ProtobufSerializerSettings(
+                            deterministic, maxMessageSize, recursionLimit, aliasing);
             int size = in.readInt();
             validateDescriptorLength(size);
             byte[] bytes = new byte[size];
@@ -250,6 +257,14 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         if (actual != supported) {
             throw new IOException("Unsupported Protobuf " + component + " version: " + actual);
         }
+    }
+
+    private static boolean readFlag(DataInputView in, String name) throws IOException {
+        int flag = in.readUnsignedByte();
+        if (flag > 1) {
+            throw new IOException("Invalid " + name + " flag: " + flag);
+        }
+        return flag == 1;
     }
 
     private static void validateDescriptorLength(int size) throws IOException {

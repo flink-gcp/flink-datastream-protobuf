@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Reads fixed development-format fixtures; ordinary test runs never regenerate them. */
 class ProtobufSnapshotFixtureTest {
     @Test
-    void fixedV1FixturesRestoreValuesAndPreserveTheRecordedFormat() throws Exception {
+    void fixedV1FixturesRestoreWithAliasingAndPreserveTheMessageFormat() throws Exception {
         for (String profile : List.of("3", "4")) {
             for (String variant : List.of("default", "raised")) {
                 String resource =
@@ -84,14 +84,11 @@ class ProtobufSnapshotFixtureTest {
                             .as("%s with lowered limits %s", resource, lowered)
                             .isTrue();
                 }
+                // Version 1 predates the aliasing setting and restores with it enabled.
                 TypeSerializer<Envelope> restored = saved.restoreSerializer();
                 assertThat(restored).isEqualTo(current);
                 assertThat(restored.deserialize(new DataInputDeserializer(messageBytes)))
                         .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
-                assertThat(
-                                ProtobufTypeSerializerSnapshotTest.versioned(
-                                        current.snapshotConfiguration()))
-                        .isEqualTo(snapshotBytes);
                 DataOutputSerializer output = new DataOutputSerializer(32);
                 current.serialize(ProtobufTypeSerializerSnapshotTest.value(), output);
                 assertThat(output.getCopyOfBuffer()).isEqualTo(messageBytes);
