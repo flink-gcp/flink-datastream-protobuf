@@ -48,7 +48,7 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
       - name: Verify the library and native probes
@@ -179,7 +179,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
       - name: Run the floor jar on the ceiling runtime without recompilation
@@ -206,7 +206,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
       - name: Capture the development bundle once
@@ -271,7 +271,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
       # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
