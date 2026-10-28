@@ -51,7 +51,7 @@ The source archive includes the schemas/imports and the reader and consumer sour
 The companion `tools.jar` contains compiled test instruments, test messages, and test resources including the existing fixed fixtures; it is never attached as a Maven publication artifact.
 It retains the compiled explicit type construction, builder, factory, registered transport, and LTS legacy-entry-point checks for subsequent API investigations.
 The explicit consumer, registration transport check, and LTS legacy check run in separate JVMs from the state writer and reader.
-LTS results include an additional `legacy-entry-point` case, giving 13 cases on LTS and 12 on 2.x.
+LTS results include an additional `legacy-entry-point` case, giving 21 cases on LTS and 20 on 2.x; the v0.1.0 bundles, which lack the evolved and enum fixtures below, have 13 and 12.
 This is a concrete consumer inventory, not an exhaustive public-API compatibility checker.
 `baseline-consume` reruns it against a candidate library, and the [API compatibility gate](../development.md#api-compatibility-gate) compares the annotated API separately.
 
@@ -76,9 +76,20 @@ Runtime fixtures contain canonical savepoints and full, nonincremental checkpoin
 State manifests record settings, scalar-keyed ValueState/MapState and operator ListState identities, UIDs, parallelism, the input cursor, expected counts, and unknown fields.
 The retained application sources define the expected nested runtime values.
 Capture archives state before closing the writer, deletes the writer's original state storage, and restores the relocated archives before checking continued processing.
-It also checks checkpoint failure/replay and savepoint rejection for a schema change and a decreased size limit.
+For these original-schema fixtures, it also checks checkpoint failure/replay and savepoint rejection for a schema change and a decreased size limit.
 The rejected schema change is the field addition in the v0.1.0 bundles and the `count` type change in capture from the current source, which accepts the field addition.
 Incomplete archives cannot pass by finding files in the original writer directories.
+
+Capture from the current source writes bundle format 2, which adds two fixtures per backend at the baseline budget for the next milestone's upgrade checks:
+
+| Fixture | Writer | Reader checks |
+|---|---|---|
+| `evolved` | The `original` schema writes inputs 0 to 7; the `changed` schema restores that savepoint, processes inputs 8 to 11, and writes the archives | Restore with `changed`, with `added` empty for inputs 0 to 7 and set from input 8; the savepoint restore with `original` is rejected because it removes `added` without reserving its number |
+| `enum` | The `enum-original` schema writes inputs 0 to 7 | Restore with `enum-original` and with `enum-added`; restored values keep `KIND_FIRST`, and `enum-added` writes `KIND_SECOND` for new inputs |
+
+Their manifests also record the writer schemas, and capture deletes the savepoint that the `evolved` writer restored as well as both writers' state.
+Each reader check restores the archive, processes four more inputs, and restores the savepoint that it then writes, as the [schema-evolution test](runtime-recovery.md#schema-changes) does, checking the restored and replaced values and continued processing each time.
+Format 2 bundles also require the `enum-original` and `enum-added` applications and schemas; `check` still accepts the format 1 layout of the v0.1.0 bundles.
 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.
 Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.4 runs on JDK 17.

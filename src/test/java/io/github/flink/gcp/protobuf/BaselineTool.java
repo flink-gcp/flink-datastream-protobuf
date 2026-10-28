@@ -51,6 +51,9 @@ import java.util.zip.ZipOutputStream;
 
 /** JDK-only development bundle launcher, also executable in Java source-file mode for bootstrap. */
 public final class BaselineTool {
+    /** Bundle format that capture writes; format 1 is the v0.1.0 layout without evolved state. */
+    static final String FORMAT = "2";
+
     private BaselineTool() {}
 
     public static void main(String[] args) throws Exception {
@@ -116,7 +119,7 @@ public final class BaselineTool {
         String revision = git("rev-parse", "HEAD");
         Path bundle = newDirectory(destination, repository);
         Properties manifest = new Properties();
-        manifest.setProperty("format.version", "1");
+        manifest.setProperty("format.version", FORMAT);
         manifest.setProperty("status", "development-tooling-baseline");
         manifest.setProperty("milestone.final", "false");
         manifest.setProperty("source.revision", revision);
@@ -401,7 +404,11 @@ public final class BaselineTool {
                         bundle.toString(),
                         version,
                         results.toString()));
-        validateResult(bundle, version, results.resolve("result.properties"));
+        validateResult(
+                bundle,
+                version,
+                load(bundle.resolve("manifest.properties")).getProperty("format.version"),
+                results.resolve("result.properties"));
     }
 
     /** Separate-JVM instruments after the compiled consumer; LTS adds the legacy entry point. */
@@ -417,20 +424,32 @@ public final class BaselineTool {
         return cases;
     }
 
-    static List<String> expectedCases(String version) {
+    /**
+     * Returns the state fixtures under each backend: the original schema at baseline and raised
+     * limits, then from format 2 state that the changed schema wrote after restoring original
+     * state, and state of the enum-bearing schema.
+     */
+    static List<String> stateFixtures(String format) {
+        return format.equals("1")
+                ? List.of("baseline", "raised")
+                : List.of("baseline", "raised", "evolved", "enum");
+    }
+
+    static List<String> expectedCases(String version, String format) {
         List<String> cases = compiledCases(version);
         cases.addAll(List.of("snapshot-default", "snapshot-raised"));
         for (String backend : List.of("hashmap", "rocksdb")) {
-            for (String settings : List.of("baseline", "raised")) {
+            for (String fixture : stateFixtures(format)) {
                 for (String kind : List.of("checkpoint", "savepoint")) {
-                    cases.add(backend + "/" + settings + "/" + kind);
+                    cases.add(backend + "/" + fixture + "/" + kind);
                 }
             }
         }
         return cases;
     }
 
-    private static void validateResult(Path bundle, String version, Path result) throws Exception {
+    private static void validateResult(Path bundle, String version, String format, Path result)
+            throws Exception {
         Properties success = load(result);
         require(
                 success.getProperty("status", "").equals("passed"),
@@ -438,9 +457,9 @@ public final class BaselineTool {
         require(success.getProperty("flink.version", "").equals(version), "Wrong runtime result");
         require(
                 success.getProperty("case.count", "")
-                                .equals(Integer.toString(expectedCases(version).size()))
+                                .equals(Integer.toString(expectedCases(version, format).size()))
                         && success.getProperty("cases", "")
-                                .equals(String.join(",", expectedCases(version))),
+                                .equals(String.join(",", expectedCases(version, format))),
                 "Incomplete runtime case inventory");
         require(
                 success.getProperty("library.sha256", "")
@@ -475,9 +494,8 @@ public final class BaselineTool {
                 !expected.isEmpty() && expected.equals(actual),
                 "Bundle checksum or file inventory mismatch");
         Properties manifest = load(bundle.resolve("manifest.properties"));
-        require(
-                manifest.getProperty("format.version", "").equals("1"),
-                "Unsupported bundle format");
+        String format = manifest.getProperty("format.version", "");
+        require(format.equals("1") || format.equals(FORMAT), "Unsupported bundle format");
         require(
                 manifest.getProperty("status", "").equals("development-tooling-baseline"),
                 "Unsupported bundle status");
@@ -490,21 +508,26 @@ public final class BaselineTool {
                 manifest.getProperty("protobuf.version", "")
                         .equals(major.equals("3") ? "3.25.9" : "4.33.6"),
                 "Unsupported Protobuf runtime");
-        for (String required :
-                List.of(
-                        "source.zip",
-                        "library.jar",
-                        "tools.jar",
-                        "effective-pom.xml",
-                        "apps/application-original.jar",
-                        "apps/application-changed.jar",
-                        "apps/original/schema.pb",
-                        "apps/changed/schema.pb")) {
-            require(expected.containsKey(required), "Missing required bundle input: " + required);
+        List<String> required =
+                new ArrayList<>(
+                        List.of("source.zip", "library.jar", "tools.jar", "effective-pom.xml"));
+        // The v0.1.0 layout retains only the two variants that its fixtures use.
+        for (String variant :
+                format.equals("1")
+                        ? List.of("original", "changed")
+                        : List.of("original", "changed", "enum-original", "enum-added")) {
+            required.add("apps/application-" + variant + ".jar");
+            required.add("apps/" + variant + "/schema.pb");
+        }
+        for (String input : required) {
+            require(expected.containsKey(input), "Missing required bundle input: " + input);
         }
         for (String version : runtimes(manifest.getProperty("line", ""))) {
             validateResult(
-                    bundle, version, bundle.resolve("capture-" + version + "/result.properties"));
+                    bundle,
+                    version,
+                    format,
+                    bundle.resolve("capture-" + version + "/result.properties"));
             for (String setting : List.of("default", "raised")) {
                 require(
                         expected.containsKey(
@@ -512,7 +535,7 @@ public final class BaselineTool {
                         "Missing snapshot fixture");
             }
             for (String backend : List.of("hashmap", "rocksdb")) {
-                for (String settings : List.of("baseline", "raised")) {
+                for (String name : stateFixtures(format)) {
                     for (String kind : List.of("savepoint", "checkpoint")) {
                         String fixture =
                                 "fixtures/"
@@ -520,7 +543,7 @@ public final class BaselineTool {
                                         + "/"
                                         + backend
                                         + "/"
-                                        + settings
+                                        + name
                                         + "/"
                                         + kind
                                         + ".zip";
