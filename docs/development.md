@@ -57,6 +57,8 @@ mise x -- just --list
 | `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
 | `just baseline-fetch <tag> <output> [bundle...] [--archives <dir>]` | Download, verify, extract, and check retained release bundles in a new external directory |
 | `just baseline-fetch-test` | Run the retrieval checks against synthetic releases without network access |
+| `just baseline-release read\|review\|assemble\|verify ...` | Read, review, assemble, and verify a milestone's retained bundles for its pre-release; see [publishing a milestone baseline](validation/development-baselines.md#publish-a-milestone-baseline) |
+| `just baseline-release-test` | Run the release assembly checks against synthetic bundles, including retrieval of the assembled assets |
 | `just baseline-upgrade <bundle> <version>` | Restore a verified bundle's retained state with the current library and new-schema applications; see [restoring retained state](validation/development-baselines.md#restore-retained-state-with-the-current-library) |
 | `just api-compat <bundle>` | Build the candidate for the bundle's line and profile, compare its annotated API with the retained library, and run the negative control |
 | `just baseline-consume <bundle> <candidate-jar> <version> <output>` | Run the bundle's compiled consumers against a candidate jar without recompilation |

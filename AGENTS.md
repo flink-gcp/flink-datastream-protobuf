@@ -17,6 +17,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.
+- `just baseline-release read|review|assemble|verify ...`: read, review, assemble, and verify a milestone's retained bundles for its pre-release; `just baseline-release-test` runs its synthetic tests.
 - `just baseline-upgrade <bundle> <version>`: restore a verified bundle's retained state with the current library and new-schema applications.
 - `just api-compat <bundle>`: compare the candidate's `@Public`/`@PublicEvolving` API with a retained library through japicmp, with a negative control.
 - `just baseline-consume <bundle> <candidate-jar> <version> <new-output>`: run a retained bundle's compiled consumers against a candidate jar without recompiling them.

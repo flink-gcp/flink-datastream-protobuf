@@ -72,6 +72,15 @@ baseline-fetch tag output *args:
 # Exercise baseline retrieval with synthetic releases only.
 baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
 
+# Read, review, assemble, or verify a milestone's retained bundles in an external work directory.
+# See "Publish a milestone baseline" in docs/validation/development-baselines.md.
+[positional-arguments]
+baseline-release +args:
+    {{ python }} scripts/baseline_release.py "$@"
+
+# Exercise baseline release assembly with synthetic bundles only.
+baseline-release-test: (test-scripts "scripts/tests/test_baseline_release.py")
+
 # Run retained bytecode and state under the selected runtime and the current JDK.
 [positional-arguments]
 baseline-read bundle version output:
