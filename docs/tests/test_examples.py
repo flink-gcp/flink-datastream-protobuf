@@ -23,6 +23,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = "examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java"
+SCHEMA = "src/test/runtime-app/proto/changed/runtime.proto"
 
 
 class Text(HTMLParser):
@@ -49,6 +50,7 @@ def site(tmp_path):
         '---\ntitle: Fixture\n---\n'
         '{{< example "ExplicitExample#configuration" >}}\n\n'
         '{{< example "config.yaml#configuration" >}}\n\n'
+        '{{< example "changed/runtime.proto#entry" >}}\n\n'
         '```text {filename="plain.txt"}\nORDINARY_BLOCK\n```\n'
     )
     java = tmp_path / JAVA
@@ -65,6 +67,14 @@ def site(tmp_path):
         '# excluded header\n# docs:start configuration\n'
         'message: SOURCE_YAML\n# docs:end configuration\n'
     )
+    schema = tmp_path / SCHEMA
+    schema.parent.mkdir(parents=True)
+    schema.write_text(
+        '// excluded options\n// docs:start entry\n'
+        'message SOURCE_PROTO {\n  string added = 5;\n}\n// docs:end entry\n'
+    )
+    # A sibling schema file that the reference pattern must reject.
+    (schema.parent / "other.proto").write_text("// docs:start entry\nmessage Other {}\n// docs:end entry\n")
     return tmp_path
 
 
@@ -87,6 +97,9 @@ def test_site_renders_its_own_source_without_copied_markdown(site, version):
     text = "".join(Text((site / "docs/public/index.html").read_text()).parts)
     assert f'SOURCE_{version}' in text
     assert "message: SOURCE_YAML" in text
+    assert "message SOURCE_PROTO {\n  string added = 5;\n}" in text
+    assert "excluded options" not in text
+    assert "language-protobuf" in (site / "docs/public/index.html").read_text()
     assert "excluded wrapper" not in text and "docs:start" not in text
     assert "if (true) {\n    use(message);\n}" in text
     assert "ORDINARY_BLOCK" in text and "plain.txt" in text
@@ -97,6 +110,7 @@ def test_site_renders_its_own_source_without_copied_markdown(site, version):
     assert "UPDATED_SOURCE" in updated and f"SOURCE_{version}" not in updated
     assert (site / "docs/content/_index.md").read_text() == markdown
     assert not list((site / "docs/public").rglob("*.java"))
+    assert not list((site / "docs/public").rglob("*.proto"))
     public = site / "docs/public"
     assert (public / "favicon.svg").is_file()
     assert (public / "fuse.min.mjs").is_file()
@@ -124,10 +138,18 @@ def test_invalid_regions_fail_site_generation(site, source, diagnostic):
     assert diagnostic in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("identity", ["../ExplicitExample#configuration", "ExplicitExample", "Other#missing"])
-def test_invalid_or_missing_references_fail(site, identity):
+@pytest.mark.parametrize("identity, diagnostic", [
+    ("../ExplicitExample#configuration", "invalid example reference"),
+    ("ExplicitExample", "invalid example reference"),
+    ("Other#missing", "was not found"),
+    ("../changed/runtime.proto#entry", "invalid example reference"),
+    ("changed/other.proto#entry", "invalid example reference"),
+    ("missing/runtime.proto#entry", "was not found"),
+])
+def test_invalid_or_missing_references_fail(site, identity, diagnostic):
     page = site / "docs/content/_index.md"
     page.write_text(page.read_text().replace("ExplicitExample#configuration", identity))
     result = render(site)
     assert result.returncode != 0
     assert identity in result.stdout + result.stderr
+    assert diagnostic in result.stdout + result.stderr

@@ -17,6 +17,7 @@ syntax = "proto3";
 package flink.protobuf.runtime;
 option java_package = "io.github.flink.gcp.protobuf.runtimeapp.generated";
 option java_outer_classname = "RuntimeMessages";
+// docs:start entry
 message Entry {
   int32 ordinal = 1;
   int32 count = 2;
@@ -24,3 +25,4 @@ message Entry {
   Entry child = 4;
   string added = 5;
 }
+// docs:end entry

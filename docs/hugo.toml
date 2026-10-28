@@ -62,6 +62,10 @@ disableKinds = ["taxonomy", "term"]
     source = "../examples/datastream/config"
     target = "assets/examples/config"
     files = ["/config.yaml"]
+  [[module.mounts]]
+    source = "../src/test/runtime-app/proto"
+    target = "assets/runtime-schemas"
+    files = ["/*/runtime.proto"]
 
 [params]
   BookRepo = "https://github.com/flink-gcp/flink-datastream-protobuf"

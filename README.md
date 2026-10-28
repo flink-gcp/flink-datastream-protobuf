@@ -64,6 +64,7 @@ The milestone table includes implemented transport, common-type acceptance, and 
 The 0.1.0 contract rejected changed schemas, including otherwise wire-safe field additions.
 Current development builds restore value state across supported field additions, reserved field removals, and enum value additions, with equal or increased reader limits and either deterministic mode; CI also restores state written by the retained 0.1.0 artifact with the current library, across a field addition and a reserved field removal; the retained schema has no enum.
 See [Protobuf updates and state compatibility](docs/compatibility.md) for schema examples, the exact supported changes, and Java runtime version guarantees.
+The [upgrade guide from 0.1.0](docs/upgrade.md) lists the API changes, intentional breaks, and tested restore results of 0.2.0.
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.

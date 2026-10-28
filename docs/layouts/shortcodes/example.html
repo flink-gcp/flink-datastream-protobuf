@@ -25,6 +25,12 @@ limitations under the License.
   {{- $lexer = "yaml" -}}
   {{- $prefix = "#" -}}
   {{- $directory = "examples/config" -}}
+{{- else if findRE `^[a-z][a-z0-9-]*/runtime\.proto#[a-z][a-z0-9-]*$` $identity -}}
+  {{- $parts := strings.Split $identity "#" -}}
+  {{- $file = index $parts 0 -}}
+  {{- $tag = index $parts 1 -}}
+  {{- $lexer = "protobuf" -}}
+  {{- $directory = "runtime-schemas" -}}
 {{- else if findRE `^[A-Za-z][A-Za-z0-9]*#[a-z][a-z0-9-]*$` $identity -}}
   {{- $parts := strings.Split $identity "#" -}}
   {{- $file = printf "%s.java" (index $parts 0) -}}
