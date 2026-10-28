@@ -21,6 +21,9 @@ import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.EnumValueDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
 import io.github.flink.gcp.protobuf.snapshotgenerated.SnapshotMessages.Envelope;
 
@@ -111,98 +114,39 @@ public final class BaselineRuntime {
         }
         Path work = Files.createDirectory(results.resolve("work"));
         try (var harness = new RuntimeRecoveryHarness()) {
+            int[] sequence = {0};
+            var checks =
+                    new SchemaEvolutionChecks(
+                            harness, () -> work.resolve("evolution-" + sequence[0]++));
             for (String backend : List.of("hashmap", "rocksdb")) {
-                for (boolean raised : List.of(false, true)) {
-                    var settings = raised ? RAISED : BASELINE;
-                    String identity = backend + "/" + (raised ? "raised" : "baseline");
+                for (String name : BaselineTool.stateFixtures(BaselineTool.FORMAT)) {
+                    String identity = backend + "/" + name;
                     Path fixture = fixtures.resolve(identity);
                     String prefix = identity.replace('/', '-');
+                    var settings = name.equals("raised") ? RAISED : BASELINE;
                     if (capture) {
                         Files.createDirectories(fixture);
-                        Path writerDirectory = work.resolve(prefix + "-writer");
-                        Path saved;
-                        try (var writer =
-                                harness.start(
-                                        writerDirectory,
-                                        backend,
-                                        "all",
-                                        settings,
-                                        null,
-                                        "original",
-                                        true)) {
-                            writer.process(0, 8, 0);
-                            saved =
-                                    Path.of(
-                                            URI.create(
-                                                    writer.savepoint(
-                                                            work.resolve(prefix + "-saved"))));
-                            BaselineTool.zip(saved, fixture.resolve("savepoint.zip"));
-                            Path checkpoint = Path.of(URI.create(writer.checkpoint()));
-                            BaselineTool.zip(checkpoint, fixture.resolve("checkpoint.zip"));
-                            writer.process(8, 12, 0);
-                            RuntimeRecoveryHarness.command(writer.directory, "fail", "once");
-                            writer.assertRestored(1, 8);
-                            writer.process(8, 16, 1);
+                        switch (name) {
+                            case "evolved" ->
+                                    captureEvolved(harness, work, prefix, backend, fixture);
+                            case "enum" -> captureEnum(harness, work, prefix, backend, fixture);
+                            default ->
+                                    captureOriginal(
+                                            harness, work, prefix, backend, settings, fixture);
                         }
-                        assertThat(saved.toAbsolutePath().normalize())
-                                .startsWith(work.toAbsolutePath().normalize());
-                        BaselineTool.deleteTree(saved);
-                        BaselineTool.deleteTree(writerDirectory);
-                        assertThat(saved).doesNotExist();
-                        assertThat(writerDirectory).doesNotExist();
-                        BaselineTool.save(
-                                stateIdentity(backend, settings),
-                                fixture.resolve("state.properties"));
                     }
                     for (String kind : List.of("checkpoint", "savepoint")) {
                         Path relocated = work.resolve(prefix + "-" + kind);
                         BaselineTool.extract(fixture.resolve(kind + ".zip"), relocated);
                         assertThat(relocated.resolve("_metadata")).isRegularFile();
-                        try (var reader =
-                                harness.start(
-                                        work.resolve(prefix + "-" + kind + "-reader"),
-                                        backend,
-                                        "all",
-                                        settings,
-                                        relocated.toUri().toString(),
-                                        "original",
-                                        false)) {
-                            reader.assertRestored(0, 8);
-                            reader.process(8, 16, 0);
-                        }
-                        if (kind.equals("savepoint")) {
-                            for (boolean changed : List.of(false, true)) {
-                                var rejectedSettings =
-                                        changed
-                                                ? settings
-                                                : new RuntimeRecoveryHarness.Settings(
-                                                        settings.deterministic(),
-                                                        settings.size() - 1,
-                                                        settings.depth());
-                                try (var rejected =
-                                        harness.start(
-                                                work.resolve(prefix + "-reject-" + changed),
-                                                backend,
-                                                "all",
-                                                rejectedSettings,
-                                                relocated.toUri().toString(),
-                                                changed ? "incompatible" : "original",
-                                                false)) {
-                                    assertThat(rejected.failure())
-                                            .hasStackTraceContaining(
-                                                    changed
-                                                            ? "cannot read the saved Protobuf schema:"
-                                                                    + " Field 2 (count) of"
-                                                                    + " flink.protobuf.runtime.Entry"
-                                                                    + " changes type from INT32 to"
-                                                                    + " SINT32"
-                                                            : "StateMigrationException")
-                                            .hasStackTraceContaining(
-                                                    changed
-                                                            ? RuntimeRecoveryHarness.MESSAGE
-                                                            : "incompatible");
-                                }
-                            }
+                        String saved = relocated.toUri().toString();
+                        switch (name) {
+                            case "evolved" -> readEvolved(checks, backend, saved, kind);
+                            case "enum" -> readEnum(checks, backend, saved);
+                            default ->
+                                    readOriginal(
+                                            harness, checks, work, prefix, backend, settings, saved,
+                                            kind);
                         }
                         cases.add(identity + "/" + kind);
                     }
@@ -210,7 +154,9 @@ public final class BaselineRuntime {
             }
         }
         BaselineTool.deleteTree(work);
-        assertThat(cases).containsExactlyElementsOf(BaselineTool.expectedCases(version));
+        assertThat(cases)
+                .containsExactlyElementsOf(
+                        BaselineTool.expectedCases(version, BaselineTool.FORMAT));
         Properties result = new Properties();
         result.setProperty("status", "passed");
         result.setProperty("flink.version", version);
@@ -221,6 +167,219 @@ public final class BaselineRuntime {
         result.setProperty("case.count", Integer.toString(cases.size()));
         result.setProperty("cases", String.join(",", cases));
         BaselineTool.save(result, results.resolve("result.properties"));
+    }
+
+    /** Writes original-schema state, then checks checkpoint failure and replay. */
+    private static void captureOriginal(
+            RuntimeRecoveryHarness harness,
+            Path work,
+            String prefix,
+            String backend,
+            RuntimeRecoveryHarness.Settings settings,
+            Path fixture)
+            throws Exception {
+        Path writerDirectory = work.resolve(prefix + "-writer");
+        Path saved;
+        try (var writer =
+                harness.start(writerDirectory, backend, "all", settings, null, "original", true)) {
+            writer.process(0, 8, 0);
+            saved = Path.of(URI.create(writer.savepoint(work.resolve(prefix + "-saved"))));
+            BaselineTool.zip(saved, fixture.resolve("savepoint.zip"));
+            Path checkpoint = Path.of(URI.create(writer.checkpoint()));
+            BaselineTool.zip(checkpoint, fixture.resolve("checkpoint.zip"));
+            writer.process(8, 12, 0);
+            RuntimeRecoveryHarness.command(writer.directory, "fail", "once");
+            writer.assertRestored(1, 8);
+            writer.process(8, 16, 1);
+        }
+        deleteWriterState(work, saved, writerDirectory);
+        BaselineTool.save(stateIdentity(backend, settings), fixture.resolve("state.properties"));
+    }
+
+    /**
+     * Restores original-schema state of inputs 0 to 7 with the changed schema and archives it after
+     * inputs 8 to 11, at the baseline limits.
+     */
+    private static void captureEvolved(
+            RuntimeRecoveryHarness harness, Path work, String prefix, String backend, Path fixture)
+            throws Exception {
+        Path writerDirectory = work.resolve(prefix + "-writer");
+        Path saved;
+        try (var writer =
+                harness.start(writerDirectory, backend, "all", BASELINE, null, "original", false)) {
+            writer.process(0, 8, 0);
+            saved = Path.of(URI.create(writer.savepoint(work.resolve(prefix + "-saved"))));
+        }
+        Path evolverDirectory = work.resolve(prefix + "-evolver");
+        Path written;
+        try (var evolver =
+                harness.start(
+                        evolverDirectory,
+                        backend,
+                        "all",
+                        BASELINE,
+                        saved.toUri().toString(),
+                        "changed",
+                        false)) {
+            evolver.assertRestored(0, 8);
+            evolver.process(8, 12, 0);
+            written = Path.of(URI.create(evolver.savepoint(work.resolve(prefix + "-written"))));
+            BaselineTool.zip(written, fixture.resolve("savepoint.zip"));
+            BaselineTool.zip(
+                    Path.of(URI.create(evolver.checkpoint())), fixture.resolve("checkpoint.zip"));
+        }
+        deleteWriterState(work, written, evolverDirectory);
+        // The archives must not depend on the restored savepoint either.
+        deleteWriterState(work, saved, writerDirectory);
+        Properties state = stateIdentity(backend, BASELINE);
+        state.setProperty("writer.schemas", "original,changed");
+        state.setProperty("expected.input.count", "12");
+        state.setProperty("expected.ordinals", "0,1,2,3,4,5,6,7,8,9,10,11");
+        state.setProperty("expected.keyed.count.per.key", "3");
+        // Inputs 0 to 3 and 8 to 11 use bucket-0, and inputs 4 to 7 use bucket-1.
+        state.remove("expected.map.count.per.user.key");
+        state.setProperty("expected.map.count.bucket-0", "2");
+        state.setProperty("expected.map.count.bucket-1", "1");
+        state.setProperty("expected.added", "empty for 0 to 7, added-<ordinal> for 8 to 11");
+        BaselineTool.save(state, fixture.resolve("state.properties"));
+    }
+
+    /** Archives inputs 0 to 7 of the enum-original schema at the baseline limits. */
+    private static void captureEnum(
+            RuntimeRecoveryHarness harness, Path work, String prefix, String backend, Path fixture)
+            throws Exception {
+        Path writerDirectory = work.resolve(prefix + "-writer");
+        Path saved;
+        try (var writer =
+                harness.start(
+                        writerDirectory, backend, "all", BASELINE, null, "enum-original", false)) {
+            writer.process(0, 8, 0);
+            saved = Path.of(URI.create(writer.savepoint(work.resolve(prefix + "-saved"))));
+            BaselineTool.zip(saved, fixture.resolve("savepoint.zip"));
+            BaselineTool.zip(
+                    Path.of(URI.create(writer.checkpoint())), fixture.resolve("checkpoint.zip"));
+        }
+        deleteWriterState(work, saved, writerDirectory);
+        Properties state = stateIdentity(backend, BASELINE);
+        state.setProperty("writer.schemas", "enum-original");
+        state.setProperty("expected.detail.kind", "KIND_FIRST");
+        BaselineTool.save(state, fixture.resolve("state.properties"));
+    }
+
+    /** Removes a writer's state so that missing archive contents cannot pass unnoticed. */
+    private static void deleteWriterState(Path work, Path saved, Path writerDirectory)
+            throws Exception {
+        assertThat(saved.toAbsolutePath().normalize())
+                .startsWith(work.toAbsolutePath().normalize());
+        BaselineTool.deleteTree(saved);
+        BaselineTool.deleteTree(writerDirectory);
+        assertThat(saved).doesNotExist();
+        assertThat(writerDirectory).doesNotExist();
+    }
+
+    /** Restores original-schema state unchanged and checks the schema and limit rejections. */
+    private static void readOriginal(
+            RuntimeRecoveryHarness harness,
+            SchemaEvolutionChecks checks,
+            Path work,
+            String prefix,
+            String backend,
+            RuntimeRecoveryHarness.Settings settings,
+            String saved,
+            String kind)
+            throws Exception {
+        try (var reader =
+                harness.start(
+                        work.resolve(prefix + "-" + kind + "-reader"),
+                        backend,
+                        "all",
+                        settings,
+                        saved,
+                        "original",
+                        false)) {
+            reader.assertRestored(0, 8);
+            reader.process(8, 16, 0);
+        }
+        if (!kind.equals("savepoint")) {
+            return;
+        }
+        checks.rejected(
+                backend,
+                "all",
+                settings,
+                saved,
+                "incompatible",
+                "Field 2 (count) of flink.protobuf.runtime.Entry changes type from INT32 to SINT32");
+        var decreased =
+                new RuntimeRecoveryHarness.Settings(
+                        settings.deterministic(), settings.size() - 1, settings.depth());
+        try (var rejected =
+                harness.start(
+                        work.resolve(prefix + "-reject-limit"),
+                        backend,
+                        "all",
+                        decreased,
+                        saved,
+                        "original",
+                        false)) {
+            assertThat(rejected.failure())
+                    .hasStackTraceContaining("StateMigrationException")
+                    .hasStackTraceContaining("incompatible");
+        }
+    }
+
+    /**
+     * Restores evolved state with the changed schema that wrote it, and requires the original
+     * schema, which removes the added field without reserving it, to be rejected.
+     */
+    private static void readEvolved(
+            SchemaEvolutionChecks checks, String backend, String saved, String kind)
+            throws Exception {
+        Descriptor changed = RuntimeRecoveryHarness.descriptor("changed");
+        checks.restoreTwice(
+                backend,
+                BASELINE,
+                saved,
+                12,
+                "changed",
+                changed,
+                value -> value.getField(changed.findFieldByName("added")),
+                ordinal -> ordinal < 8 ? "" : "added-" + ordinal);
+        if (kind.equals("savepoint")) {
+            checks.rejected(
+                    backend,
+                    "all",
+                    BASELINE,
+                    saved,
+                    "original",
+                    "Field 5 (added) of flink.protobuf.runtime.Entry is removed without reserving"
+                            + " its number");
+        }
+    }
+
+    /** Restores enum-original state unchanged and with the schema that adds an enum value. */
+    private static void readEnum(SchemaEvolutionChecks checks, String backend, String saved)
+            throws Exception {
+        for (String reader : List.of("enum-original", "enum-added")) {
+            Descriptor entry = RuntimeRecoveryHarness.descriptor(reader);
+            FieldDescriptor detail = entry.findFieldByName("detail");
+            FieldDescriptor kind = detail.getMessageType().findFieldByName("kind");
+            checks.restoreTwice(
+                    backend,
+                    BASELINE,
+                    saved,
+                    reader,
+                    entry,
+                    value ->
+                            ((EnumValueDescriptor)
+                                            ((Message) value.getField(detail)).getField(kind))
+                                    .getName(),
+                    // Each variant writes its last declared value.
+                    ordinal ->
+                            ordinal < 8 || reader.equals("enum-original")
+                                    ? "KIND_FIRST"
+                                    : "KIND_SECOND");
+        }
     }
 
     private static void snapshot(Path file, boolean capture, boolean raised) throws Exception {

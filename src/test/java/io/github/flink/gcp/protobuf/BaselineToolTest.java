@@ -19,6 +19,7 @@ package io.github.flink.gcp.protobuf;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Files;
@@ -162,14 +163,74 @@ class BaselineToolTest {
         BaselineTool.validateJava("flink2", 21);
         assertThatThrownBy(() -> BaselineTool.validateJava("flink2", 11))
                 .hasMessageContaining("Unsupported");
-        assertThat(BaselineTool.expectedCases("1.20.4")).hasSize(13).contains("legacy-entry-point");
-        assertThat(BaselineTool.expectedCases("2.2.1"))
+        assertThat(BaselineTool.expectedCases("1.20.4", "1"))
+                .hasSize(13)
+                .contains("legacy-entry-point");
+        assertThat(BaselineTool.expectedCases("2.2.1", "1"))
                 .hasSize(12)
-                .doesNotContain("legacy-entry-point");
+                .doesNotContain("legacy-entry-point")
+                .noneMatch(name -> name.contains("/evolved/") || name.contains("/enum/"));
+        assertThat(BaselineTool.expectedCases("1.20.4", "2"))
+                .hasSize(21)
+                .contains("legacy-entry-point");
+        assertThat(BaselineTool.expectedCases("2.2.1", "2"))
+                .hasSize(20)
+                .doesNotContain("legacy-entry-point")
+                .contains(
+                        "hashmap/evolved/checkpoint",
+                        "rocksdb/evolved/savepoint",
+                        "hashmap/enum/savepoint",
+                        "rocksdb/enum/checkpoint");
         for (int version : List.of(11, 21, 25)) {
             assertThatThrownBy(() -> BaselineTool.validateJava("flink1", version))
                     .hasMessageContaining("Unsupported");
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        // The v0.1.0 layout has no enum inputs; it fails first on its missing capture results.
+        "1, enum, capture-2.2.1/result.properties",
+        "2, apps/application-enum-original.jar, apps/application-enum-original.jar",
+        "2, apps/enum-original/schema.pb, apps/enum-original/schema.pb",
+        "2, apps/application-enum-added.jar, apps/application-enum-added.jar",
+        "2, apps/enum-added/schema.pb, apps/enum-added/schema.pb",
+        "3, '', Unsupported bundle format"
+    })
+    void requiresTheEnumApplicationsOnlyFromFormatTwo(String format, String absent, String failure)
+            throws Exception {
+        Path bundle = Files.createDirectory(temporary.resolve("bundle"));
+        Files.writeString(
+                bundle.resolve("manifest.properties"),
+                String.join(
+                        "\n",
+                        "format.version=" + format,
+                        "status=development-tooling-baseline",
+                        "source.revision=" + "a".repeat(40),
+                        "line=flink2",
+                        "protobuf.major=3",
+                        "protobuf.version=3.25.9"));
+        for (String name :
+                List.of(
+                        "source.zip",
+                        "library.jar",
+                        "tools.jar",
+                        "effective-pom.xml",
+                        "apps/application-original.jar",
+                        "apps/application-changed.jar",
+                        "apps/original/schema.pb",
+                        "apps/changed/schema.pb",
+                        "apps/application-enum-original.jar",
+                        "apps/enum-original/schema.pb",
+                        "apps/application-enum-added.jar",
+                        "apps/enum-added/schema.pb")) {
+            if (absent.isEmpty() || !name.contains(absent)) {
+                Files.createDirectories(bundle.resolve(name).getParent());
+                Files.writeString(bundle.resolve(name), name);
+            }
+        }
+        BaselineTool.seal(bundle);
+        assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
     }
 
     private static void assertInventoryFailure(Path bundle) {

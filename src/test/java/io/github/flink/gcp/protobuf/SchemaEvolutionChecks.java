@@ -27,11 +27,7 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Restore checks shared by the same-build and retained-baseline schema-evolution tests.
- *
- * <p>Saved state holds the eight inputs {@code 0} to {@code 7}, as both test families write it.
- */
+/** Restore checks shared by the schema-evolution tests and the development bundle readers. */
 final class SchemaEvolutionChecks {
     private final RuntimeRecoveryHarness harness;
     private final Supplier<Path> directories;
@@ -42,16 +38,11 @@ final class SchemaEvolutionChecks {
     }
 
     /**
-     * Restores saved state with another schema, continues processing, and restores the evolved
-     * application's own savepoint.
+     * Restores saved state of eight inputs with another schema, continues processing, and restores
+     * the evolved application's own savepoint.
      *
-     * <p>Operator-state values are re-serialized by the evolved application after each restore, so
-     * {@code observed} sees the bytes that the evolved schema retained.
-     *
-     * @param saved savepoint or retained checkpoint path written with the old schema
-     * @param decoder runtime message descriptor that interprets the restored bytes
-     * @param observed value of the checked field in a decoded message
-     * @param expected expected value by input ordinal
+     * @see #restoreTwice(String, RuntimeRecoveryHarness.Settings, String, int, String, Descriptor,
+     *     Function, Function)
      */
     void restoreTwice(
             String backend,
@@ -62,22 +53,48 @@ final class SchemaEvolutionChecks {
             Function<DynamicMessage, Object> observed,
             Function<Integer, Object> expected)
             throws Exception {
+        restoreTwice(backend, settings, saved, 8, reader, decoder, observed, expected);
+    }
+
+    /**
+     * Restores saved state with another schema, continues processing, and restores the evolved
+     * application's own savepoint.
+     *
+     * <p>Operator-state values are re-serialized by the evolved application after each restore, so
+     * {@code observed} sees the bytes that the evolved schema retained.
+     *
+     * @param saved savepoint or retained checkpoint path written with the old schema
+     * @param inputs number of inputs that the saved state holds, a multiple of four from eight
+     * @param decoder runtime message descriptor that interprets the restored bytes
+     * @param observed value of the checked field in a decoded message
+     * @param expected expected value by input ordinal
+     */
+    void restoreTwice(
+            String backend,
+            RuntimeRecoveryHarness.Settings settings,
+            String saved,
+            int inputs,
+            String reader,
+            Descriptor decoder,
+            Function<DynamicMessage, Object> observed,
+            Function<Integer, Object> expected)
+            throws Exception {
         String next;
         try (var job =
                 harness.start(directories.get(), backend, "all", settings, saved, reader, false)) {
-            job.assertRestored(0, 8);
+            job.assertRestored(0, inputs);
             assertValues(job.restored(0, decoder), decoder, observed, expected);
-            job.process(8, 12, 0);
-            assertReplaced(job, 8, 12, decoder, observed, expected);
+            job.process(inputs, inputs + 4, 0);
+            assertReplaced(job, inputs, inputs + 4, decoder, observed, expected);
             next = job.savepoint(directories.get());
         }
         try (var job =
                 harness.start(directories.get(), backend, "all", settings, next, reader, false)) {
-            job.assertRestored(0, 12);
+            job.assertRestored(0, inputs + 4);
             assertValues(job.restored(0, decoder), decoder, observed, expected);
-            // Inputs 16 to 19 replace the MapState values that the evolved application wrote.
-            job.process(12, 20, 0);
-            assertReplaced(job, 12, 20, decoder, observed, expected);
+            // The last four inputs replace the MapState values that the evolved application wrote.
+            job.process(inputs + 4, inputs + 12, 0);
+            assertReplaced(job, inputs + 4, inputs + 12, decoder, observed, expected);
         }
     }
 
