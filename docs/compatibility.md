@@ -36,7 +36,7 @@ State that 0.1.0 wrote for such a type is therefore restored only when the new s
 Moving a message on a retained path, or a proto2 root, to proto3 changes its declaring file's syntax, which restore rejects, so an application that keeps such a path must start with fresh state or replay its input.
 The [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) uses proto3 types only.
 Compatibility between arbitrary development builds is not implied.
-Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by the tests that [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16) adds for state restoration and [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) for API checks; see [verified coverage](#verified-coverage-and-upgrade-procedure) for the state that the current tests restore.
+Compatibility with the [retained 0.1.0 baseline](validation/development-baselines.md#retained-v010-baseline) is established only by its state-restore tests and API checks; the [upgrade guide from 0.1.0](upgrade.md) lists their results together with the API changes and intentional breaks of 0.2.0, and [verified coverage](#verified-coverage-and-upgrade-procedure) describes the state that the current tests restore.
 The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
 Each development milestone must document its actual breaks, supported upgrade paths, and migration or fresh-state/replay requirements before completion.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.

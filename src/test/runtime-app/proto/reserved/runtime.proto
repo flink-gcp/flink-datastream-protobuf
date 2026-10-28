@@ -18,6 +18,7 @@ package flink.protobuf.runtime;
 option java_package = "io.github.flink.gcp.protobuf.runtimeapp.generated";
 option java_outer_classname = "RuntimeMessages";
 // Removes payload from the original schema and reserves its number and name.
+// docs:start entry
 message Entry {
   reserved 3;
   reserved "payload";
@@ -25,3 +26,4 @@ message Entry {
   int32 count = 2;
   Entry child = 4;
 }
+// docs:end entry

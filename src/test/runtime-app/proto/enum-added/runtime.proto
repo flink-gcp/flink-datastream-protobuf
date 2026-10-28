@@ -18,6 +18,7 @@ package flink.protobuf.runtime;
 option java_package = "io.github.flink.gcp.protobuf.runtimeapp.generated";
 option java_outer_classname = "RuntimeMessages";
 // Adds KIND_SECOND to the enum of enum-original.
+// docs:start entry
 message Entry {
   int32 ordinal = 1;
   int32 count = 2;
@@ -33,3 +34,4 @@ message Entry {
     KIND_SECOND = 2;
   }
 }
+// docs:end entry

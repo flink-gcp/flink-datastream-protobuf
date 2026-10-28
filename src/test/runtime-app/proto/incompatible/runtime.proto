@@ -18,9 +18,11 @@ package flink.protobuf.runtime;
 option java_package = "io.github.flink.gcp.protobuf.runtimeapp.generated";
 option java_outer_classname = "RuntimeMessages";
 // Changes count from int32 to sint32: the Java type is unchanged, but saved varints decode wrongly.
+// docs:start entry
 message Entry {
   int32 ordinal = 1;
   sint32 count = 2;
   string payload = 3;
   Entry child = 4;
 }
+// docs:end entry
