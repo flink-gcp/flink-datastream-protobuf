@@ -39,30 +39,36 @@ class DocumentationExamplesTest {
         var library = parser.parse(Path.of("pom.xml").toFile());
         var example = parser.parse(Path.of("examples/datastream/pom.xml").toFile());
         String floor = property(library, "/project/properties/flink.version");
-        String protobuf3 = property(library, "/project/properties/protobuf.version");
+        String protobuf4 = property(library, "/project/properties/protobuf.version");
         String lts =
                 property(
                         library, "/project/profiles/profile[id='flink1']/properties/flink.version");
-        String protobuf4 =
+        String protobuf3 =
                 property(
                         library,
-                        "/project/profiles/profile[id='protobuf4']/properties/protobuf.version");
+                        "/project/profiles/profile[id='protobuf3']/properties/protobuf.version");
         String version = property(library, "/project/version");
         assertThat(property(example, "/project/properties/protobuf.integration.version"))
                 .isEqualTo(version);
         assertThat(property(example, "/project/properties/flink.version")).isEqualTo(floor);
-        assertThat(property(example, "/project/properties/protobuf.version")).isEqualTo(protobuf3);
+        assertThat(property(example, "/project/properties/protobuf.version")).isEqualTo(protobuf4);
         assertThat(Files.readString(Path.of("docs/quickstart.md")))
                 .contains(
                         "sets `protobuf.integration.version` to `" + version + "`",
-                        "examples-verify " + floor + " 3 ",
-                        "examples-verify " + lts + " 4 ",
+                        "examples-verify " + floor + " 4 ",
+                        "examples-verify " + lts + " 3 ",
                         "-Dflink.version=" + lts + " ",
-                        "-Dprotobuf.version=" + protobuf4 + " exec:exec@explicit");
+                        "-Dprotobuf.version=" + protobuf3 + " exec:exec@explicit",
+                        "| " + protobuf4 + " or " + protobuf3 + " |");
         assertThat(Files.readString(Path.of("README.md")))
-                .contains("`io.github.flink-gcp:flink-datastream-protobuf:" + version + "`");
+                .contains(
+                        "`io.github.flink-gcp:flink-datastream-protobuf:" + version + "`",
+                        "protobuf-java/protoc " + protobuf4 + " and " + protobuf3);
         assertThat(Files.readString(Path.of("docs/compatibility.md")))
-                .contains("The current source version is `" + version + "`");
+                .contains(
+                        "The current source version is `" + version + "`",
+                        "CI pairs " + protobuf4 + " generated code with runtime " + protobuf4,
+                        "and " + protobuf3 + " generated code with runtime " + protobuf3);
         assertThat(Files.readString(Path.of("docs/usage.md")))
                 .contains("Current `" + version + "` development builds");
         assertThat(Files.readString(Path.of("src/test/resources/savepoints/v1/README.md")))

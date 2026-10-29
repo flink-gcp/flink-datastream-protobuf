@@ -199,6 +199,29 @@ class BaselineToolTest {
     })
     void requiresTheEnumApplicationsOnlyFromFormatTwo(String format, String absent, String failure)
             throws Exception {
+        Path bundle = bundle(format, "3", "3.25.9", absent);
+        assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        // An accepted runtime fails later, on the capture results that this bundle omits.
+        "3, 3.25.9, capture-2.2.1/result.properties",
+        "4, 4.33.6, capture-2.2.1/result.properties",
+        "4, 4.36.2, capture-2.2.1/result.properties",
+        "3, 3.24.4, Unsupported Protobuf runtime",
+        "3, 4.36.2, Unsupported Protobuf runtime",
+        "4, 3.25.9, Unsupported Protobuf runtime",
+        "4, 4x36.2, Unsupported Protobuf runtime"
+    })
+    void acceptsOnlySupportedRuntimesOfTheBundleMajor(String major, String protobuf, String failure)
+            throws Exception {
+        Path bundle = bundle("2", major, protobuf, "");
+        assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+    }
+
+    private Path bundle(String format, String major, String protobuf, String absent)
+            throws Exception {
         Path bundle = Files.createDirectory(temporary.resolve("bundle"));
         Files.writeString(
                 bundle.resolve("manifest.properties"),
@@ -208,8 +231,8 @@ class BaselineToolTest {
                         "status=development-tooling-baseline",
                         "source.revision=" + "a".repeat(40),
                         "line=flink2",
-                        "protobuf.major=3",
-                        "protobuf.version=3.25.9"));
+                        "protobuf.major=" + major,
+                        "protobuf.version=" + protobuf));
         for (String name :
                 List.of(
                         "source.zip",
@@ -230,7 +253,7 @@ class BaselineToolTest {
             }
         }
         BaselineTool.seal(bundle);
-        assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+        return bundle;
     }
 
     private static void assertInventoryFailure(Path bundle) {

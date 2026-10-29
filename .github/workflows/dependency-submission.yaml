@@ -50,8 +50,8 @@ jobs:
           ID: ${{ matrix.id }}
         run: |
           case "$ID" in
-            floor-protobuf3) args='' ;;
-            floor-protobuf4) args='-Pprotobuf4' ;;
+            floor-protobuf3) args='-Pprotobuf3' ;;
+            floor-protobuf4) args='' ;;
             ceiling)
               # Verify owns the ceiling version.
               ceiling=$(sed -n "s/^  FLINK_CEILING: '\(.*\)'$/\1/p" .github/workflows/verify.yaml)

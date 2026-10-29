@@ -27,7 +27,7 @@ limitations under the License.
         <maven.compiler.release>17</maven.compiler.release>
         <protobuf.integration.version>0.2.0-SNAPSHOT</protobuf.integration.version>
         <flink.version>2.2.1</flink.version>
-        <protobuf.version>3.25.9</protobuf.version>
+        <protobuf.version>4.36.2</protobuf.version>
         <example.mainClass>io.github.flink.gcp.protobuf.examples.ExplicitExample</example.mainClass>
     </properties>
     <dependencies>

@@ -47,11 +47,12 @@ mise x -- just --list
 |---|---|
 | `just verify` | Formatting checks, Checkstyle, compilation, unit tests, integration tests, jar packaging, and Apache RAT |
 | `just format` | Spotless with Flink's AOSP Java formatting and import order |
+| `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.36.2, the default |
 | `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.9 |
-| `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.33.6 |
 | `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
-| `just binary-compat 2.3.0 3` | Build at the POM's 2.x floor, then run the unchanged jar and tests at the ceiling |
+| `just binary-compat flink2 2.3.0` | Build the 2.x jar at the POM's floor with Protobuf 4, then run it unchanged at the ceiling and with Protobuf 3 tests at the floor and ceiling |
+| `just binary-compat flink1` | Build the LTS jar with Protobuf 4, then run it unchanged with Protobuf 3 tests |
 | `just baseline-capture <line> <major> <output>` | Capture a development bundle in a new external directory |
 | `just baseline-check <bundle>` | Check retained inventory and checksums without rebuilding |
 | `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
@@ -60,7 +61,7 @@ mise x -- just --list
 | `just baseline-release read\|review\|assemble\|verify ...` | Read, review, assemble, and verify a milestone's retained bundles for its pre-release; see [publishing a milestone baseline](validation/development-baselines.md#publish-a-milestone-baseline) |
 | `just baseline-release-test` | Run the release assembly checks against synthetic bundles, including retrieval of the assembled assets |
 | `just baseline-upgrade <bundle> <version>` | Restore a verified bundle's retained state with the current library and new-schema applications; see [restoring retained state](validation/development-baselines.md#restore-retained-state-with-the-current-library) |
-| `just api-compat <bundle>` | Build the candidate for the bundle's line and profile, compare its annotated API with the retained library, and run the negative control |
+| `just api-compat <bundle>` | Build the candidate for the bundle's line with Protobuf 4, compare its annotated API with the retained library, and run the negative control |
 | `just baseline-consume <bundle> <candidate-jar> <version> <output>` | Run the bundle's compiled consumers against a candidate jar without recompilation |
 | `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
@@ -85,7 +86,7 @@ mise x -- just --list
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
 CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.4 with JDK 17.
-It also runs the binary compatibility recipe for each Protobuf profile on JDK 17.
+It also runs the binary compatibility recipe for each artifact line on JDK 17.
 Lint runs `just test-scripts` with the workflow and Markdown checks.
 These lanes run for each PR, main push, manual verification, and weekly schedule.
 A repository ruleset requires the GitHub Actions `CI passed` check for every update to main, so a PR merges only after that check succeeds for its head commit; the branch need not be up to date with main.
@@ -125,12 +126,13 @@ Both runtime variants are formatted and linted, but only the selected production
 
 `just verify-flink` and `just binary-compat` delegate to `scripts/verify-flink.sh` and `scripts/binary-compat.py` respectively.
 Run them through just so the scripts execute from the repository root with the recipe arguments.
-The binary recipe first runs a clean full verification at the floor.
-It then invokes only the two Surefire goals at the ceiling, loading production code from the packaged jar and retaining the floor's compiled tests.
-Runtime assertions verify the actual Flink core jar version and production code location.
-The recipe compares every test's class/name, rejects missing or unsuccessful inventories, and checks hashes of the jar and all compiled classes before and after the rerun.
-It clears the generated reports before rerunning so stale reports cannot hide omitted tests.
-Each Protobuf profile has its own floor build; this is not a claim that a jar built against one Protobuf major has been tested on the other.
+The binary recipe first runs a clean full verification with Protobuf 4, at the floor for `flink2`, and copies the packaged jar outside `target/`.
+For `flink2`, it then invokes only the two Surefire goals at the ceiling, loading production code from that jar and retaining the floor's compiled tests.
+Next it cleans and builds through `process-test-classes` with Protobuf 3, which compiles the production classes, tests, and runtime applications with protobuf-java and protoc 3.25.9, and invokes the two Surefire goals with the copied Protobuf 4 jar, for `flink2` at both the floor and the ceiling.
+Runtime assertions verify the actual Flink core and protobuf-java jar versions and the production code location.
+The recipe compares every test's class/name with the Protobuf 4 build, rejects missing or unsuccessful inventories and reports from another Protobuf major, and checks hashes of the jar and all compiled classes before and after each Surefire-only run.
+It clears the generated reports before each such run so stale reports cannot hide omitted tests.
+A jar built with Protobuf 3 has no binary check, because releases are built with Protobuf 4.
 
 The production integration and transport probe use explicit list element information on all runtimes and additionally check inferred lists: Flink 2.x infers the registered element type, while 1.20 falls back to a generic type that cannot create a serializer with generic types disabled.
 Top-level, POJO, tuple, Row, and explicit List transport remain required on every runtime.
@@ -371,8 +373,8 @@ mise x -- just baseline-consume /tmp/baseline-v0.1.0/flink2-pb3 target/flink-dat
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
-It reads the adapter line, Protobuf profile, and compile Flink version from the bundle manifest.
-It then runs a clean `verify` with tests skipped and the `api-compat` profile, selecting the same `-Pprotobuf<major>`, `-Dflink.compat`, and `-Dflink.version` as the retained library.
+It reads the adapter line and compile Flink version from the bundle manifest.
+It then runs a clean `verify` with tests skipped and the `api-compat` profile, selecting `-Pprotobuf4`, the build baseline that ADR-0001 sets for releases, and the same `-Dflink.compat` and `-Dflink.version` as the retained library.
 
 The profile uses the japicmp-maven-plugin version managed by `flink-connector-parent` but replaces the parent's configuration, which compares `org.apache.flink` coordinates and covers `@Public` only.
 The comparison covers public and protected members of types annotated `@Public` or `@PublicEvolving` and of their nested types, excluding elements annotated `@Internal`.
@@ -404,7 +406,7 @@ It pins protobuf-java to the bundle's version, because the retained instruments 
 It copies the candidate and the bundle manifest into `candidate/` in the output, where the retained instruments look for the library.
 The retained consumer records the hash of the jar it loaded, and the transport and legacy instruments assert that the library classes come from that copy.
 The results record the candidate and baseline hashes, the baseline source revision, and the revision and cleanliness of the checkout that ran the command; the candidate jar itself carries no source revision, so that checkout identifies the candidate only when it also built the jar, as in CI.
-Build the candidate with the bundle's line and Protobuf profile, as `api-compat` does; the command cannot tell which adapter a jar was compiled for.
+Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
 The Verify workflow runs one retained-baseline job for each v0.1.0 bundle, covering every Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
@@ -469,14 +471,14 @@ Use this sequence for a dependency update, including patch updates proposed by D
 4. Run the existing snapshot-format fixtures unchanged and investigate any incompatibility or byte mismatch.
    Do not regenerate them merely to make an update pass: unlike savepoints, all four are loaded on every run and are not selected by exact runtime version.
    Use their separate generation procedure only for an intentional reviewed baseline change.
-5. Run the full matrix below, including the unchanged floor-jar checks for dependency/build changes.
+5. Run the full matrix below, including the unchanged-jar checks for dependency/build changes.
    Update version references and measured scope in this guide, the root README, fixture documentation, and runtime evidence.
    Review configuration, fixture additions, and documentation together before pushing; wait for the current PR CI result.
 
 | Change | Configuration and fixture impact |
 |---|---|
-| Protobuf 3 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, and update `docs/quickstart.md`; the `protobuf3` profile uses the root default |
-| Protobuf 4 runtime | Change `protobuf.version` in the `protobuf4` profile and the explicit runtime override in `docs/quickstart.md` |
+| Protobuf 4 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, the capture check in `BaselineTool`, and the versions in `docs/quickstart.md`; the `protobuf4` profile uses the root default |
+| Protobuf 3 runtime | Change `protobuf.version` in the `protobuf3` profile, the capture check in `BaselineTool`, and the explicit runtime override in `docs/quickstart.md` |
 | Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the upgrade guide renders. Changing `original` or `changed` also changes their relationship to the retained v0.1.0 schemas and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
@@ -502,14 +504,15 @@ From the repository root, run these checks with the updated pins; substitute the
     mise x java@temurin-21 just -- just verify-protobuf "$protobuf_major"
     mise x java@temurin-21 just -- just verify-flink 2.3.0 "$protobuf_major"
     mise x -- just verify-protobuf "$protobuf_major" -Dflink.compat=flink1
-    mise x -- just binary-compat 2.3.0 "$protobuf_major"
   done
+  mise x -- just binary-compat flink2 2.3.0
+  mise x -- just binary-compat flink1
   mise x -- just lint
 )
 ```
 
 The subshell stops on the first failure and preserves that command's exit status without changing the calling shell's options.
-The binary check preserves the floor's library jar, compiled tests, application jars/classes, and descriptors when executing at the ceiling.
+The binary check preserves the floor's library jar, compiled tests, application jars/classes, and descriptors when executing at the ceiling, and the Protobuf 4 jar when executing with Protobuf 3.
 That check and the per-version savepoint fixtures do not establish saved-state migration between Flink versions or Protobuf profiles.
 Adding such a guarantee requires an explicit old-writer/new-reader recovery scenario and a documented compatibility decision.
 
@@ -658,7 +661,7 @@ The action then restores `~/.m2/repository` and `~/.m2/wrapper`, in place of `se
 Its key hashes every `pom.xml`, the wrapper properties, and the CI settings, and the `maven-repository-` prefix restores the newest entry when the exact key is missing.
 In Docs, whose workspace holds two checkouts, the key never matches exactly, so the prefix always selects the entry.
 A job that restores nothing reports a warning.
-Only `floor / JDK 17 / Protobuf 3` on `main` saves an entry, through the action's `save` input.
+Only `floor / JDK 17 / Protobuf 4` on `main` saves an entry, through the action's `save` input.
 That job restores only the exact key, so a new key starts from an empty repository, and the entry is saved after the job succeeds.
 The entry therefore holds what that job resolved when its key was new; a version that a script names outside a POM, such as the `install-file` plugin in `scripts/verify-examples.sh`, reaches it only with the next POM change.
 Pull requests, Docs, and Dependency submission only restore, so pull requests create no entry that only their own ref can read.
@@ -805,7 +808,7 @@ The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inhe
 
 Dependabot checks Maven, GitHub Actions, and the root uv project weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
 Update the Python minor by hand: change `python` in `mise.toml` and `requires-python` together, relock, and run `just test-scripts` and `just test-doc-versions`.
-During dependency maintenance, also check the `protobuf4` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
+During dependency maintenance, also check the `protobuf3` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
 Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.
 Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.
 Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including new exact-version fixtures and matrix checks.
@@ -935,4 +938,4 @@ Single-JVM MiniCluster success does not prove cross-process key hashing; the sup
 
 The current matrix covers the production serializer and type integration as well as separate feasibility probes in each combination.
 It also covers saved-state recovery with unchanged and supported changed schemas within each pinned Flink/Protobuf combination.
-It does not prove compatibility of one production library jar across Protobuf majors or saved-state upgrades between Flink versions.
+The unchanged-jar checks run each line's Protobuf 4 jar with Protobuf 3 generated code and runtime; neither these checks nor the matrix prove saved-state upgrades between Flink versions or Protobuf runtimes.

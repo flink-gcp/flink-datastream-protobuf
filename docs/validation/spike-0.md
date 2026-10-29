@@ -121,7 +121,7 @@ mise x java@temurin-17 -- ./mvnw -ntp clean -Pchill -Dflink.version=2.3.0 -Dtest
 
 Exact JDK patches may differ from the dated initial observation because the development commands select a maintained major version.
 These commands use the checkout's current Protobuf and Chill pins, not the historical dependency set above.
-For the Chill follow-up, run the Maven comparison for each of Flink 2.2.1 and 2.3.0, first with the default Protobuf 3 profile and then with `-Pprotobuf4`.
+For the Chill follow-up, run the Maven comparison for each of Flink 2.2.1 and 2.3.0, with `-Pprotobuf3` and with the default Protobuf 4 profile.
 The retained tests and schema are the reproducible evidence; generated classes and local logs stay outside version control.
 The optional comparison test prints the loaded artifact locations and checks the observed payloads, serialization, and copy behavior.
 

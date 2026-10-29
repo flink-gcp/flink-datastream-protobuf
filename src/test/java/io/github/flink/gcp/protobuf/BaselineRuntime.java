@@ -58,16 +58,7 @@ public final class BaselineRuntime {
                 "protobuf.test.production.classes", bundle.resolve("library.jar").toString());
         new RuntimeCompatibilityTest().loadsTheRequestedFlinkRuntime();
         new RuntimeCompatibilityTest().loadsProductionCodeFromTheConfiguredDirectoryOrJar();
-        assertThat(
-                        Path.of(
-                                        Message.class
-                                                .getProtectionDomain()
-                                                .getCodeSource()
-                                                .getLocation()
-                                                .toURI())
-                                .getFileName()
-                                .toString())
-                .isEqualTo("protobuf-java-" + manifest.getProperty("protobuf.version") + ".jar");
+        new RuntimeCompatibilityTest().loadsTheRequestedProtobufRuntime();
         if (mode.equals("transport") || mode.equals("legacy")) {
             if (mode.equals("transport")) {
                 new ProtobufRegistrationITCase()

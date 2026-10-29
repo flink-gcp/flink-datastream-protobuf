@@ -56,7 +56,7 @@ mise x -- javac -cp "target/classes:target/test-classes:$(cat /tmp/snapshot-fixt
 mise x -- java -cp "/tmp/snapshot-fixture-writer:target/classes:target/test-classes:$(cat /tmp/snapshot-fixture-classpath.txt)" \
   io.github.flink.gcp.protobuf.SnapshotFixtureWriter /tmp/protobuf-v1-fixtures 3 3.25.8 \
   8b07681d4a5911e7508e01cfdee005f15605b197
-mise x -- ./mvnw -ntp clean -Pprotobuf4 test-compile dependency:build-classpath \
+mise x -- ./mvnw -ntp clean -Pprotobuf4 -Dprotobuf.version=4.33.6 test-compile dependency:build-classpath \
   -Dmdep.includeScope=test -Dmdep.outputFile=/tmp/snapshot-fixture-classpath.txt
 mkdir -p /tmp/snapshot-fixture-writer
 mise x -- javac -cp "target/classes:target/test-classes:$(cat /tmp/snapshot-fixture-classpath.txt)" \
