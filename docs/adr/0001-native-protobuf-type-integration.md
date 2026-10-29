@@ -28,6 +28,8 @@ limitations under the License.
 - Sizing traversal amended: 2026-10-19, [issue #43](https://github.com/flink-gcp/flink-datastream-protobuf/issues/43)
 - Generated sizes for bounded types amended: 2026-10-22, [issue #112](https://github.com/flink-gcp/flink-datastream-protobuf/issues/112)
 - Large-frame reads amended: 2026-10-25, [issue #113](https://github.com/flink-gcp/flink-datastream-protobuf/issues/113)
+- DynamicMessage design: 2026-10-29, extended by [ADR-0005](0005-descriptor-bound-dynamic-messages.md)
+- 1.0.0 persisted-format restart amended: 2026-10-29, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -97,11 +99,12 @@ The target is full-runtime generated messages with protobuf-java 3.25.x and 4.x.
 [ADR-0003](0003-flink-version-compatibility.md) replaces the initial Flink 2.3-only scope with current/previous Flink 2.x minor support and a separate Flink 1.20 LTS build.
 It defines the JDK matrix, artifact version lines, and runtime-specific release acceptance requirements.
 Flink core and protobuf-java remain provided and unrelocated so the application owns its runtime.
-DynamicMessage is deferred to 0.3.0; lite runtime, extension-registry support, Table formats, and DataStream API V2 remain outside these release contracts.
+The 0.1.0 and 0.2.0 milestones support generated messages only; [ADR-0005](0005-descriptor-bound-dynamic-messages.md) adds explicit-descriptor DynamicMessage type information for 0.3.0.
+Lite runtime, extension-registry support, Table formats, and DataStream API V2 remain outside these release contracts.
 
 At `of` or `build`, require a public, concrete full-runtime message class using the supported `GeneratedMessageV3` or `GeneratedMessage` hierarchy.
 Require its public static `getDefaultInstance()` to return that concrete class, with a full descriptor and a parser for that message.
-The factory accepts only a concrete `Class<?>` satisfying the same checks, not interfaces, abstract bases, builders, parameterized types, DynamicMessage, or lite classes.
+The factory accepts only a concrete `Class<?>` satisfying the same checks, not interfaces, abstract bases, builders, parameterized types, DynamicMessage, or lite classes; ADR-0005 defines its DynamicMessage failure.
 Require every message type reachable from the payload, including types declared in imported files, to be declared in a file with `syntax = "proto3"`, visiting referenced message types with cycle detection.
 Reject a reached message declared in a proto2 file, including `google/protobuf/descriptor.proto`, whose syntax protoc leaves unset, or in an editions file.
 Proto3 cannot declare extension ranges or MessageSet wire format, so this also excludes payloads that depend on them; also reject a payload message that declares extensions, which proto3 permits for custom options.
@@ -389,21 +392,21 @@ Keep the application schema, compatible gencode/runtime pair, and Flink version 
 The tested Protobuf profile matrix does not promise restore across changed built-in descriptors, cross-Flink-minor restore, or downgrade support.
 
 DynamicMessage requires an explicit root descriptor because its Java class alone does not identify a schema.
-Issue #21 must compare shared type-information/serializer/snapshot implementations with separate implementations before selecting the API and persisted representation for 0.3.0.
-A common construction API or a versioned snapshot with an explicit generated/dynamic discriminator is allowed; separate classes are also allowed when their restoration responsibilities justify them.
-Share framing, descriptor normalization, and compatibility evaluation where their semantics agree.
-Assess type safety, configuration/validation, classloading, restoration, test coverage, and the impact on existing generated-message development applications; compatibility is one design constraint rather than a requirement to choose separation.
-Any change to the generated snapshot layout uses a new version or class and follows the breaking-change process if an old restore path is dropped.
-Automatic generated-to-dynamic saved-state conversion remains outside the release scope unless separately designed and tested; unifying implementation classes does not establish that conversion.
+[ADR-0005](0005-descriptor-bound-dynamic-messages.md) selects shared type information and serializer classes with a separate dynamic snapshot class, leaving the generated snapshot format unchanged.
+Automatic generated-to-dynamic saved-state conversion remains outside the release scope unless separately designed and tested.
 
 The current capability roadmap ends at 0.3.0; the 1.0.0 milestone tracks stabilization and first publication, without a calendar deadline or automatic completion after 0.3.0.
 After 0.3.0, assess remaining design issues, missing implementation and validation gaps.
 If further development is needed, define 0.4.0 or later 0.x milestones from that assessment; otherwise, refine the compatibility contract and prepare 1.0.0.
 Version 1.0.0 is the stabilization point for the application-facing API, configuration defaults, persisted formats and supported forward-restore contract.
-Before publishing it, resolve the generated/dynamic construction and restoration design, define the supported runtime and upgrade matrix, and verify those guarantees against retained development and candidate fixtures.
+Before publishing it, implement and validate the generated/dynamic construction and restoration design of ADR-0005, define the supported runtime and upgrade matrix, and verify those guarantees against retained development and candidate fixtures.
 Consumer verification and fixture capture from the actual published 1.0.0 artifacts complete the publication gate; no earlier published artifact exists.
 Within 1.x, preserve the declared public API and supported state-reading paths; any future incompatible contract change requires a new major version and migration documentation.
-The 0.x-to-1.0.0 transition must have its own explicit upgrade guidance and evidence; 1.0.0 does not retroactively guarantee all development APIs or state formats.
+The 0.x-to-1.0.0 transition must have its own explicit upgrade guidance and evidence; 1.0.0 does not retroactively guarantee development APIs.
+Version 1.0.0 starts its persisted formats at version 1: every snapshot class it writes returns `1` from `getCurrentVersion()`, and the framing and normalization versions in its payloads are `1`.
+Because 0.x artifacts already wrote the existing snapshot classes, the generated one with versions 1 and 2 of other layouts, and a retained identifier is never reinterpreted, 1.0.0 writes every snapshot under a class name that no 0.x artifact wrote, for generated and dynamic messages alike.
+State written by 0.x development artifacts is then rejected explicitly, not restored; the 0.x-to-1.0.0 upgrade guidance must state that applications start with fresh state or replay input, and tests must verify the rejection with the retained development fixtures.
+[Issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) tracks this restart; until it lands, 0.x milestones keep the version lines that this record and ADR-0005 define.
 
 ### Development fixtures and publication evidence
 
