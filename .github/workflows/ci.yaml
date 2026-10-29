@@ -50,6 +50,8 @@ jobs:
               - mvnw
               - '.mvn/**'
               - 'tools/maven/**'
+              - '.github/maven/**'
+              - '.github/actions/maven/**'
               - .gitignore
               - .github/workflows/ci.yaml
               - .github/workflows/verify.yaml

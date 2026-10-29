@@ -643,6 +643,31 @@ They cover the load gate's pass, reset, window, and timeout, a maintenance event
 Their stubs shorten every wait, so they check the order of the runner's steps but not the intervals of its gate, watcher, or retries.
 Only a real VM checks those intervals, the image's packages, the apt, mise, Java, just, and Thrift installations, the metadata server's real responses and maintenance announcements, systemd, `runuser`, process ownership, and the measurement itself.
 
+### CI Maven resolution
+
+CI reads Maven artifacts from Google's mirror of Maven Central before Central, and restores one shared local repository.
+Every CI job that runs Maven calls the [maven](../.github/actions/maven/action.yml) action after its JDK setup.
+The action adds `--settings` with [.github/maven/settings.xml](../.github/maven/settings.xml) to `MAVEN_ARGS`, which Maven prepends to every later invocation, including those that recipes, Python tools, and `BaselineTool` start.
+That file adds `https://maven-central.storage-download.googleapis.com/maven2/` as a repository and plugin repository ahead of Central.
+It is not a `<mirror>`, so an artifact that the mirror has not synced yet still resolves from Central.
+The action also sets `MVNW_REPOURL`, so the Maven Wrapper downloads Maven itself from the mirror, but only when the mirror holds the Maven version of every checkout's wrapper; otherwise it reports a warning and the wrapper downloads from Central, because `MVNW_REPOURL` replaces the wrapper's only URL.
+The Docs build calls the controller checkout's action, because the milestone sources it builds predate it.
+Local builds read neither variable and resolve from Central.
+
+The action then restores `~/.m2/repository` and `~/.m2/wrapper`, in place of `setup-java`'s `cache: maven`.
+Its key hashes every `pom.xml`, the wrapper properties, and the CI settings, and the `maven-repository-` prefix restores the newest entry when the exact key is missing.
+In Docs, whose workspace holds two checkouts, the key never matches exactly, so the prefix always selects the entry.
+A job that restores nothing reports a warning.
+Only `floor / JDK 17 / Protobuf 3` on `main` saves an entry, through the action's `save` input.
+That job restores only the exact key, so a new key starts from an empty repository, and the entry is saved after the job succeeds.
+The entry therefore holds what that job resolved when its key was new; a version that a script names outside a POM, such as the `install-file` plugin in `scripts/verify-examples.sh`, reaches it only with the next POM change.
+Pull requests, Docs, and Dependency submission only restore, so pull requests create no entry that only their own ref can read.
+The other lanes fetch their runtime-specific dependencies, which the entry does not hold, from the mirror on each run, and the standalone examples resolve into their own disposable repository.
+
+Retained bundles are captured locally, as described in [development artifact bundles](validation/development-baselines.md#capture), and do not use these settings.
+CI captures are disposable rehearsals whose command records omit `MAVEN_ARGS`.
+A bundle records the resolved dependency tree and jars, not the repository that served them.
+
 ### CI compiler reuse and job budgets
 
 Each Verify matrix job restores the compiler built by `just benchmark-tools` from an Actions cache entry.
@@ -663,7 +688,7 @@ A job time limit cancels the job instead, and the gate does not run after cancel
 The organization's GitHub Free plan runs at most 20 jobs at a time, and a pull-request run of Verify, Lint, and Docs starts more, so the longest matrix jobs can wait for a runner.
 To shorten pull-request runs, CI's first job, `Freeze source revision`, uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to compare a pull request with its base branch and passes the result to Verify as the `benchmarks` and `baseline` inputs.
 An empty token makes the filter use git, so the job needs no `pull-requests` permission, and the selection adds no job that the matrix jobs would wait for.
-The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, or the CI and Verify workflows.
+The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, or the CI and Verify workflows.
 Capture builds and runs the current library and test sources from a clean tree, so all of those are its inputs.
 Capture also archives every tracked file and rejects names that are not valid UTF-8 or that contain a colon, a backslash, or a control character; `just lint`, which Lint runs on every pull request, checks those names so that a skipped capture cannot hide one.
 Matrix jobs run the benchmark compiler and smoke steps for the same paths and for `scripts/benchmark_evidence.py`; the benchmark build compiles the test sources as well.

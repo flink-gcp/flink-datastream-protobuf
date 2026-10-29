@@ -84,14 +84,9 @@ jobs:
           path: ${{ env.HUGO_CACHEDIR }}
           key: hugo-${{ hashFiles('source/mise.toml') }}-${{ hashFiles('source/docs/go.sum') }}
           restore-keys: hugo-${{ hashFiles('source/mise.toml') }}-
-      # The standalone examples install into a disposable external Maven repository.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.m2/repository
-            ~/.m2/wrapper
-          key: maven-docs-${{ hashFiles('source/**/pom.xml') }}
-          restore-keys: maven-docs-
+      # The controller's action serves every source line, which may predate it. The standalone
+      # examples install into a disposable external Maven repository.
+      - uses: ./controller/.github/actions/maven
       - name: Test documentation version rendering
         if: matrix.id == 'development'
         run: just test-doc-versions

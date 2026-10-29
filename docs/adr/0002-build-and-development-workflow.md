@@ -33,6 +33,7 @@ limitations under the License.
 - Python tooling through uv amended: 2026-10-12, [issue #96](https://github.com/flink-gcp/flink-datastream-protobuf/issues/96)
 - Development milestone documentation amended: 2026-10-19, [issue #62](https://github.com/flink-gcp/flink-datastream-protobuf/issues/62)
 - Required `CI passed` ruleset amended: 2026-10-19
+- CI Maven mirror and shared repository cache amended: 2026-10-30, [issue #135](https://github.com/flink-gcp/flink-datastream-protobuf/issues/135)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -77,6 +78,15 @@ Neither alternative changes the supported runtime matrix or the aggregate gate; 
 After Verify grew to 26 jobs and pull-request runs waited for runners at that limit, pull requests run the smoke and the capture rehearsal only when they change sources or build inputs; pushes to main, the weekly schedule, and manual runs always run both, so a skipped check is still exercised after merge.
 Job limits come from measured GitHub runner durations with at least twice the slowest successful run, and the smoke has a command limit so that a hung measurement fails before the job limit cancels evidence retention.
 Shared-runner durations never become benchmark pass/fail thresholds.
+
+CI resolves Maven artifacts from Google's mirror of Maven Central before Central, through a CI-only settings file, because Central fails requests from shared runners often enough to fail jobs that changed nothing: HTTP 502 responses failed lanes on `main` in this repository, and HTTP 429 rate limiting did so in [flink-connector-gcp](https://github.com/flink-gcp/flink-connector-gcp/issues/1887).
+The goal is reliable resolution, not shorter jobs.
+The mirror is an additional repository ahead of Central rather than a `<mirror>`, because replacing Central would fail a build whenever the mirror had not synced an artifact yet; for the same reason, the Maven Wrapper downloads from the mirror only after checking that it holds the pinned Maven.
+Local builds and retained captures keep resolving from Central: a `.mvn/maven.config` entry or a POM repository was rejected because it would change every developer's resolution for a CI failure, and a retained bundle records the resolved tree and jars, not the serving repository.
+One shared Maven repository entry, saved by one Verify job on `main`, replaces `setup-java`'s cache, which any job could save under a shared key and which held a 7 MB entry that every Verify job restored.
+Saving only on `main` keeps pull requests from creating entries that only their own ref can read, and starting the saving job from an empty repository when its key is new keeps an entry from accumulating superseded dependencies.
+The other lanes fetch the runtime-specific dependencies that the entry lacks from the mirror; a warm-up that resolves every lane before the save, or one entry per lane, was rejected because it would enlarge the cache and add steps without changing where those artifacts come from.
+The mise, Hugo, and retained-bundle caches are unchanged, because a pull request saves a copy only when it does not restore its exact key, as when `main` has no entry for it, and an unused copy is evicted after seven days without access.
 
 Dependabot proposes individual weekly Maven, GitHub Actions, and uv updates.
 Flink major/minor changes follow ADR-0003, and Protobuf major changes require an explicit compatibility decision.
