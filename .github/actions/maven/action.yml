@@ -1,0 +1,66 @@
+name: Configure CI Maven resolution
+description: >-
+  Make later Maven runs read Google's mirror of Maven Central ahead of Central, and restore the shared local repository.
+  With save, the job instead restores only the exact entry and saves a missing one after it succeeds.
+inputs:
+  save:
+    description: "'true' only in the one Verify job on main that saves the shared entry."
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Read Maven artifacts from Google's mirror of Central first
+      shell: bash
+      env:
+        SETTINGS: ${{ github.action_path }}/../../maven/settings.xml
+      run: |
+        settings=$(realpath "$SETTINGS")
+        echo "MAVEN_ARGS=${MAVEN_ARGS:+$MAVEN_ARGS }--settings $settings" >> "$GITHUB_ENV"
+        # MVNW_REPOURL replaces the wrapper's only download URL, so use it only when the mirror holds every checkout's Maven.
+        repository=https://maven-central.storage-download.googleapis.com/maven2
+        mirror=true
+        for properties in "$GITHUB_WORKSPACE"/.mvn/wrapper/maven-wrapper.properties "$GITHUB_WORKSPACE"/*/.mvn/wrapper/maven-wrapper.properties; do
+          [[ -f "$properties" ]] || continue
+          url=$(sed -n 's/^distributionUrl=//p' "$properties")
+          mirrored="$repository/org/apache/maven/${url#*/org/apache/maven/}"
+          # timeout also bounds the waits that a Retry-After header asks the retries for.
+          if ! timeout 90 curl -fsSIL --connect-timeout 10 --max-time 20 --retry 2 -o /dev/null "$mirrored"; then
+            echo "::warning::$mirrored is unavailable, so the Maven Wrapper downloads Maven from Central."
+            mirror=false
+          fi
+        done
+        if [[ "$mirror" == true ]]; then
+          echo "MVNW_REPOURL=$repository" >> "$GITHUB_ENV"
+        fi
+    - name: Name the shared Maven entry
+      id: entry
+      shell: bash
+      env:
+        # The CI settings are part of the key because they decide which repository an artifact is recorded under.
+        KEY: maven-repository-${{ hashFiles('**/pom.xml', '.mvn/wrapper/maven-wrapper.properties', '.github/maven/settings.xml') }}
+      run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+    # Both cache steps list the same paths: the cache version derives from them, and any other list never restores the entry.
+    - name: Restore the shared Maven repository
+      id: restore
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.m2/wrapper
+        key: ${{ steps.entry.outputs.key }}
+        restore-keys: maven-repository-
+    - name: Report a missing shared Maven entry
+      if: inputs.save != 'true' && steps.restore.outputs.cache-matched-key == ''
+      shell: bash
+      run: echo '::warning::No shared Maven entry was restored; check that the saving Verify job on main succeeded.'
+    # Without restore keys, a missing entry leaves the repository empty, so a new entry holds only what this job resolves.
+    # The post step saves it only when the job succeeds.
+    - name: Restore the exact Maven entry, or save it after the job
+      if: inputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.m2/wrapper
+        key: ${{ steps.entry.outputs.key }}

@@ -43,7 +43,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
+      - uses: ./.github/actions/maven
       - name: Resolve the Maven arguments
         id: args
         env:
