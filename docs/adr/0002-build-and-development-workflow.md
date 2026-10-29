@@ -150,5 +150,5 @@ The retained compiled consumers also run against the candidate without recompila
 Retain those checks in 0.3.0 and extend them to the fixed 0.2.0 development baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
 Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.
 Undocumented regressions and failures of claimed supported paths block milestone completion and eventual publication.
-The public API and supported forward-restore contract stabilize at 1.0.0; DynamicMessage implementation structure is selected by its design issue rather than fixed here.
+The public API and supported forward-restore contract stabilize at 1.0.0; [ADR-0005](0005-descriptor-bound-dynamic-messages.md) selects the DynamicMessage implementation structure.
 This bootstrap creates neither a Maven Central release nor a stable public API.

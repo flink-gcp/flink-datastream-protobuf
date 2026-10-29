@@ -167,7 +167,7 @@ Any payload bytes remain opaque, without automatic unpacking or schema validatio
 Every message type that a payload reaches, including types in imported files, must be declared in a file with `syntax = "proto3"`.
 Construction rejects a payload graph that reaches a message declared in a proto2 or editions file, naming the first such message and its file; this includes `google/protobuf/descriptor.proto` types, while the well-known types such as Struct, Any, and Timestamp are proto3.
 Construction also rejects DynamicMessage, lite messages, and payload messages that declare extensions.
-DynamicMessage support is planned for the 0.3.0 milestone.
+DynamicMessage support is planned for the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), as designed in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md).
 The library concerns internal DataStream transport and managed values, not connector boundary encoders, ProtoJSON, OTLP export, or the separate Flink Table/SQL Protobuf format.
 
 ## Scalar keys
@@ -219,7 +219,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 The 0.1.0 contract rejected schema changes, including otherwise wire-safe field additions.
 Current `0.2.0-SNAPSHOT` development builds restore the supported schema changes; the [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 artifact across a field addition and a reserved field removal.
 The [upgrade guide from 0.1.0](upgrade.md) lists the API changes and intentional breaks of 0.2.0 and the upgrade procedure.
-Descriptor-driven DynamicMessage support is planned for 0.3.0.
+Descriptor-driven DynamicMessage support is planned for the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20).
 Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.
 The unpublished 0.x milestones can break APIs, defaults, runtime requirements, and saved-state compatibility.
 Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.
