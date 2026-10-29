@@ -21,7 +21,7 @@ limitations under the License.
 # Development artifact bundles
 
 Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) prepared fixed development inputs for the state and API checks in #16 and #17.
-The final v0.1.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline).
+The final v0.1.0 and v0.2.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline) and the [`v0.2.0` pre-release](#retained-v020-baseline).
 The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
 
@@ -149,6 +149,20 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.1.0
 Do not rename, re-tag, or replace these assets.
 Obtain them with [`baseline-fetch`](#retrieve-the-retained-baseline); the release `README.md` lists equivalent manual commands.
 
+## Retained v0.2.0 baseline
+
+The [`v0.2.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.2.0) is the durable shared copy of the final v0.2.0 development baseline, assembled with [`baseline-release`](#publish-a-milestone-baseline) for [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63).
+Its source is annotated tag `v0.2.0`, commit `e697ee957000f3258ba4b6fd5940458514fada5c`, and its `SHA256SUMS` digest is pinned in `scripts/baseline_fetch.py`.
+The assets have the same names and roles as the v0.1.0 assets above, with the `v0.2.0-` prefix.
+The bundles use bundle format 2: besides the original-schema fixtures, each backend retains the `evolved` and `enum` fixtures described under [inspect and restore](#inspect-and-restore), and the runtime results have 20 cases on 2.x and 21 on LTS.
+The verification archive also holds the publication review, whose findings are public dependency literals and defaults, workflow keys, and synthetic test values, each with its disposition.
+
+The embedded manifests keep `milestone.final=false` and the Maven version `0.2.0-SNAPSHOT`.
+`FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #63 select these exact bundles as the milestone baseline.
+Do not rename, re-tag, or replace these assets.
+Obtain them with `mise x -- just baseline-fetch v0.2.0 <new-output>`; the release `README.md` lists equivalent manual commands.
+The 0.3.0 upgrade checks consume them; the current CI still restores and checks only the v0.1.0 bundles.
+
 ## Retrieve the retained baseline
 
 `baseline-fetch` downloads the designated release assets with `gh release download`, verifies them, and extracts the selected bundles into a new directory outside the repository.
@@ -183,7 +197,7 @@ The command only reads release assets; it never uploads, edits, or re-tags them.
 The pinned digest ties every accepted byte to the inventory reviewed in this repository.
 The checksums establish integrity against that retained inventory, not publisher authenticity: no signature accompanies the assets, and a change to both the assets and the pin would be accepted.
 `baseline-check` executes code from the bundle, so it runs only after the archive and every extracted file have matched the inventory.
-Add a pin for a later designated baseline, such as the 0.2.0 baseline in [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63), only after reviewing its `SHA256SUMS` and final manifest.
+Add a pin for a later designated baseline only after reviewing its `SHA256SUMS` and final manifest, as the [publication procedure](#publish-a-milestone-baseline) does.
 
 The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
 The `dependencies/` tree was resolved on macOS/aarch64.
