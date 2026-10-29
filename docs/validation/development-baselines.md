@@ -98,6 +98,36 @@ These fixtures use aligned checkpoints and local filesystem storage without entr
 Cross-Flink state upgrades, cross-Protobuf restore, backend migration, rescaling, unaligned or incremental checkpoint portability, and universal development-version compatibility are outside this evidence.
 The current companion jars include platform-specific runtime dependencies; recreate a rehearsal on another operating system or architecture rather than assuming portability of native dependencies.
 
+## Publish a milestone baseline
+
+`baseline-release` turns four captured bundles into the assets of a milestone pre-release, in the same layout as the [v0.1.0 baseline](#retained-v010-baseline), so that [`baseline-fetch`](#retrieve-the-retained-baseline) can verify them.
+It works in one external work directory that holds `bundles/<bundle>/` and the maintainer's `README.md`, and it never modifies the bundles.
+
+1. After every code-changing pull request of the milestone is merged and the `main` CI run of the merge commit has passed, create the annotated tag `v0.Y.Z` on that commit locally, and add a detached worktree at the tag.
+2. From that worktree on JDK 17, run `baseline-capture` four times into `<work>/bundles/flink2-pb3`, `flink2-pb4`, `flink1-pb3`, and `flink1-pb4`.
+3. Move the worktree's `target` directory out of the checkout, then read every bundle on each claimed Flink version and JDK and run the two negative controls:
+
+   ```sh
+   mise x -- just baseline-release read <work> --capture-checkout <worktree> \
+     --java17 "$(mise where java@temurin-17)/bin/java" --java21 "$(mise where java@temurin-21)/bin/java"
+   ```
+
+   The readers run from the work directory with the retained jars and dependencies, and write `<work>/verification/`; the command records the capture checkout's HEAD and the absence of its build output.
+4. Run `mise x -- just baseline-release review <work>`, which searches every bundle file and reader output, including the members of nested ZIP, JAR, and tar archives, the bytes other than the members' contents, such as a launcher prefix, local headers, a comment, or trailing data, and the content of gzip, bzip2, and xz streams, with the bounded credential rules of the [benchmark evidence gate](../development.md#automated-content-gate), and lists JVM diagnostic files, credential files, and compressed files it cannot open by name.
+   It also reports archives and members that cannot be read and archives nested more deeply than it searches, and rejects symbolic links, including a linked `verification/`.
+   The scan of four bundles takes several minutes.
+   Like the evidence gate, it supports the reviewer's inspection of bytes that this project produced; it does not detect deliberately hidden content.
+   It writes `<work>/PUBLICATION-REVIEW.json` with every finding unresolved; each finding names its path, rule, and the SHA-256 of the bytes it was found in, never the matched text.
+   Inspect each one; move a match that is harmless, such as a key header literal in public dependency bytecode or a synthetic test value, to `reviewed_matches` with a `disposition`, and stop if any flagged file or unexplained match remains.
+5. Write `<work>/README.md` from the previous milestone's release README, naming the tag, its commit, and its tag object, then run `mise x -- just baseline-release assemble v0.Y.Z <work> <ci-run-id>` with the passing `CI` run of the push to `main`.
+   It checks each bundle with its own `BaselineTool`, the source revision and annotated tag, the reader results against each bundle's jars and case counts, the controls and their rejection messages, the CI run and its `CI passed` job, the commit that the run's source-freezing job actually checked out, the bundle names against their artifact lines and Protobuf profiles, member names that `baseline-fetch` accepts, the README and dispositions against the credential rules, and the review, which must explain exactly what a new scan of the work directory finds, and writes `<work>/release/` with the archives, `INVENTORY.json`, `FINAL-BASELINE.json`, the verification archive, the README, and `SHA256SUMS`, whose digest it prints.
+6. After the maintainer approves publication, push the tag, create the GitHub pre-release with every file in `<work>/release/`, and run `mise x -- just baseline-release verify v0.Y.Z <work>`, which downloads every asset and compares it with the local bytes.
+   The pre-release does not trigger the documentation deployment; [add the milestone to the site](../development.md#documentation-site-and-publication) with `gh workflow run ci.yaml --ref main`.
+7. Pin the printed `SHA256SUMS` digest in `scripts/baseline_fetch.py`, document the retained baseline here, and run `baseline-fetch` against the published release.
+
+Keep the work directory as described in [retention](#retention) until the published assets are verified; the release assets then become the durable shared copy.
+`just baseline-release-test` runs the assembly checks on synthetic bundles and requires `baseline-fetch` to accept the assembled release.
+
 ## Retained v0.1.0 baseline
 
 The [`v0.1.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.1.0) is the durable shared copy of the final v0.1.0 development baseline.
