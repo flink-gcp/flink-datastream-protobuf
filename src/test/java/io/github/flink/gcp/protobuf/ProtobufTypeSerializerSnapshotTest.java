@@ -512,11 +512,7 @@ class ProtobufTypeSerializerSnapshotTest {
             assertReadFails(saved, "recursionLimit");
         }
         for (int size :
-                List.of(
-                        -1,
-                        0,
-                        ProtobufTypeSerializerSnapshot.MAX_DESCRIPTOR_BYTES + 1,
-                        Integer.MAX_VALUE)) {
+                List.of(-1, 0, ProtobufSchema.MAX_DESCRIPTOR_BYTES + 1, Integer.MAX_VALUE)) {
             saved = payload();
             saved.declaredLength = size;
             assertReadFails(saved, "descriptor byte length");
@@ -694,7 +690,7 @@ class ProtobufTypeSerializerSnapshotTest {
                                                         .addLengthDelimited(
                                                                 ByteString.copyFrom(
                                                                         new byte
-                                                                                [ProtobufTypeSerializerSnapshot
+                                                                                [ProtobufSchema
                                                                                         .MAX_DESCRIPTOR_BYTES]))
                                                         .build())
                                         .build())

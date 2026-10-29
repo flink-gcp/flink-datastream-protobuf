@@ -33,7 +33,9 @@ import com.google.protobuf.WireFormat;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -63,6 +65,11 @@ import java.util.Map;
  *
  * <p>Traversal frames are reused by later checks on the same instance, which is confined to one
  * serializer and thread. Every check clears their record references before returning.
+ *
+ * <p>For DynamicMessage values, each message value is paired with the declaration that the reader
+ * parses it with, and a value whose descriptor is another instance must be accepted first. A layout
+ * describes the value's own fields, which are what the writer emits, and checks unknown fields
+ * against the paired declaration. Accepted pairs are cached by descriptor identity.
  */
 @Internal
 final class ProtobufMessageSize {
@@ -92,19 +99,26 @@ final class ProtobufMessageSize {
      * type} in 32 bits, and the runtime's {@code int} shift wraps a larger unknown-field number to
      * another number's tag or to an invalid tag for field zero.
      */
-    private static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
+    static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
 
+    /** Accepted DynamicMessage descriptor pairs retained by each instance. */
+    static final int PAIR_CACHE_SIZE = 16;
+
+    private final ProtobufSerializerSettings settings;
     private final int maxSize;
     private final int recursionLimit;
     private final Layout root;
 
-    /**
-     * Largest generated size accepted without traversal; negative if the root type's height is
-     * unbounded or exceeds the recursion limit.
-     */
-    private final int generatedLimit;
+    /** Pairing state for DynamicMessage values, or null for generated messages. */
+    private final Pairs pairs;
 
     private Frame[] frames = new Frame[0];
+
+    /**
+     * Largest generated size accepted without traversal in the current check; negative if the root
+     * layout's height is unbounded or exceeds the recursion limit.
+     */
+    private int generatedLimit;
 
     /**
      * Wire-size lower bound of the repeated strings visited by the current generated-size check.
@@ -112,38 +126,76 @@ final class ProtobufMessageSize {
     private long stringBytes;
 
     /**
-     * Captures immutable limits and the root layout; records are referenced only during a check.
+     * Captures immutable limits and the root layout of generated messages; records are referenced
+     * only during a check.
      */
     ProtobufMessageSize(ProtobufSerializerSettings settings, Layout root) {
-        maxSize = settings.maxMessageSize();
-        recursionLimit = settings.recursionLimit();
-        this.root = root;
-        generatedLimit =
-                root.height >= 0 && root.height <= recursionLimit
-                        ? Math.min(maxSize, ProtobufTypeSerializer.SCRATCH_SIZE)
-                        : -1;
+        this(settings, root, false);
     }
 
     /**
-     * Precomputes field layouts for every message type reachable from a payload descriptor.
+     * Captures immutable limits and the root layout; records are referenced only during a check.
+     *
+     * @param dynamic whether values are DynamicMessage values that require descriptor pairing
+     */
+    ProtobufMessageSize(ProtobufSerializerSettings settings, Layout root, boolean dynamic) {
+        this.settings = settings;
+        maxSize = settings.maxMessageSize();
+        recursionLimit = settings.recursionLimit();
+        this.root = root;
+        pairs = dynamic ? new Pairs(root) : null;
+    }
+
+    /**
+     * Precomputes field layouts for every message type reachable from a payload descriptor, each
+     * paired with itself.
      *
      * @param descriptor payload root without extensions
      * @return the immutable root layout, linked to the layouts of its message fields
      */
     static Layout layout(Descriptor descriptor) {
-        Map<Descriptor, Layout> layouts = new IdentityHashMap<>();
+        return layout(descriptor, descriptor, false);
+    }
+
+    /**
+     * Precomputes field layouts for DynamicMessage values of a root descriptor, each paired with
+     * itself.
+     *
+     * @param descriptor payload root without extensions
+     * @return the immutable root layout, linked to the layouts of its message fields
+     */
+    static Layout dynamicLayout(Descriptor descriptor) {
+        return layout(descriptor, descriptor, true);
+    }
+
+    /**
+     * Precomputes field layouts for a value descriptor paired with the declaration that the reader
+     * parses it with. A message field's layout pairs its type with the type that the paired
+     * declaration gives for the same field number, if any.
+     *
+     * @param descriptor descriptor of the values that the layout describes
+     * @param pair reader declaration, the descriptor itself, or null if the reader keeps such
+     *     values as unknown fields
+     * @param dynamic whether the values are DynamicMessage values, whose map entries can hold
+     *     unknown fields and other descriptor instances
+     * @return the immutable layout, linked to the layouts of its message fields
+     */
+    private static Layout layout(Descriptor descriptor, Descriptor pair, boolean dynamic) {
+        Map<LayoutKey, Layout> layouts = new HashMap<>();
         List<Layout> pending = new ArrayList<>();
-        Layout result = new Layout(descriptor);
-        layouts.put(descriptor, result);
+        Layout result = new Layout(descriptor, pair);
+        layouts.put(new LayoutKey(descriptor, pair), result);
         pending.add(result);
         for (int i = 0; i < pending.size(); i++) {
-            for (Field field : pending.get(i).fields) {
+            Layout parent = pending.get(i);
+            for (Field field : parent.fields) {
                 if (field.type == FieldDescriptor.Type.MESSAGE) {
                     Descriptor type = field.descriptor.getMessageType();
-                    Layout child = layouts.get(type);
+                    LayoutKey key = new LayoutKey(type, childPair(parent, field));
+                    Layout child = layouts.get(key);
                     if (child == null) {
-                        child = new Layout(type);
-                        layouts.put(type, child);
+                        child = new Layout(type, key.pair());
+                        layouts.put(key, child);
                         pending.add(child);
                     }
                     field.message = child;
@@ -151,21 +203,38 @@ final class ProtobufMessageSize {
             }
         }
         for (Layout layout : pending) {
-            layout.nested = nested(layout);
+            layout.nested = nested(layout, dynamic);
         }
         measure(result);
         return result;
     }
 
+    /** Returns the reader's type for a message field of a layout, or null if it has none. */
+    private static Descriptor childPair(Layout parent, Field field) {
+        if (parent.pair == parent.descriptor) {
+            return field.descriptor.getMessageType();
+        }
+        if (parent.pair == null) {
+            return null;
+        }
+        FieldDescriptor declared = parent.pair.findFieldByNumber(field.descriptor.getNumber());
+        return declared != null && declared.getJavaType() == FieldDescriptor.JavaType.MESSAGE
+                ? declared.getMessageType()
+                : null;
+    }
+
     /**
-     * Selects the message fields whose values can hold unknown fields. Map entries have none, so a
-     * map field is selected only if its values are messages.
+     * Selects the message fields whose values can hold unknown fields or need another layout.
+     * Generated map entries have neither, so a generated map field is selected only if its values
+     * are messages; a DynamicMessage map entry is any message that the application adds.
      */
-    private static Field[] nested(Layout layout) {
+    private static Field[] nested(Layout layout, boolean dynamic) {
         List<Field> result = new ArrayList<>();
         for (Field field : layout.fields) {
             if (field.message != null
-                    && (!field.descriptor.isMapField() || hasMessageFields(field.message))) {
+                    && (dynamic
+                            || !field.descriptor.isMapField()
+                            || hasMessageFields(field.message))) {
                 result.add(field);
             }
         }
@@ -234,27 +303,58 @@ final class ProtobufMessageSize {
      * generated size. The caller must encode the value into a scratch array of that size and call
      * {@link #traverse(Message)} if encoding fails or the output length differs.
      *
-     * @param message generated message to validate
+     * @param message message to validate
      * @return payload length, excluding the Flink frame prefix
      * @throws IOException if size/depth limits are exceeded or the traversal rejects the value
      */
     int check(Message message) throws IOException {
+        Layout layout = rootLayout(message);
+        // A generated message reporting another descriptor is traversed, as nested ones are.
+        generatedLimit =
+                (pairs != null || layout == root)
+                                && layout.height >= 0
+                                && layout.height <= recursionLimit
+                        ? Math.min(maxSize, ProtobufTypeSerializer.SCRATCH_SIZE)
+                        : -1;
         if (generatedLimit >= 0) {
-            int size = generatedSize(message);
+            int size = generatedSize(message, layout);
             if (size >= 0) {
                 return size;
             }
         }
-        return traverse(message);
+        return traverse(message, layout);
+    }
+
+    /** Returns the number of descriptor pairs evaluated because they were not cached, for tests. */
+    int pairEvaluations() {
+        return pairs == null ? 0 : pairs.evaluations;
+    }
+
+    /**
+     * Returns the root value's layout, accepting a DynamicMessage descriptor other than the root's.
+     */
+    private Layout rootLayout(Message message) throws IOException {
+        Descriptor descriptor = message.getDescriptorForType();
+        if (descriptor == root.descriptor) {
+            return root;
+        }
+        if (pairs == null) {
+            return layout(descriptor);
+        }
+        try {
+            return pairs.accept(descriptor, root.descriptor);
+        } catch (IOException e) {
+            throw rejected(descriptor.getFullName(), e);
+        }
     }
 
     /**
      * Returns the generated size of a value whose depth is statically bounded, or -1 if the
      * traversal must decide.
      */
-    private int generatedSize(Message message) {
+    private int generatedSize(Message message, Layout layout) {
         stringBytes = 0;
-        if (visit(message, root, GENERATED_SIZE_BUDGET) < 0) {
+        if (visit(message, layout, GENERATED_SIZE_BUDGET) < 0) {
             return -1;
         }
         int size;
@@ -277,8 +377,10 @@ final class ProtobufMessageSize {
      * repeated elements and singular values other than the default instance below the root; an
      * absent singular value reads as that instance, which holds no fields.
      */
-    private int visit(Message message, Layout layout, int budget) {
+    private int visit(Object candidate, Layout layout, int budget) {
+        // A DynamicMessage field can hold a lite message, which the traversal rejects.
         if (budget < 0
+                || !(candidate instanceof Message message)
                 || message.getDescriptorForType() != layout.descriptor
                 || requiresTraversal(message.getUnknownFields(), layout)) {
             return -1;
@@ -296,14 +398,19 @@ final class ProtobufMessageSize {
                 int count = message.getRepeatedFieldCount(descriptor);
                 budget -= count;
                 for (int i = 0; budget >= 0 && i < count; i++) {
-                    Message entry = (Message) message.getRepeatedField(descriptor, i);
-                    budget = visit(entry, field.message, budget);
+                    budget = visit(message.getRepeatedField(descriptor, i), field.message, budget);
                 }
             } else if (field.repeated) {
                 List<?> values = (List<?>) message.getField(descriptor);
                 budget -= values.size();
                 for (int i = 0; budget >= 0 && i < values.size(); i++) {
-                    budget = visit((Message) values.get(i), field.message, budget);
+                    budget = visit(values.get(i), field.message, budget);
+                }
+            } else if (pairs != null) {
+                // DynamicMessage creates a new default instance on each read, and a value set to a
+                // default instance of another type still needs its descriptor accepted.
+                if (message.hasField(descriptor)) {
+                    budget = visit(message.getField(descriptor), field.message, budget - 1);
                 }
             } else {
                 Message value = (Message) message.getField(descriptor);
@@ -339,8 +446,11 @@ final class ProtobufMessageSize {
         }
         int count = message.getRepeatedFieldCount(descriptor);
         for (int i = 0; i < count; i++) {
-            Message entry = (Message) message.getRepeatedField(descriptor, i);
-            if (!addString(entry.getField(field.mapValue))) {
+            // A DynamicMessage entry can be a lite message or use another descriptor instance,
+            // which the traversal rejects or accepts before reading its fields.
+            if (!(message.getRepeatedField(descriptor, i) instanceof Message entry)
+                    || entry.getDescriptorForType() != field.mapValue.getContainingType()
+                    || !addString(entry.getField(field.mapValue))) {
                 return false;
             }
         }
@@ -392,11 +502,14 @@ final class ProtobufMessageSize {
      * them, so the caller passes the containing message's layout.
      */
     private static String collision(Layout layout, int number, UnknownFieldSet.Field values) {
-        FieldDescriptor descriptor = layout.descriptor.findFieldByNumber(number);
+        if (layout.reader == null) {
+            return null;
+        }
+        FieldDescriptor descriptor = layout.reader.findFieldByNumber(number);
         if (descriptor == null) {
             return null;
         }
-        Field field = layout.fields[descriptor.getIndex()];
+        Field field = layout.readerFields[descriptor.getIndex()];
         String wireType =
                 switch (field.wireType) {
                     case WireFormat.WIRETYPE_VARINT ->
@@ -419,7 +532,7 @@ final class ProtobufMessageSize {
                         + " field "
                         + number
                         + " of "
-                        + layout.descriptor.getFullName()
+                        + layout.reader.getFullName()
                         + " would be parsed as declared field "
                         + descriptor.getFullName();
     }
@@ -430,7 +543,7 @@ final class ProtobufMessageSize {
      * set.
      */
     private static void checkCollisions(Layout layout, UnknownFieldSet unknown) throws IOException {
-        for (Field field : layout.fields) {
+        for (Field field : layout.readerFields) {
             int number = field.descriptor.getNumber();
             UnknownFieldSet.Field values = unknown.getField(number);
             String collision =
@@ -449,37 +562,55 @@ final class ProtobufMessageSize {
      * <p>Cached subtree depth is checked again at each occurrence, so sharing a message at a deeper
      * path cannot bypass the recursion limit.
      *
-     * @param message generated message to validate
+     * @param message message to validate
      * @return exact payload length, excluding the Flink frame prefix
-     * @throws IOException if size/depth limits are exceeded
+     * @throws IOException if size/depth limits are exceeded or the value is rejected
      */
     int traverse(Message message) throws IOException {
+        return traverse(message, rootLayout(message));
+    }
+
+    private int traverse(Message message, Layout rootLayout) throws IOException {
         Map<Object, Summary> completed = null;
         int top = 0;
         int used = 1;
         try {
-            Frame current = frame(0).start(message, layoutOf(root, message), 0);
+            Frame current = frame(0).start(message, rootLayout, 0);
             while (true) {
                 Object child = next(current);
                 if (child != null) {
+                    if (!(child instanceof Message) && !(child instanceof UnknownFieldSet)) {
+                        // DynamicMessage accepts a lite message as a field value.
+                        throw rejected(
+                                path(top),
+                                new IOException(
+                                        "Unsupported message value of "
+                                                + child.getClass().getName()
+                                                + "; expected a full-runtime message"));
+                    }
+                    // An unknown-field set takes its container's layout, a group none.
+                    Layout layout =
+                            child instanceof Message value
+                                    ? layoutOf(current.edgeLayout, value, top)
+                                    : current.edgeLayout;
                     Summary summary = completed == null ? null : completed.get(child);
+                    if (summary != null && summary.layout() != layout) {
+                        if (child instanceof UnknownFieldSet set) {
+                            if (layout != null) {
+                                checkCollisions(layout, set);
+                            }
+                        } else {
+                            // A shared DynamicMessage value under another pairing is checked again.
+                            summary = null;
+                        }
+                    }
                     if (summary == null) {
                         int depth = current.depth + current.edgeDepth;
                         checkDepth(depth);
-                        // An unknown-field set takes its container's layout, a group none.
-                        Layout layout =
-                                child instanceof Message value
-                                        ? layoutOf(current.edgeLayout, value)
-                                        : current.edgeLayout;
                         // Count the frame as used before start can fail with its reference.
                         used = Math.max(used, ++top + 1);
                         current = frame(top).start(child, layout, depth);
                     } else {
-                        if (child instanceof UnknownFieldSet set
-                                && current.edgeLayout != null
-                                && current.edgeLayout != summary.container()) {
-                            checkCollisions(current.edgeLayout, set);
-                        }
                         checkDepth((long) current.depth + current.edgeDepth + summary.depth);
                         accept(current, summary.size, summary.depth, 1);
                     }
@@ -494,10 +625,7 @@ final class ProtobufMessageSize {
                     }
                     completed.put(
                             current.value,
-                            new Summary(
-                                    current.size,
-                                    current.nesting,
-                                    current.message == null ? current.layout : null));
+                            new Summary(current.size, current.nesting, current.layout));
                 }
                 Frame parent = frames[--top];
                 accept(parent, current.size, current.nesting, current.work);
@@ -703,7 +831,12 @@ final class ProtobufMessageSize {
             case INT64, UINT64, SINT64 -> varint(type, (Long) value);
             case INT32, UINT32, SINT32 -> varint(type, (Integer) value);
             case ENUM -> varint(type, ((EnumValueDescriptor) value).getNumber());
-            case BYTES -> delimited(((ByteString) value).size());
+            // DynamicMessage retains a byte[] that an application sets for a bytes field.
+            case BYTES ->
+                    delimited(
+                            value instanceof byte[] bytes
+                                    ? bytes.length
+                                    : ((ByteString) value).size());
             default -> throw new IOException("Unsupported scalar field: " + field.getFullName());
         };
     }
@@ -814,12 +947,46 @@ final class ProtobufMessageSize {
     }
 
     /**
-     * Returns the precomputed layout of a message, or derives an uncached one if a generated
-     * message reports a descriptor other than the one its field declares.
+     * Returns the precomputed layout of a message, or one for a descriptor other than the one its
+     * field declares: an accepted pair for a DynamicMessage, or an uncached layout for a generated
+     * message.
      */
-    private static Layout layoutOf(Layout expected, Message message) {
+    private Layout layoutOf(Layout expected, Message message, int top) throws IOException {
         Descriptor descriptor = message.getDescriptorForType();
-        return expected.descriptor == descriptor ? expected : layout(descriptor);
+        if (expected.descriptor == descriptor) {
+            return expected;
+        }
+        if (pairs == null) {
+            return layout(descriptor);
+        }
+        try {
+            return pairs.accept(descriptor, expected.pair);
+        } catch (IOException e) {
+            throw rejected(path(top), e);
+        }
+    }
+
+    /** Names the field path of the child that the frame at {@code top} is visiting. */
+    private String path(int top) {
+        StringBuilder path = new StringBuilder(frames[0].layout.descriptor.getFullName());
+        for (int i = 0; i <= top; i++) {
+            Frame frame = frames[i];
+            // Unknown-field sets hold no message values, so the path ends at a message frame.
+            if (frame.message == null || frame.field > frame.layout.fields.length) {
+                break;
+            }
+            Field field = frame.layout.fields[frame.field - 1];
+            path.append('.').append(field.descriptor.getName());
+            if (field.repeated) {
+                path.append('[').append(frame.element - 1).append(']');
+            }
+        }
+        return path.toString();
+    }
+
+    private static IOException rejected(String path, IOException cause) {
+        return new IOException(
+                "Cannot write DynamicMessage value at " + path + ": " + cause.getMessage(), cause);
     }
 
     private static int tag(FieldDescriptor field) {
@@ -831,7 +998,23 @@ final class ProtobufMessageSize {
      */
     static final class Layout {
         private final Descriptor descriptor;
+
+        /**
+         * Declaration that the reader parses these values with, the descriptor itself for a
+         * generated or identical type, or null if the reader keeps them as unknown fields.
+         */
+        private final Descriptor pair;
+
         private final Field[] fields;
+
+        /**
+         * Declaration whose fields unknown fields must not collide with, or null if the reader
+         * keeps these values as unknown fields, in which no collision can occur.
+         */
+        private final Descriptor reader;
+
+        /** Fields of {@link #reader}, indexed by declaration order; empty without a reader. */
+        private final Field[] readerFields;
 
         /**
          * Repeated string fields and maps with string values, whose elements can share a String.
@@ -848,20 +1031,130 @@ final class ProtobufMessageSize {
          */
         private int height = UNMEASURED;
 
-        private Layout(Descriptor descriptor) {
+        private Layout(Descriptor descriptor, Descriptor pair) {
             this.descriptor = descriptor;
-            List<FieldDescriptor> declared = descriptor.getFields();
-            fields = new Field[declared.size()];
+            this.pair = pair;
+            fields = fields(descriptor);
+            reader = pair;
+            readerFields = pair == null ? new Field[0] : pair == descriptor ? fields : fields(pair);
             List<Field> stringFields = new ArrayList<>();
-            for (int i = 0; i < fields.length; i++) {
-                FieldDescriptor field = declared.get(i);
-                fields[i] = new Field(field);
-                FieldDescriptor element = fields[i].mapValue == null ? field : fields[i].mapValue;
-                if (field.isRepeated() && element.getType() == FieldDescriptor.Type.STRING) {
-                    stringFields.add(fields[i]);
+            for (Field field : fields) {
+                FieldDescriptor element =
+                        field.mapValue == null ? field.descriptor : field.mapValue;
+                if (field.repeated && element.getType() == FieldDescriptor.Type.STRING) {
+                    stringFields.add(field);
                 }
             }
             strings = stringFields.toArray(new Field[0]);
+        }
+
+        private static Field[] fields(Descriptor descriptor) {
+            List<FieldDescriptor> declared = descriptor.getFields();
+            Field[] result = new Field[declared.size()];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = new Field(declared.get(i));
+            }
+            return result;
+        }
+    }
+
+    /** Identifies a layout by its value descriptor and pair instances. */
+    private record LayoutKey(Descriptor descriptor, Descriptor pair) {}
+
+    /**
+     * DynamicMessage descriptor pairs accepted by one serializer instance.
+     *
+     * <p>A value whose descriptor is its pair's instance uses the serializer's own layout. Any
+     * other pair is accepted if the value's descriptor satisfies the payload rules and, when the
+     * reader has a declaration for it, the schema evaluator accepts the descriptor as saved
+     * metadata against that declaration with this serializer's settings on both sides. The least
+     * recently used of at most {@link #PAIR_CACHE_SIZE} accepted pairs is evicted.
+     */
+    private final class Pairs {
+        /** Layouts of the serializer's own types, each paired with itself. */
+        private final Map<Descriptor, Layout> own = new IdentityHashMap<>();
+
+        private final Map<LayoutKey, Layout> accepted =
+                new LinkedHashMap<>(PAIR_CACHE_SIZE, 0.75f, true) {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<LayoutKey, Layout> eldest) {
+                        return size() > PAIR_CACHE_SIZE;
+                    }
+                };
+
+        private int evaluations;
+
+        /** Most recently used accepted pair, which bypasses the access-ordered map. */
+        private LayoutKey last;
+
+        private Layout lastLayout;
+
+        private Pairs(Layout root) {
+            List<Layout> pending = new ArrayList<>(List.of(root));
+            own.put(root.descriptor, root);
+            for (int i = 0; i < pending.size(); i++) {
+                for (Field field : pending.get(i).fields) {
+                    if (field.message != null
+                            && own.putIfAbsent(field.message.descriptor, field.message) == null) {
+                        pending.add(field.message);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Returns the layout of a value descriptor under a reader declaration, or fails with the
+         * reason that the pair is not accepted.
+         */
+        private Layout accept(Descriptor descriptor, Descriptor pair) throws IOException {
+            if (descriptor == pair) {
+                Layout layout = own.get(descriptor);
+                if (layout != null) {
+                    return layout;
+                }
+            }
+            // Values decoded by another serializer instance repeat one pair on every record.
+            if (last != null && last.descriptor() == descriptor && last.pair() == pair) {
+                return lastLayout;
+            }
+            LayoutKey key = new LayoutKey(descriptor, pair);
+            Layout layout = accepted.get(key);
+            if (layout != null) {
+                remember(key, layout);
+                return layout;
+            }
+            evaluations++;
+            try {
+                ProtobufMessageType.validatePayloadGraph(descriptor);
+                if (pair != null) {
+                    ProtobufSchemaCompatibility.Result result =
+                            ProtobufSchemaCompatibility.evaluate(
+                                    metadata(descriptor), metadata(pair));
+                    if (!result.compatibleAsIs()) {
+                        throw new IOException(result.reason());
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                throw new IOException(e.getMessage(), e);
+            }
+            layout = layout(descriptor, pair, true);
+            accepted.put(key, layout);
+            remember(key, layout);
+            return layout;
+        }
+
+        private void remember(LayoutKey key, Layout layout) {
+            last = key;
+            lastLayout = layout;
+        }
+
+        private ProtobufSchemaCompatibility.Metadata metadata(Descriptor descriptor) {
+            return ProtobufSchemaCompatibility.Metadata.dynamic(
+                    descriptor.getFullName(),
+                    settings,
+                    ProtobufSchema.normalize(descriptor.getFile()));
         }
     }
 
@@ -915,10 +1208,11 @@ final class ProtobufMessageSize {
     }
 
     /**
-     * Stores the exact byte size and additional parser depth of a completed value, and for an
-     * unknown-field set the container layout whose declared fields it was checked against.
+     * Stores the exact byte size and additional parser depth of a completed value, and the layout
+     * that it was checked with: for an unknown-field set, the container layout whose reader fields
+     * it was checked against.
      */
-    private record Summary(long size, int depth, Layout container) {}
+    private record Summary(long size, int depth, Layout layout) {}
 
     /** Tracks one value's iterative traversal. */
     private final class Frame {

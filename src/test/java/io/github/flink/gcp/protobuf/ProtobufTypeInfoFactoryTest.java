@@ -16,6 +16,7 @@
 
 package io.github.flink.gcp.protobuf;
 
+import org.apache.flink.api.common.functions.InvalidTypesException;
 import org.apache.flink.api.common.serialization.SerializerConfigImpl;
 
 import com.google.protobuf.AbstractMessage;
@@ -62,7 +63,6 @@ class ProtobufTypeInfoFactoryTest {
                         Message.class,
                         GeneratedMessage.class,
                         GeneratedMessageV3.class,
-                        DynamicMessage.class,
                         HiddenGenerated.class,
                         String.class,
                         ScalarMessage.Builder.class,
@@ -95,6 +95,23 @@ class ProtobufTypeInfoFactoryTest {
         assertThatThrownBy(() -> ProtobufTypeInformation.of((Class<Message>) null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("messageClass");
+    }
+
+    @Test
+    void dynamicMessageNeedsADescriptorAndIsAMissingTypeForTheFactory() {
+        // Flink replaces only this exception with a missing type that .returns(...) can supply.
+        assertThatThrownBy(
+                        () ->
+                                new ProtobufTypeInfoFactory()
+                                        .createTypeInfo(DynamicMessage.class, Map.of()))
+                .isExactlyInstanceOf(InvalidTypesException.class)
+                .hasMessageContaining("ProtobufTypeInformation.of(Descriptor)");
+        for (boolean builder : List.of(false, true)) {
+            assertThatThrownBy(() -> constructUnsupported(DynamicMessage.class, builder))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(DynamicMessage.class.getName())
+                    .hasMessageContaining("ProtobufTypeInformation.of(Descriptor)");
+        }
     }
 
     @Test

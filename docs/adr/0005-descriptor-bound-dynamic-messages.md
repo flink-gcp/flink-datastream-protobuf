@@ -24,7 +24,7 @@ limitations under the License.
 - Date: 2026-10-29
 - Issue: [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21)
 - Extends: The generated-message contracts in [ADR-0001](0001-native-protobuf-type-integration.md), which apply here except where this record states otherwise
-- Implementation: Designed only; [issue #22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) implements it and [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) validates state recovery and documents usage
+- Implementation: Implemented by [issue #22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22); [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) validates state recovery and documents usage
 
 ## Context
 
@@ -87,9 +87,11 @@ A composite type that contains a DynamicMessage therefore needs explicit composi
 
 ### Validation and descriptor limits
 
-At `of` or `build`, reject a null descriptor, and apply the payload rules to the root: every message type that it reaches is declared in a proto3 file, declares no extensions, and declares no field number above 536,870,911.
-The first two are the generated-message rules of ADR-0001.
-The third is new, because protoc enforces the maximum field number but `FileDescriptor.buildFrom` checks only that a number is positive, so a hand-built descriptor can declare a number whose tag wraps when written, as ADR-0001 describes for unknown fields; the reader then takes the value as another field or rejects the frame.
+At `of` or `build`, reject a null descriptor, and apply the payload rules to the root: every message type that it reaches is declared in a proto3 file, declares no extensions or extension ranges, declares no group or required field, and declares no field number above 536,870,911.
+The proto3 and extension rules are the generated-message rules of ADR-0001.
+The others are new, because protoc enforces them but `FileDescriptor.buildFrom` does not.
+It checks only that a field number is positive, so a hand-built descriptor can declare a number whose tag wraps when written, as ADR-0001 describes for unknown fields; the reader then takes the value as another field or rejects the frame.
+It also accepts a group field, a required field, and an extension range in a proto3 file: sizing does not measure group nesting, a value without its required field is written but cannot be read, and an extension range lets an extension field be set and written outside the sized fields.
 Normalize the root's file closure with complete descriptor normalization version 1.
 Require the full name to fit `writeUTF`, and the deterministic encoding of the normalized set to be nonempty and at most the snapshot's fixed 64 MiB descriptor limit.
 Then decode that encoding and rebuild the descriptors exactly as Java deserialization and snapshot restoration do, requiring the root to resolve once.
@@ -138,6 +140,7 @@ A message value with a pair is accepted when one of these holds:
 
 Otherwise writing fails with `IOException` naming the field path and the evaluator's first incompatibility, which includes a full-name difference; an invalid descriptor closure, for which the evaluator throws `IllegalArgumentException`, also fails with `IOException`.
 An evaluated descriptor must also satisfy the payload rules for every type that it reaches, because the evaluator does not compare declarations reached only through fields that the paired declaration does not keep.
+A message value without a pair whose descriptor is not the type that its containing value declares must satisfy the payload rules too, because sizing its subtree assumes them.
 
 Evaluation is the ordinary write path, not only a schema-change accommodation.
 Values decoded by one serializer instance carry its descriptors, and in the same task another instance, such as the state serializer, writes them, so equal content behind distinct instances is common.
@@ -146,9 +149,10 @@ After a supported schema change, values restored on a heap backend carry the sav
 Each serializer instance caches up to 16 accepted descriptor pairs by instance identity, with the sizing layouts that each needs, and evicts the least recently used pair.
 A pair outside the cache is evaluated again, so an application that creates a descriptor for each record pays for an evaluation on each record.
 
-Unknown-field collision and field-number checks use the paired declaration, which is what the reader parses with; the size and depth checks and framing version 1 are those of generated messages.
+Unknown-field collision and field-number checks use the paired declaration, which is what the reader parses with, and a value without a pair has no collisions, because the reader keeps all of it as one unknown field; the size and depth checks and framing version 1 are those of generated messages.
 The evaluator's field-addition assumption from ADR-0001, that no saved value carries an unknown field with an added number, does not reach writing: a value whose unknown field collides with a field that only the serializer's schema declares is rejected like any other collision.
 Generated messages keep their current behavior.
+Deterministic serialization uses the runtime's deterministic mode, which orders generated map fields but writes DynamicMessage map entries in insertion order in both pinned runtimes.
 
 ### Reading values
 

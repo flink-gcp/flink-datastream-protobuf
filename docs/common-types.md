@@ -89,7 +89,7 @@ Applications supply their own OTel generated classes and compatible Protobuf run
 The library implements binary message transport, not ProtoJSON, OTLP export, a schema registry, or application validation.
 For example, it transports Timestamp fields outside the semantic timestamp range and duplicate OTel list keys without validating them.
 Applications remain responsible for those rules and for resolving profiling dictionary references.
-`DynamicMessage` is a separate path for working from descriptors without generated classes, planned for the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20); it is not needed for these examples and is not currently accepted by the public factory.
+[DynamicMessage values](usage.md#dynamicmessage-values) are a separate path for working from descriptors without generated classes; these examples do not need them, and the factory does not create their type information.
 
 ## Verification boundaries
 

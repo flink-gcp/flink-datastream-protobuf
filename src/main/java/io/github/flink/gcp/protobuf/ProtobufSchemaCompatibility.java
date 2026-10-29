@@ -29,6 +29,7 @@ import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.Descriptors.OneofDescriptor;
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnknownFieldSet;
 
@@ -109,6 +110,20 @@ final class ProtobufSchemaCompatibility {
             Objects.requireNonNull(fullName, "fullName");
             Objects.requireNonNull(settings, "settings");
             Objects.requireNonNull(schema, "schema");
+        }
+
+        /**
+         * Describes DynamicMessage metadata, which has no application class; the class rule is then
+         * vacuous because every dynamic identity records the same class name.
+         *
+         * @param fullName Protobuf full name of the root message
+         * @param settings reader limits and write mode
+         * @param schema complete descriptor closure of the root message's file
+         * @return metadata with the DynamicMessage class name
+         */
+        static Metadata dynamic(
+                String fullName, ProtobufSerializerSettings settings, FileDescriptorSet schema) {
+            return new Metadata(DynamicMessage.class.getName(), fullName, settings, schema);
         }
     }
 

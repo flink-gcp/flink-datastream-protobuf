@@ -17,9 +17,11 @@
 package io.github.flink.gcp.protobuf;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.api.common.functions.InvalidTypesException;
 import org.apache.flink.api.common.typeinfo.TypeInfoFactory;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 
 import java.lang.reflect.Type;
@@ -37,6 +39,13 @@ import java.util.Map;
  * and explicit type information for custom settings. Unsupported types fail explicitly; the factory
  * never supplies a generic or Kryo fallback. Set {@code pipeline.generic-types: false} to reject
  * Flink's own generic path when native integration is not selected.
+ *
+ * <p>DynamicMessage needs a root descriptor that the class does not carry. The factory reports it
+ * as a missing type, which explicit type information from {@link
+ * ProtobufTypeInformation#of(com.google.protobuf.Descriptors.Descriptor)}, such as {@code
+ * .returns(...)}, replaces for an operator output. A POJO field of type DynamicMessage then
+ * receives Flink's generic type information, so a composite type that contains one needs explicit
+ * composite type information.
  */
 @PublicEvolving
 public final class ProtobufTypeInfoFactory extends TypeInfoFactory<Message> {
@@ -50,11 +59,19 @@ public final class ProtobufTypeInfoFactory extends TypeInfoFactory<Message> {
      * @param type concrete generated message class; other reflective type forms are unsupported
      * @param genericParameters inferred generic parameters; unused for concrete generated messages
      * @return native type information with the same defaults as {@link ProtobufTypeInformation#of}
+     * @throws InvalidTypesException for DynamicMessage, which needs a root descriptor
      * @throws IllegalArgumentException if the type or its payload descriptor graph is unsupported
      */
     @Override
     public TypeInformation<Message> createTypeInfo(
             Type type, Map<String, TypeInformation<?>> genericParameters) {
+        if (type == DynamicMessage.class) {
+            // Flink turns only this exception into a missing type that .returns(...) replaces.
+            throw new InvalidTypesException(
+                    "DynamicMessage needs a root descriptor; use"
+                            + " ProtobufTypeInformation.of(Descriptor) as explicit type"
+                            + " information");
+        }
         if (!(type instanceof Class<?> messageClass)
                 || !Message.class.isAssignableFrom(messageClass)) {
             throw new IllegalArgumentException(

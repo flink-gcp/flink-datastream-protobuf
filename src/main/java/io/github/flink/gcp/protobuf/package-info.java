@@ -15,14 +15,16 @@
  */
 
 /**
- * Native Protocol Buffers serialization for Flink DataStream generated full-runtime messages.
+ * Native Protocol Buffers serialization for Flink DataStream generated full-runtime messages and
+ * DynamicMessage values of an explicit root descriptor.
  *
  * <p>Use {@link io.github.flink.gcp.protobuf.ProtobufTypeInformation} for explicit construction and
- * per-type settings, or register {@link io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory}
- * against AbstractMessage before type extraction. The factory registry is process-global. Disable
- * generic types to reject accidental fallback and extract stable scalar keys instead of message
- * keys. Versioned snapshots support checkpoint/savepoint recovery with unchanged schemas and
- * supported schema changes (field additions, field removals that reserve the number, and enum value
+ * per-type settings, which DynamicMessage values require, or register {@link
+ * io.github.flink.gcp.protobuf.ProtobufTypeInfoFactory} against AbstractMessage before type
+ * extraction. The factory registry is process-global. Disable generic types to reject accidental
+ * fallback and extract stable scalar keys instead of message keys. For generated messages,
+ * versioned snapshots support checkpoint/savepoint recovery with unchanged schemas and supported
+ * schema changes (field additions, field removals that reserve the number, and enum value
  * additions), verified with HashMap and RocksDB state backends in MiniCluster tests. Unsupported
  * schema changes and decreased reader limits fail at restore. No Maven Central release is available
  * yet. Connector boundary serialization schemas and Table/SQL formats are outside this package.

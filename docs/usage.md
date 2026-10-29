@@ -166,9 +166,33 @@ Any payload bytes remain opaque, without automatic unpacking or schema validatio
 
 Every message type that a payload reaches, including types in imported files, must be declared in a file with `syntax = "proto3"`.
 Construction rejects a payload graph that reaches a message declared in a proto2 or editions file, naming the first such message and its file; this includes `google/protobuf/descriptor.proto` types, while the well-known types such as Struct, Any, and Timestamp are proto3.
-Construction also rejects DynamicMessage, lite messages, and payload messages that declare extensions.
-DynamicMessage support is planned for the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), as designed in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md).
+Construction also rejects lite messages and payload messages that declare extensions.
 The library concerns internal DataStream transport and managed values, not connector boundary encoders, ProtoJSON, OTLP export, or the separate Flink Table/SQL Protobuf format.
+
+## DynamicMessage values
+
+The DynamicMessage class does not identify a schema, so DynamicMessage values need type information bound to a root descriptor:
+
+```java
+ProtobufTypeInformation<DynamicMessage> info = ProtobufTypeInformation.of(descriptor);
+```
+
+`ProtobufTypeInformation.newBuilder(descriptor)` accepts the same four settings as the generated-class builder.
+The descriptor's payload graph must satisfy the generated-message rules above, and no reached message may declare an extension range, a group or required field, or a field number above 536,870,911; protoc rejects all of these in proto3, but a hand-built descriptor can declare them.
+`ProtobufTypeInformation.of(DynamicMessage.class)` fails and names the descriptor overload.
+An operator that returns DynamicMessage needs `.returns(info)`: the registered factory reports DynamicMessage as a missing type, and without the factory Flink selects a generic type, which fails with generic types disabled.
+A POJO or tuple that contains a DynamicMessage needs explicit composite type information, such as `Types.POJO(MyPojo.class, Map.of("message", info))` or `Types.TUPLE(Types.STRING, info)`; otherwise Flink selects a generic type for the field, which fails with generic types disabled.
+
+Type information and serializers are identified by the root's full name and its descriptor content, not by descriptor instances, and Java deserialization on a TaskManager rebuilds the descriptors.
+Decoded values carry the reading serializer's descriptor instances.
+DynamicMessage field access and equality compare descriptor instances, so resolve field descriptors through the value, for example with `value.getDescriptorForType().findFieldByName("payload")`, and build a nested value from that field's `getMessageType()`.
+Writing accepts a value whose descriptors are other instances when the schema has the same content or is a [supported earlier schema](compatibility.md#schema-changes) of the serializer's schema, and rejects other values with the field path and the first incompatibility.
+Treat a `byte[]` set on a `bytes` field as immutable afterwards, because the runtime keeps the array without copying it.
+Deterministic serialization does not order DynamicMessage map entries: the runtime writes them in insertion order.
+
+DynamicMessage state uses its own snapshot format, which restores the saved descriptors without an application class or descriptor.
+The same supported schema changes and reader-limit rules apply, and a switch between generated and DynamicMessage types of the same schema is incompatible.
+Runtime restore evidence for DynamicMessage state and the complete usage guide are tracked in [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23); [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md) records the design.
 
 ## Scalar keys
 
@@ -219,7 +243,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 The 0.1.0 contract rejected schema changes, including otherwise wire-safe field additions.
 Current `0.2.0-SNAPSHOT` development builds restore the supported schema changes; the [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 artifact across a field addition and a reserved field removal.
 The [upgrade guide from 0.1.0](upgrade.md) lists the API changes and intentional breaks of 0.2.0 and the upgrade procedure.
-Descriptor-driven DynamicMessage support is planned for the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20).
+[DynamicMessage values](#dynamicmessage-values) are new in the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20).
 Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.
 The unpublished 0.x milestones can break APIs, defaults, runtime requirements, and saved-state compatibility.
 Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.
