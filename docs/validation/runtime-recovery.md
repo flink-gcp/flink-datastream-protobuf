@@ -69,6 +69,35 @@ The test runner checks that neither the application entry point nor its generate
 Generic types are disabled, no module-opening JVM flags are added, and the existing fresh-JVM missing-registration controls remain required.
 The five production transport shapes additionally retain the native snapshot implementation inside their composite serializers.
 
+## DynamicMessage
+
+`ProtobufDynamicMessageRecoveryITCase` repeats the checkpoint and schema-change cases with DynamicMessage values and [descriptor-bound type information](../adr/0005-descriptor-bound-dynamic-messages.md).
+Its application, `DynamicRuntimeJob`, keeps the operator UIDs and state names of `RuntimeJob` and builds its descriptor from the schema variant's descriptor set.
+Its jar, `application-dynamic.jar`, contains no generated class, and the test runner checks that the generated `Entry` class cannot load through the application loader.
+The checkpoint case and the accepted `changed`, `reserved`, and `enum-added` restores check the same restored values and continued processing as the generated cases, and an unchanged `original` restore runs the same checks.
+
+Each observation also reports the root descriptor of the observed value, and the test names the schema variant whose descriptor has that content.
+After a restore of state that another schema wrote, values from operator ListState, and ValueState and MapState values on HashMap, carry the saved descriptor; RocksDB values carry the new one.
+After the second restore, of the savepoint that the new schema wrote, every restored value carries the new descriptor.
+This includes the MapState values that the first restored job left untouched until its savepoint.
+On HashMap, the new serializer wrote those values from objects that, like the other restored values, are expected to carry the saved descriptor; the test observes them only after the second restore.
+RocksDB copies their stored bytes into the savepoint.
+
+The rejected cases are those of the generated test.
+Each rejected job fails with Flink's `StateMigrationException` for an incompatible new serializer, without a library diagnostic, as [ADR-0005](../adr/0005-descriptor-bound-dynamic-messages.md#dynamic-snapshot-format-version-1) states.
+For each one, the same saved state restores into the writer's own schema and continues processing.
+Saved state of the other kind fails as well:
+
+| Saved state | Restoring application | Failure |
+|---|---|---|
+| Generated, from `RuntimeJob` | `DynamicRuntimeJob` without the generated class | The generated snapshot cannot load the saved class, `ClassNotFoundException` |
+| Generated, from `RuntimeJob` | `DynamicRuntimeJob` in `application-original.jar`, which also contains the generated class | `StateMigrationException` |
+| DynamicMessage, from `DynamicRuntimeJob` | `RuntimeJob` | `StateMigrationException` |
+
+`ProtobufDynamicMessageTransportITCase` runs local jobs with generic types disabled, RocksDB keyed state, and descriptors that no class on the test classpath backs.
+The `original` and `enum-original` schemas have the same Java class and Protobuf full name; their type information differs, and one job transports values of both and counts them in separate ValueStates, which RocksDB writes and reads with each type's serializer.
+A stream typed with the `original` schema fails with the writer's `IOException` for values of another root, for `enum-original` values, and for a nested value of the `incompatible` schema; the message names the full-name change or the field path and the first incompatibility.
+
 ## Fixtures and compatibility boundaries
 
 `ProtobufSavepointFixtureITCase` restores the [fixed development savepoints](../../src/test/resources/savepoints/v1/README.md) and continues processing.
