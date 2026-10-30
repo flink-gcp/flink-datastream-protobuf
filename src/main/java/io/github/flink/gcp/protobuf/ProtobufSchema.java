@@ -19,6 +19,7 @@ package io.github.flink.gcp.protobuf;
 import org.apache.flink.annotation.Internal;
 
 import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors.Descriptor;
@@ -45,7 +46,84 @@ final class ProtobufSchema {
     // Match the supported runtimes' per-file descriptor parser budget explicitly.
     static final int DESCRIPTOR_RECURSION_LIMIT = 100;
 
+    // Fixed by the snapshot formats; also bounds Java-serialized dynamic type metadata.
+    static final int MAX_DESCRIPTOR_BYTES = 64 * 1024 * 1024;
+
     private ProtobufSchema() {}
+
+    /**
+     * Encodes normalized descriptor content deterministically, as snapshots persist it.
+     *
+     * @param schema normalized descriptor set
+     * @return nonempty encoding of at most {@link #MAX_DESCRIPTOR_BYTES}
+     * @throws IOException if the encoding is empty or exceeds the limit
+     */
+    static byte[] encode(FileDescriptorSet schema) throws IOException {
+        int size = schema.getSerializedSize();
+        validateEncodedLength(size);
+        byte[] bytes = new byte[size];
+        CodedOutputStream coded = CodedOutputStream.newInstance(bytes);
+        coded.useDeterministicSerialization();
+        schema.writeTo(coded);
+        coded.checkNoSpaceLeft();
+        return bytes;
+    }
+
+    /**
+     * Decodes descriptor content with an empty extension registry and the snapshot reader's
+     * recursion limit, without normalizing it.
+     *
+     * @param bytes encoded descriptor set
+     * @return decoded descriptor set, with options kept as unknown fields
+     * @throws IOException if the encoding is malformed
+     */
+    static FileDescriptorSet decode(byte[] bytes) throws IOException {
+        CodedInputStream input = CodedInputStream.newInstance(bytes);
+        // The set adds one level around files already accepted by per-file normalization.
+        input.setRecursionLimit(DESCRIPTOR_RECURSION_LIMIT + 1);
+        FileDescriptorSet decoded =
+                FileDescriptorSet.parseFrom(input, ExtensionRegistryLite.getEmptyRegistry());
+        // The CodedInputStream overload leaves the top-level end-tag check to its caller.
+        input.checkLastTagWas(0);
+        return decoded;
+    }
+
+    /**
+     * Requires a nonempty name that {@code writeUTF} can encode.
+     *
+     * @param name class or message name
+     * @param field description of the name for diagnostics
+     * @throws IOException if the name is empty or too long
+     */
+    static void validateName(String name, String field) throws IOException {
+        if (name == null || name.isEmpty()) {
+            throw new IOException("Empty " + field);
+        }
+        long length = 0;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            length += c >= 1 && c <= 127 ? 1 : c <= 2047 ? 2 : 3;
+        }
+        if (length > 65535) {
+            throw new IOException(field + " exceeds writeUTF's 65535-byte limit");
+        }
+    }
+
+    /**
+     * Requires an encoded descriptor length that the snapshot formats accept.
+     *
+     * @param size encoded length
+     * @throws IOException if the length is not positive or exceeds the limit
+     */
+    static void validateEncodedLength(int size) throws IOException {
+        if (size <= 0 || size > MAX_DESCRIPTOR_BYTES) {
+            throw new IOException(
+                    "Invalid descriptor byte length: "
+                            + size
+                            + "; maximum is "
+                            + MAX_DESCRIPTOR_BYTES);
+        }
+    }
 
     /**
      * Normalizes the complete transitive file dependency closure for content-based identity.
@@ -138,7 +216,14 @@ final class ProtobufSchema {
                         file.getDependencyList().stream()
                                 .map(resolved::get)
                                 .toArray(FileDescriptor[]::new);
-                FileDescriptor descriptor = FileDescriptor.buildFrom(file, dependencies);
+                FileDescriptor descriptor;
+                try {
+                    descriptor = FileDescriptor.buildFrom(file, dependencies);
+                } catch (RuntimeException e) {
+                    // Descriptor building dereferences some missing content, such as a field
+                    // type, before it validates it.
+                    throw new IllegalArgumentException("Invalid descriptor graph: " + e, e);
+                }
                 resolved.put(file.getName(), descriptor);
                 ArrayDeque<Descriptor> messages = new ArrayDeque<>(descriptor.getMessageTypes());
                 while (!messages.isEmpty()) {

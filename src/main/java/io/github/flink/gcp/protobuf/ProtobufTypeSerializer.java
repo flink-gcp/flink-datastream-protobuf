@@ -24,6 +24,7 @@ import org.apache.flink.core.memory.DataOutputView;
 
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
@@ -38,7 +39,8 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Native serializer for immutable, generated full-runtime Protobuf values.
+ * Native serializer for immutable, generated full-runtime Protobuf values or DynamicMessage values
+ * of one root descriptor.
  *
  * <p>Frames contain a four-byte big-endian payload length and exactly that many wire bytes. The
  * serialization operation rejects null values and enforces configured payload and parser-depth
@@ -60,10 +62,17 @@ import java.util.Objects;
  * and sizing field layouts are shared by exact message class through a ClassValue cache, including
  * after Java deserialization.
  *
+ * <p>A DynamicMessage serializer is bound to one root descriptor. Java serialization keeps its full
+ * name and the deterministic encoding of its normalized descriptor closure, and each deserialized
+ * instance rebuilds its own descriptors, which {@link #duplicate()} shares. Writing accepts a value
+ * whose descriptors are other instances when the schema evaluator accepts them against the
+ * serializer's declarations; each instance caches up to 16 accepted descriptor pairs. Decoded
+ * values carry this instance's descriptors.
+ *
  * <p>Construction is internal to native type integration. Versioned snapshots support restoration
  * across unchanged schemas and supported schema changes with nondecreasing reader limits.
  *
- * @param <T> concrete generated message type
+ * @param <T> concrete generated message type or DynamicMessage
  */
 @Internal
 public final class ProtobufTypeSerializer<T extends Message> extends TypeSerializer<T> {
@@ -79,9 +88,10 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     static final int LARGE_READ_INITIAL_SIZE = 1 << 20;
 
     /**
-     * The generated class represented by this instance.
+     * The generated class or DynamicMessage represented by this instance.
      *
-     * @serial Concrete generated application class, resolved by the job deserializer.
+     * @serial Concrete generated application class, resolved by the job deserializer, or
+     *     DynamicMessage.
      */
     private final Class<T> messageClass;
 
@@ -91,6 +101,20 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * @serial Immutable wire and reader settings.
      */
     private final ProtobufSerializerSettings settings;
+
+    /**
+     * The root message's full name for DynamicMessage values.
+     *
+     * @serial Protobuf full name, or null for a generated class.
+     */
+    private final String fullName;
+
+    /**
+     * The deterministic encoding of the normalized descriptor closure for DynamicMessage values.
+     *
+     * @serial Encoded FileDescriptorSet, or null for a generated class.
+     */
+    private final byte[] descriptorSet;
 
     private transient ProtobufMessageType messageType;
     private transient Parser<? extends Message> parser;
@@ -120,20 +144,45 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         }
         this.messageClass = messageClass;
         this.settings = settings;
+        fullName = null;
+        descriptorSet = null;
         initialize();
+    }
+
+    /**
+     * Creates a DynamicMessage serializer that uses validated metadata and its descriptors.
+     *
+     * @param messageType metadata from {@link ProtobufMessageType#dynamic}
+     * @param settings writing and reader limits
+     */
+    @SuppressWarnings("unchecked")
+    ProtobufTypeSerializer(ProtobufMessageType messageType, ProtobufSerializerSettings settings) {
+        if (settings == null) {
+            throw new IllegalArgumentException("settings must not be null");
+        }
+        if (!messageType.dynamic()) {
+            throw new IllegalArgumentException("Expected DynamicMessage metadata");
+        }
+        messageClass = (Class<T>) DynamicMessage.class;
+        this.settings = settings;
+        fullName = messageType.fullName;
+        descriptorSet = messageType.encodedSchema;
+        this.messageType = messageType;
+        initializeRuntime();
     }
 
     /** Shares immutable metadata while leaving mutable stream-copy storage independent. */
     private ProtobufTypeSerializer(ProtobufTypeSerializer<T> original) {
         messageClass = original.messageClass;
         settings = original.settings;
+        fullName = original.fullName;
+        descriptorSet = original.descriptorSet;
         messageType = original.messageType;
-        parser = messageType.parser;
-        messageSize = new ProtobufMessageSize(settings, messageType.layout);
+        initializeRuntime();
     }
 
     /**
-     * Reports that generated message values are immutable.
+     * Reports that message values are immutable.
      *
      * @return always {@code true}
      */
@@ -153,9 +202,10 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Returns the generated default instance.
+     * Returns the default instance of the configured message type.
      *
-     * @return the default instance of the exact configured class
+     * @return the generated default instance, or the DynamicMessage default instance of this
+     *     serializer's root descriptor
      */
     @Override
     public T createInstance() {
@@ -208,15 +258,22 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * frame. An I/O failure of the target can leave a partial frame for any payload. Generated
      * runtime operations may allocate their own storage.
      *
+     * <p>A DynamicMessage value, and each message value under a field that this serializer's schema
+     * declares, is accepted if its descriptor is this serializer's declaration, the type that its
+     * accepted containing value declares for the field, or a schema that the evaluator accepts as
+     * saved metadata against that declaration. A message value under a field that the declaration
+     * lacks, which the reader keeps as an unknown field, must satisfy the payload rules. Unknown
+     * fields must not collide with the declaration that the reader parses the value with.
+     *
      * @param value non-null message of the exact configured class
      * @param target destination for the frame
-     * @throws IOException if validation fails, writing fails, or the writer emits an unexpected
-     *     size
+     * @throws IOException if validation fails, a DynamicMessage descriptor is not accepted, writing
+     *     fails, or the writer emits an unexpected size
      */
     @Override
     public void serialize(T value, DataOutputView target) throws IOException {
         if (value == null || value.getClass() != messageClass) {
-            throw new IOException("Expected non-null message of type " + messageClass.getName());
+            throw new IOException("Expected non-null message of type " + messageType.typeName());
         }
         int size = messageSize.check(value);
         if (size <= SCRATCH_SIZE) {
@@ -272,7 +329,8 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * callers must not assume input resynchronization after failure.
      *
      * @param source source positioned at a frame length prefix
-     * @return a message of the configured class
+     * @return a message of the configured class; a DynamicMessage carries this serializer's
+     *     descriptor instances
      * @throws IOException if the prefix or payload is invalid, truncated, exceeds limits, or cannot
      *     be read
      */
@@ -306,7 +364,7 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
             return result;
         } catch (IOException e) {
             throw new IOException(
-                    "Invalid Protobuf frame for " + messageClass.getName() + ": " + e.getMessage(),
+                    "Invalid Protobuf frame for " + messageType.typeName() + ": " + e.getMessage(),
                     e);
         }
     }
@@ -356,7 +414,8 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Compares exact class identity, normalized descriptor content, and every serializer setting.
+     * Compares exact class identity, full name, normalized descriptor content, and every serializer
+     * setting.
      *
      * <p>Class identity includes the defining classloader. Equality does not establish persisted
      * state compatibility; that decision belongs to the snapshot implementation.
@@ -397,8 +456,19 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * @return an independent snapshot of this serializer's immutable configuration
      */
     @Override
+    @SuppressWarnings("unchecked")
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
+        if (messageType.dynamic()) {
+            return (TypeSerializerSnapshot<T>)
+                    new ProtobufDynamicMessageSerializerSnapshot(
+                            messageType.fullName, settings, messageType.schema);
+        }
         return new ProtobufTypeSerializerSnapshot<>(messageClass, settings);
+    }
+
+    /** Returns the number of uncached DynamicMessage descriptor pairs evaluated, for tests. */
+    int pairEvaluations() {
+        return messageSize.pairEvaluations();
     }
 
     /** Writes the complete generated payload, reporting writes beyond the calculated size. */
@@ -441,16 +511,23 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     }
 
     /**
-     * Resolves metadata for the application class and creates serializer-local validation state.
+     * Resolves metadata for the generated class, or rebuilds DynamicMessage descriptors, and
+     * creates serializer-local validation state.
      */
     private void initialize() {
-        messageType = ProtobufMessageType.resolve(messageClass);
+        messageType = ProtobufMessageType.resolve(messageClass, fullName, descriptorSet);
+        initializeRuntime();
+    }
+
+    /** Creates serializer-local validation state for resolved metadata. */
+    private void initializeRuntime() {
         parser = messageType.parser;
-        messageSize = new ProtobufMessageSize(settings, messageType.layout);
+        messageSize = new ProtobufMessageSize(settings, messageType.layout, messageType.dynamic());
     }
 
     /**
-     * Reconstructs runtime metadata from the generated class resolved by the object input stream.
+     * Reconstructs runtime metadata from the generated class resolved by the object input stream,
+     * or from the serialized DynamicMessage descriptors.
      *
      * @param input serialized job configuration
      * @throws IOException if the configuration is corrupt or the resolved type is unsupported

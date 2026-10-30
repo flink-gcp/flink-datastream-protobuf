@@ -20,6 +20,8 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.SerializerConfig;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 
 import java.io.IOException;
@@ -28,11 +30,19 @@ import java.io.ObjectInputStream;
 import java.util.Objects;
 
 /**
- * Native type information for immutable, generated full-runtime Protobuf values.
+ * Native type information for immutable, generated full-runtime Protobuf values or DynamicMessage
+ * values of one root descriptor.
  *
  * <p>The message and every message type that it reaches, including types in imported files, must be
  * declared in a file with {@code syntax = "proto3"}; construction rejects a message type declared
  * in a proto2 or editions file.
+ *
+ * <p>DynamicMessage values require {@link #of(Descriptor)} or {@link #newBuilder(Descriptor)}
+ * because the DynamicMessage class does not identify a schema. Such type information is identified
+ * by the root's full name and its normalized descriptor content, not by descriptor instances, and
+ * Java deserialization rebuilds the descriptors. Decoded values carry the reading serializer's
+ * descriptor instances, so resolve field descriptors through the value, for example with {@code
+ * value.getDescriptorForType().findFieldByName(name)}.
  *
  * <p>Use {@link #of(Class)} for defaults or {@link #newBuilder(Class)} for per-type settings, for
  * example in {@code .returns(ProtobufTypeInformation.of(MyMessage.class))}. Explicit construction
@@ -44,9 +54,11 @@ import java.util.Objects;
  * inferred and explicitly typed {@code keyBy} can bypass it. Deterministic serialization does not
  * make message hashes stable across classloaders or provide canonical bytes across builds.
  *
- * <p>Versioned snapshots support checkpoint/savepoint recovery with unchanged schemas and supported
- * schema changes, verified with HashMap and RocksDB state backends in MiniCluster tests. A restored
- * application may contain only the new generated class.
+ * <p>For generated messages, versioned snapshots support checkpoint/savepoint recovery with
+ * unchanged schemas and supported schema changes, verified with HashMap and RocksDB state backends
+ * in MiniCluster tests. A restored application may contain only the new generated class.
+ * DynamicMessage snapshots restore the saved descriptors without an application class or descriptor
+ * and accept the same schema changes.
  *
  * <p>The class and {@code of(Class)} have an unbounded type parameter to match Flink's inherited
  * static {@code TypeInformation.of(Class)} signature. Construction still requires a supported
@@ -55,16 +67,17 @@ import java.util.Objects;
  * follows Flink's ordinary type extraction and can select a generic type without factory
  * registration. Use {@link #of(Class)} or {@link #newBuilder(Class)} for explicit native selection.
  *
- * @param <T> concrete generated message type, validated at construction
+ * @param <T> concrete generated message type or DynamicMessage, validated at construction
  */
 @PublicEvolving
 public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeInformation<T> {
     private static final long serialVersionUID = 1L;
 
     /**
-     * The generated class represented by this instance.
+     * The generated class or DynamicMessage represented by this instance.
      *
-     * @serial Concrete generated application class, resolved by the job deserializer.
+     * @serial Concrete generated application class, resolved by the job deserializer, or
+     *     DynamicMessage.
      */
     private final Class<T> messageClass;
 
@@ -75,12 +88,38 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
      */
     private final ProtobufSerializerSettings settings;
 
+    /**
+     * The root message's full name for DynamicMessage values.
+     *
+     * @serial Protobuf full name, or null for a generated class.
+     */
+    private final String fullName;
+
+    /**
+     * The deterministic encoding of the normalized descriptor closure for DynamicMessage values.
+     *
+     * @serial Encoded FileDescriptorSet, or null for a generated class.
+     */
+    private final byte[] descriptorSet;
+
     private transient ProtobufMessageType messageType;
 
     private ProtobufTypeInformation(Class<T> messageClass, ProtobufSerializerSettings settings) {
         this.messageClass = messageClass;
         this.settings = settings;
-        messageType = resolveMessageType();
+        fullName = null;
+        descriptorSet = null;
+        messageType = ProtobufMessageType.resolve(messageClass, null, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ProtobufTypeInformation(
+            ProtobufMessageType messageType, ProtobufSerializerSettings settings) {
+        messageClass = (Class<T>) DynamicMessage.class;
+        this.settings = settings;
+        fullName = messageType.fullName;
+        descriptorSet = messageType.encodedSchema;
+        this.messageType = messageType;
     }
 
     /**
@@ -104,7 +143,37 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
      * @return new builder
      */
     public static <T extends Message> Builder<T> newBuilder(Class<T> messageClass) {
-        return new Builder<>(messageClass);
+        return new Builder<>(messageClass, null, false);
+    }
+
+    /**
+     * Creates DynamicMessage type information for a root descriptor with the same defaults as
+     * {@link #of(Class)}; equivalent to {@code newBuilder(rootDescriptor).build()}.
+     *
+     * <p>Every message type that the root reaches must be declared in a proto3 file, declare no
+     * extensions, extension ranges, group fields, or required fields, and declare no field number
+     * above 536,870,911. The root's normalized file closure must encode to at most 64 MiB and
+     * rebuild from that encoding with the root resolving once, as on a TaskManager. The returned
+     * instance keeps the supplied descriptor.
+     *
+     * @param rootDescriptor descriptor of the root message
+     * @return new immutable type information whose type class is DynamicMessage
+     * @throws IllegalArgumentException if the descriptor is null or unsupported; the message names
+     *     the root and the failed rule
+     */
+    public static ProtobufTypeInformation<DynamicMessage> of(Descriptor rootDescriptor) {
+        return newBuilder(rootDescriptor).build();
+    }
+
+    /**
+     * Creates a reusable builder for DynamicMessage type information with the same defaults as
+     * {@link #of(Class)}.
+     *
+     * @param rootDescriptor descriptor to validate when {@link Builder#build()} is called
+     * @return new builder
+     */
+    public static Builder<DynamicMessage> newBuilder(Descriptor rootDescriptor) {
+        return new Builder<>(DynamicMessage.class, rootDescriptor, true);
     }
 
     /**
@@ -140,7 +209,7 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
     }
 
     /**
-     * @return the exact generated class, including its defining classloader
+     * @return the exact generated class, including its defining classloader, or DynamicMessage
      */
     @Override
     public Class<T> getTypeClass() {
@@ -167,22 +236,28 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
     @Override
     @SuppressWarnings("unchecked")
     public TypeSerializer<T> createSerializer(SerializerConfig config) {
+        if (messageType.dynamic()) {
+            return (TypeSerializer<T>) new ProtobufTypeSerializer<>(messageType, settings);
+        }
         // Construction and Java deserialization validate this exact class before it reaches here.
         return (TypeSerializer<T>)
                 new ProtobufTypeSerializer<>(messageClass.asSubclass(Message.class), settings);
     }
 
     /**
-     * @return the generated class name and all native serializer settings
+     * @return the generated class name or DynamicMessage root name, and all native serializer
+     *     settings
      */
     @Override
     public String toString() {
-        return "Protobuf(" + messageClass.getName() + ", " + settings + ")";
+        return "Protobuf(" + messageType.typeName() + ", " + settings + ")";
     }
 
     /**
      * Compares the exact class, full message name, normalized descriptor content, and all settings.
-     * Instances of this final implementation share the same framing and normalization versions.
+     * A DynamicMessage type and a generated type never compare equal, because no generated class is
+     * DynamicMessage. Instances of this final implementation share the same framing and
+     * normalization versions.
      *
      * @param other candidate type information
      * @return whether both objects describe the same native serialization
@@ -221,22 +296,9 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
         return other instanceof ProtobufTypeInformation<?>;
     }
 
-    /** Applies the runtime Message boundary required by the inherited unbounded static factory. */
-    private ProtobufMessageType resolveMessageType() {
-        if (messageClass == null) {
-            throw new IllegalArgumentException("messageClass must not be null");
-        }
-        if (!Message.class.isAssignableFrom(messageClass)) {
-            throw new IllegalArgumentException(
-                    "Unsupported messageClass "
-                            + messageClass.getName()
-                            + ": expected a full-runtime generated message");
-        }
-        return ProtobufMessageType.resolve(messageClass.asSubclass(Message.class));
-    }
-
     /**
-     * Reconstructs class-associated metadata without serializing parsers or classloaders.
+     * Reconstructs class-associated metadata, or rebuilds DynamicMessage descriptors, without
+     * serializing descriptors, parsers, or classloaders.
      *
      * @param input serialized job configuration
      * @throws IOException if the configuration is corrupt or the resolved type is unsupported
@@ -248,7 +310,7 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
             if (settings == null) {
                 throw new IllegalArgumentException("Missing serializer settings");
             }
-            messageType = resolveMessageType();
+            messageType = ProtobufMessageType.resolve(messageClass, fullName, descriptorSet);
         } catch (IllegalArgumentException e) {
             InvalidObjectException failure = new InvalidObjectException(e.getMessage());
             failure.initCause(e);
@@ -260,11 +322,13 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
      * Reusable builder for immutable native type information. Validation occurs at {@link
      * #build()}. Builders are not intended for concurrent use.
      *
-     * @param <T> concrete generated message type
+     * @param <T> concrete generated message type or DynamicMessage
      */
     @PublicEvolving
     public static final class Builder<T extends Message> {
         private final Class<T> messageClass;
+        private final Descriptor rootDescriptor;
+        private final boolean dynamic;
         private boolean deterministicSerialization =
                 ProtobufSerializerSettings.DEFAULT.deterministicSerialization();
         private int maxMessageSize = ProtobufSerializerSettings.DEFAULT.maxMessageSize();
@@ -272,12 +336,16 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
         private boolean largePayloadAliasing =
                 ProtobufSerializerSettings.DEFAULT.largePayloadAliasing();
 
-        private Builder(Class<T> messageClass) {
+        private Builder(Class<T> messageClass, Descriptor rootDescriptor, boolean dynamic) {
             this.messageClass = messageClass;
+            this.rootDescriptor = rootDescriptor;
+            this.dynamic = dynamic;
         }
 
         /**
          * Enables deterministic payload writing, without promising canonical bytes or message keys.
+         * The runtime's deterministic mode orders generated map fields but writes DynamicMessage
+         * map entries in insertion order.
          *
          * @param enabled whether to enable deterministic writing; default false
          * @return this builder
@@ -329,19 +397,25 @@ public final class ProtobufTypeInformation<T> extends CrossVersionProtobufTypeIn
         }
 
         /**
-         * Validates the generated class and settings and captures an independent immutable result.
+         * Validates the generated class or root descriptor and the settings and captures an
+         * independent immutable result.
          *
          * @return new type information unaffected by subsequent builder changes
-         * @throws IllegalArgumentException if the class, payload graph, or settings are unsupported
+         * @throws IllegalArgumentException if the class, root descriptor, payload graph, or
+         *     settings are unsupported
          */
         public ProtobufTypeInformation<T> build() {
-            return new ProtobufTypeInformation<>(
-                    messageClass,
+            ProtobufSerializerSettings settings =
                     new ProtobufSerializerSettings(
                             deterministicSerialization,
                             maxMessageSize,
                             recursionLimit,
-                            largePayloadAliasing));
+                            largePayloadAliasing);
+            if (dynamic) {
+                return new ProtobufTypeInformation<>(
+                        ProtobufMessageType.dynamic(rootDescriptor), settings);
+            }
+            return new ProtobufTypeInformation<>(messageClass, settings);
         }
     }
 }

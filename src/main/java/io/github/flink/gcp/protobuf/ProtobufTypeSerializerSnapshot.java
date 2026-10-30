@@ -23,10 +23,7 @@ import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
-import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.Message;
 
 import java.io.EOFException;
@@ -50,7 +47,6 @@ import java.security.NoSuchAlgorithmException;
 @Internal
 public final class ProtobufTypeSerializerSnapshot<T extends Message>
         implements TypeSerializerSnapshot<T> {
-    static final int MAX_DESCRIPTOR_BYTES = 64 * 1024 * 1024;
     private static final int VERSION = 2;
 
     private String className;
@@ -91,15 +87,9 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         if (schema == null) {
             throw new IOException("Protobuf snapshot has not been initialized");
         }
-        validateName(className, "Java binary class name");
-        validateName(fullName, "Protobuf message full name");
-        int size = schema.getSerializedSize();
-        validateDescriptorLength(size);
-        byte[] bytes = new byte[size];
-        CodedOutputStream coded = CodedOutputStream.newInstance(bytes);
-        coded.useDeterministicSerialization();
-        schema.writeTo(coded);
-        coded.checkNoSpaceLeft();
+        ProtobufSchema.validateName(className, "Java binary class name");
+        ProtobufSchema.validateName(fullName, "Protobuf message full name");
+        byte[] bytes = ProtobufSchema.encode(schema);
         out.writeInt(ProtobufTypeSerializer.FRAMING_VERSION);
         out.writeInt(ProtobufSchema.NORMALIZATION_VERSION);
         out.writeUTF(className);
@@ -108,9 +98,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         out.writeInt(settings.maxMessageSize());
         out.writeInt(settings.recursionLimit());
         out.writeByte(settings.largePayloadAliasing() ? 1 : 0);
-        out.writeInt(bytes.length);
-        out.write(bytes);
-        out.write(digest(bytes));
+        writeDescriptors(out, bytes);
     }
 
     /**
@@ -135,8 +123,8 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
             requireVersion(in.readInt(), ProtobufSchema.NORMALIZATION_VERSION, "normalization");
             String savedClass = in.readUTF();
             String savedName = in.readUTF();
-            validateName(savedClass, "Java binary class name");
-            validateName(savedName, "Protobuf message full name");
+            ProtobufSchema.validateName(savedClass, "Java binary class name");
+            ProtobufSchema.validateName(savedName, "Protobuf message full name");
             boolean deterministic = readFlag(in, "deterministic serialization");
             int maxMessageSize = in.readInt();
             int recursionLimit = in.readInt();
@@ -145,23 +133,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
             ProtobufSerializerSettings savedSettings =
                     new ProtobufSerializerSettings(
                             deterministic, maxMessageSize, recursionLimit, aliasing);
-            int size = in.readInt();
-            validateDescriptorLength(size);
-            byte[] bytes = new byte[size];
-            in.readFully(bytes);
-            byte[] fingerprint = new byte[32];
-            in.readFully(fingerprint);
-            if (!MessageDigest.isEqual(fingerprint, digest(bytes))) {
-                throw new IOException("Descriptor SHA-256 fingerprint mismatch");
-            }
-            CodedInputStream descriptorInput = CodedInputStream.newInstance(bytes);
-            // The set adds one level around files already accepted by per-file normalization.
-            descriptorInput.setRecursionLimit(ProtobufSchema.DESCRIPTOR_RECURSION_LIMIT + 1);
-            FileDescriptorSet decoded =
-                    FileDescriptorSet.parseFrom(
-                            descriptorInput, ExtensionRegistryLite.getEmptyRegistry());
-            // The CodedInputStream overload leaves the top-level end-tag check to its caller.
-            descriptorInput.checkLastTagWas(0);
+            FileDescriptorSet decoded = readDescriptors(in);
             FileDescriptorSet savedSchema = ProtobufSchema.normalize(decoded, savedName);
             className = savedClass;
             fullName = savedName;
@@ -252,14 +224,15 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         }
     }
 
-    private static void requireVersion(int actual, int supported, String component)
-            throws IOException {
+    /** Rejects a framing or normalization version that this library does not implement. */
+    static void requireVersion(int actual, int supported, String component) throws IOException {
         if (actual != supported) {
             throw new IOException("Unsupported Protobuf " + component + " version: " + actual);
         }
     }
 
-    private static boolean readFlag(DataInputView in, String name) throws IOException {
+    /** Reads a one-byte boolean, rejecting values other than zero and one. */
+    static boolean readFlag(DataInputView in, String name) throws IOException {
         int flag = in.readUnsignedByte();
         if (flag > 1) {
             throw new IOException("Invalid " + name + " flag: " + flag);
@@ -267,28 +240,25 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         return flag == 1;
     }
 
-    private static void validateDescriptorLength(int size) throws IOException {
-        if (size <= 0 || size > MAX_DESCRIPTOR_BYTES) {
-            throw new IOException(
-                    "Invalid descriptor byte length: "
-                            + size
-                            + "; maximum is "
-                            + MAX_DESCRIPTOR_BYTES);
-        }
+    /** Writes the descriptor length, the descriptor bytes, and their SHA-256 fingerprint. */
+    static void writeDescriptors(DataOutputView out, byte[] bytes) throws IOException {
+        out.writeInt(bytes.length);
+        out.write(bytes);
+        out.write(digest(bytes));
     }
 
-    private static void validateName(String name, String field) throws IOException {
-        if (name == null || name.isEmpty()) {
-            throw new IOException("Empty " + field);
+    /** Reads and decodes a descriptor block written by {@link #writeDescriptors}. */
+    static FileDescriptorSet readDescriptors(DataInputView in) throws IOException {
+        int size = in.readInt();
+        ProtobufSchema.validateEncodedLength(size);
+        byte[] bytes = new byte[size];
+        in.readFully(bytes);
+        byte[] fingerprint = new byte[32];
+        in.readFully(fingerprint);
+        if (!MessageDigest.isEqual(fingerprint, digest(bytes))) {
+            throw new IOException("Descriptor SHA-256 fingerprint mismatch");
         }
-        long length = 0;
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            length += c >= 1 && c <= 127 ? 1 : c <= 2047 ? 2 : 3;
-        }
-        if (length > 65535) {
-            throw new IOException(field + " exceeds writeUTF's 65535-byte limit");
-        }
+        return ProtobufSchema.decode(bytes);
     }
 
     private static byte[] digest(byte[] bytes) {
