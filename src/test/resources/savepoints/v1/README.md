@@ -51,7 +51,7 @@ For example, from the repository root, capture the Flink 2.2.1 / Protobuf 4 fixt
 mise x -- ./mvnw -ntp clean -Pprotobuf4 -Dflink.version=2.2.1 -DskipTests package
 mise x -- ./mvnw -ntp -Pprotobuf4 -Dflink.version=2.2.1 \
   -Dtest=ProtobufSavepointFixtureITCase \
-  -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.2.0-SNAPSHOT.jar" \
+  -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.3.0-SNAPSHOT.jar" \
   -Dprotobuf.fixture.capture=/tmp/protobuf-savepoint-capture \
   -Dprotobuf.fixture.revision="$(git merge-base HEAD origin/main)" \
   surefire:test@integration-tests

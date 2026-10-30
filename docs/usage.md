@@ -241,7 +241,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 ## Development upgrades and API reference
 
 The 0.1.0 contract rejected schema changes, including otherwise wire-safe field additions.
-Current `0.2.0-SNAPSHOT` development builds restore the supported schema changes; the [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 artifact across a field addition and a reserved field removal.
+Current `0.3.0-SNAPSHOT` development builds restore the supported schema changes; the [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 artifact across a field addition and a reserved field removal.
 The [upgrade guide from 0.1.0](upgrade.md) lists the API changes and intentional breaks of 0.2.0 and the upgrade procedure.
 [DynamicMessage values](#dynamicmessage-values) are new in the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20).
 Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.

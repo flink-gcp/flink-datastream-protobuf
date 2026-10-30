@@ -370,7 +370,7 @@ Both are separate from saved-state restoration and from application gencode/runt
 ```sh
 mise x -- just baseline-fetch v0.1.0 /tmp/baseline-v0.1.0
 mise x -- just api-compat /tmp/baseline-v0.1.0/flink2-pb3
-mise x -- just baseline-consume /tmp/baseline-v0.1.0/flink2-pb3 target/flink-datastream-protobuf-0.2.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x -- just baseline-consume /tmp/baseline-v0.1.0/flink2-pb3 target/flink-datastream-protobuf-0.3.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.

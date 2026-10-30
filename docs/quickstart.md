@@ -53,7 +53,7 @@ The application uses the normal Maven dependency:
 </dependency>
 ```
 
-The example POM currently sets `protobuf.integration.version` to `0.2.0-SNAPSHOT`.
+The example POM currently sets `protobuf.integration.version` to `0.3.0-SNAPSHOT`.
 The library declares Flink core and `protobuf-java` as provided dependencies, so the application explicitly supplies its Flink dependencies and Protobuf runtime.
 The example also generates its own [Event message](../examples/datastream/src/main/proto/event.proto) using the matching protoc version.
 It does not import this repository's test messages or source directories.

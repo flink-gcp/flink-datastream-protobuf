@@ -9,7 +9,7 @@ MiniCluster tests verify checkpoint recovery and savepoint restoration with Hash
 No Maven Central release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
-The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.2.0-SNAPSHOT`.
+The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.3.0-SNAPSHOT`.
 Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to build/install it locally and run the compiled application examples.
 It targets full-runtime generated Protobuf messages and DynamicMessage values with protobuf-java 4.x and 3.25.x.
 Each artifact line is built with Protobuf 4.36.2, and CI runs that jar unchanged with protobuf-java/protoc 4.36.2 and 3.25.9.
