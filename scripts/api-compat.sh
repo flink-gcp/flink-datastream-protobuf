@@ -13,12 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Build the candidate with the bundle's adapter line, Protobuf profile, and compile Flink version,
+# Build the candidate as a release would, with Protobuf 4 and the bundle's adapter line and compile Flink version,
 # then compare its annotated API with the retained library.
 set -euo pipefail
 bundle=$(CDPATH='' cd -- "$1" && pwd -P)
 # The current tree's checker validates the manifest's line and Protobuf profile.
 java src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java check "$bundle"
 value() { sed -n "s/^$1=//p" "$bundle/manifest.properties"; }
-./mvnw -ntp clean "-Pprotobuf$(value protobuf.major),api-compat" "-Dflink.compat=$(value line)" \
+./mvnw -ntp clean -Pprotobuf4,api-compat "-Dflink.compat=$(value line)" \
   "-Dflink.version=$(value compile.flink)" -DskipTests "-Dapi.baseline.jar=$bundle/library.jar" verify

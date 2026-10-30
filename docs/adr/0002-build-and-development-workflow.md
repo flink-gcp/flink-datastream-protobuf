@@ -99,7 +99,7 @@ Keep Dependabot alerts and security-update PRs enabled in repository settings; s
 Ignore conditions can also prevent security-update PRs, so alerts requiring an excluded upgrade need manual review and preparation.
 Submit the resolved Maven dependency graph for each supported runtime and the `benchmarks` profile from `main`, because static `pom.xml` parsing omits transitive and profile-pinned dependencies and alerts cannot match them otherwise.
 The submission replaces the static root `pom.xml` entry, so build plugins leave the graph: plugin advisories raise no alert, and plugins rely on Dependabot version updates.
-GitHub's automatic dependency submission was rejected because it resolves only the default profile and would miss Protobuf 4, the ceiling, LTS, and `benchmarks`.
+GitHub's automatic dependency submission was rejected because it resolves only the default profile and would miss Protobuf 3, the ceiling, LTS, and `benchmarks`.
 
 All changes after the initial empty main commit use a dedicated worktree and a Draft PR with the WHAT/WHY template.
 Require two distinct self-review rounds, an independent reviewer that did not author the change, and current aggregate CI before Ready.

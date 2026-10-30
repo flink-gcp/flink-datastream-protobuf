@@ -34,11 +34,11 @@ Run these commands from its root with JDK 17:
 mise trust
 mise install
 example_repo="$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)"
-mise x -- just examples-verify 2.2.1 3 "$example_repo"
+mise x -- just examples-verify 2.2.1 4 "$example_repo"
 ```
 
 Keep `example_repo` set for the following commands in the same shell.
-The recipe builds the Flink 2.x library at its 2.2.1 compile floor, installs it locally, and compiles and tests the independent application against that jar.
+The recipe builds the Flink 2.x library with Protobuf 4 at its 2.2.1 compile floor, installs it locally, and compiles and tests the independent application against that jar.
 It also packages the application, launches all three entrypoints using the packaged classes, and checks the Maven launch commands below.
 It needs neither a running Flink cluster nor Docker.
 Initial dependency downloads require network access.
@@ -138,23 +138,23 @@ The tests launch the packaged entrypoints locally with Flink dependencies; they 
 
 | Flink | JDK | Matching protoc and protobuf-java |
 |---|---|---|
-| 2.2.1 and 2.3.0 | 17, 21 | 3.25.9 or 4.33.6 |
-| 1.20.4 | 17 | 3.25.9 or 4.33.6 |
+| 2.2.1 and 2.3.0 | 17, 21 | 4.36.2 or 3.25.9 |
+| 1.20.4 | 17 | 4.36.2 or 3.25.9 |
 
-For example, use a new repository to verify Flink 1.20 with Protobuf 4:
+For example, use a new repository to verify Flink 1.20 with Protobuf 3:
 
 ```sh
 lts_repo="$(mktemp -d /tmp/protobuf-example-lts.XXXXXX)"
-mise x -- just examples-verify 1.20.4 4 "$lts_repo"
+mise x -- just examples-verify 1.20.4 3 "$lts_repo"
 mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
   "-Dmaven.repo.local=$lts_repo" -Dflink.version=1.20.4 \
-  -Dprotobuf.version=4.33.6 exec:exec@explicit
+  -Dprotobuf.version=3.25.9 exec:exec@explicit
 ```
 
 Keep the same version overrides when running the other entrypoints.
 Clean and rebuild when switching runtime/gencode combinations; the recipe does this for both projects.
-The recipe compiles a 1.20 library for LTS, and uses a floor-built 2.x library for either supported 2.x consumer runtime.
-These profile-specific builds do not establish that one library jar works across Protobuf majors.
+The recipe always compiles the library with Protobuf 4: a 1.20 library for LTS, and a floor-built 2.x library for either supported 2.x consumer runtime.
+A Protobuf 3 application therefore runs the same library jar as a Protobuf 4 application.
 Mixed generated-code/runtime pairs and cross-version state restoration are outside this verification.
 
 ## Switch to Maven Central at 1.0.0

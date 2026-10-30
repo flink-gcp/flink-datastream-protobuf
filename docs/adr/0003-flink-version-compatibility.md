@@ -24,6 +24,7 @@ limitations under the License.
 - Date: 2026-09-10
 - Supersedes: The Flink 2.3-only runtime scope in [ADR-0001](0001-native-protobuf-type-integration.md)
 - Amends: The build matrix in [ADR-0002](0002-build-and-development-workflow.md)
+- Unchanged-jar check amended: 2026-10-30, [issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141)
 - Current instructions: [Development](../development.md)
 
 ## Context
@@ -61,9 +62,10 @@ Validate that the selected Flink version belongs to the adapter's major, with th
 ### Evidence and CI
 
 Require full clean verification on every supported Flink/JDK combination with each paired Protobuf runtime and gencode profile.
-Also build once at the 2.x floor and rerun all tests at the ceiling without recompiling production or test classes.
-The rerun must load the packaged floor jar, verify the actual Flink runtime, compare the complete class/name test inventory, reject skips or failures, and verify unchanged jar and class hashes.
-Run this binary check separately for each Protobuf profile on JDK 17.
+Also build each artifact line once with the default Protobuf 4 profile, the 2.x line at the floor, and run all tests with that packaged jar unchanged: at the 2.x ceiling with the same compiled tests, and with tests and runtime applications compiled against Protobuf 3 generated code and runtime, for the 2.x line at both the floor and the ceiling.
+Each run must load the packaged Protobuf 4 jar, verify the actual Flink and Protobuf runtimes, compare the complete class/name test inventory with the Protobuf 4 build, reject skips or failures, and verify unchanged jar and class hashes.
+Run these binary checks on JDK 17.
+A jar built with Protobuf 3 is not a release artifact, so it needs no binary check.
 The source-build matrix covers JDK 21; it does not substitute for the binary check.
 
 This single-module library runs the supported matrix and binary checks on every PR as well as main pushes, manual runs, and a weekly schedule.

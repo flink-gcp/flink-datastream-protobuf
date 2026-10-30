@@ -50,7 +50,7 @@ jobs:
       # Only this job saves the shared Maven entry; see "CI Maven resolution" in docs/development.md.
       - uses: ./.github/actions/maven
         with:
-          save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '17' && matrix.protobuf == '3' }}
+          save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '17' && matrix.protobuf == '4' }}
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
@@ -162,13 +162,13 @@ jobs:
           path: ${{ runner.temp }}/checked-benchmark-evidence
           if-no-files-found: error
   binary-compat:
-    name: Unchanged 2.x jar / Protobuf ${{ matrix.protobuf }}
+    name: Unchanged ${{ matrix.line }} jar / Protobuf 4 and 3
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        protobuf: ['3', '4']
+        line: [flink2, flink1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,10 +185,15 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
-      - name: Run the floor jar on the ceiling runtime without recompilation
+      - name: Run the Protobuf 4 jar on the 2.x ceiling and Protobuf 3 without recompiling it
         env:
-          PROTOBUF: ${{ matrix.protobuf }}
-        run: just binary-compat "$FLINK_CEILING" "$PROTOBUF"
+          LINE: ${{ matrix.line }}
+        run: |
+          if [[ "$LINE" == flink2 ]]; then
+            just binary-compat flink2 "$FLINK_CEILING"
+          else
+            just binary-compat flink1
+          fi
   development-baseline:
     name: Development bundle / ${{ matrix.line }} / Protobuf ${{ matrix.protobuf }}
     if: github.event_name != 'pull_request' || inputs.baseline

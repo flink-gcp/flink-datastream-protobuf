@@ -34,7 +34,7 @@ The Flink 1.20 artifact suffix does not create another documentation version.
 
 Each release uses its exact tagged source, dependencies, examples, and Javadoc.
 The Source link identifies the resolved commit.
-The API reference uses the default Flink 2.x / Protobuf 3 build; both adapters and Protobuf profiles remain checked in CI.
+The API reference uses that source's default Flink 2.x build, with Protobuf 4 from 0.3.0 and Protobuf 3 in earlier milestones; both adapters and Protobuf profiles remain checked in CI.
 Release and milestone pages have no edit-on-main link.
 
 URLs such as `1.0/` or `0.1/` track the latest patch in that minor.

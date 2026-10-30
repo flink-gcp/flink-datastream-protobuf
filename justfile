@@ -45,12 +45,12 @@ verify-protobuf major *args:
 
 # Select the matching source adapter and clean the paired Protobuf build.
 [positional-arguments]
-verify-flink version major="3":
+verify-flink version major="4":
     bash scripts/verify-flink.sh "$1" "$2"
 
-# Run the unchanged floor jar and compiled test inventory on a newer 2.x runtime.
+# Build a line's jar with Protobuf 4, then run it unchanged on the 2.x ceiling and with Protobuf 3 gencode and runtime.
 [positional-arguments]
-binary-compat ceiling major="3":
+binary-compat line ceiling="":
     {{ python }} scripts/binary-compat.py "$1" "$2"
 
 # Capture an unpublished development bundle from a clean committed checkout on JDK 17.
@@ -86,7 +86,7 @@ baseline-release-test: (test-scripts "scripts/tests/test_baseline_release.py")
 baseline-read bundle version output:
     java -cp "$1/tools.jar" io.github.flink.gcp.protobuf.BaselineTool read "$1" "$2" "$3"
 
-# The run selects the bundle's Protobuf profile and artifact line and resolves this build's dependencies.
+# The run selects the bundle's Protobuf runtime and artifact line and resolves this build's dependencies.
 # Restore a verified bundle's retained state with the current library and new-schema applications.
 [positional-arguments]
 baseline-upgrade bundle version:
@@ -95,8 +95,9 @@ baseline-upgrade bundle version:
     bundle=$(cd "$1" && pwd -P)
     line=$(sed -n 's/^line=//p' "$bundle/manifest.properties")
     major=$(sed -n 's/^protobuf.major=//p' "$bundle/manifest.properties")
+    protobuf=$(sed -n 's/^protobuf.version=//p' "$bundle/manifest.properties")
     just baseline-check "$bundle"
-    {{ mvn }} clean "-Pprotobuf$major" "-Dflink.compat=$line" "-Dflink.version=$2" \
+    {{ mvn }} clean "-Pprotobuf$major" "-Dprotobuf.version=$protobuf" "-Dflink.compat=$line" "-Dflink.version=$2" \
         "-Dprotobuf.test.retained.bundle=$bundle" -Dtest.excluded.groups= \
         -Dtest=RetainedBaselineUpgradeITCase test
 
@@ -142,7 +143,7 @@ examples-verify version major repository:
 
 # Check public API documentation without the parent's incompatible Maven Javadoc options.
 [positional-arguments]
-docs-javadoc compat="flink2" major="3":
+docs-javadoc compat="flink2" major="4":
     bash scripts/docs-javadoc.sh "$1" "$2"
 
 # Render the existing Markdown with the pinned shared design.
@@ -162,7 +163,7 @@ docs-validate:
     repository=$(mktemp -d)
     trap 'rm -rf "$repository"' EXIT
     floor=$({{ python }} -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}properties/{*}flink.version"))')
-    just examples-verify "$floor" 3 "$repository"
+    just examples-verify "$floor" 4 "$repository"
     just docs-javadoc
     just docs-site prepare-api target/apidocs
     just docs

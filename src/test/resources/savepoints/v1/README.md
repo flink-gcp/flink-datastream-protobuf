@@ -16,7 +16,7 @@ limitations under the License.
 
 # Development savepoint fixtures
 
-These canonical savepoints were written by a development `0.1.0-SNAPSHOT` jar.
+These canonical savepoints were written by development jars: the Protobuf 3.25.9 savepoints by `0.1.0-SNAPSHOT` with snapshot version 1, and the 4.36.2 savepoints by `0.2.0-SNAPSHOT` with snapshot version 2.
 They are not published-release provenance.
 Each Flink/Protobuf/backend directory contains `baseline` (deterministic false, 1024-byte payload limit, recursion limit 4) and `raised` (true, 2048 bytes, depth 8) settings.
 These deliberately small test budgets are not the library defaults of 64 MiB and depth 100.
@@ -31,7 +31,7 @@ The source cursor, UIDs, state names, parallelism, and max parallelism are part 
 
 ## Capture
 
-The current Protobuf profiles select savepoints written with 3.25.9 and 4.33.6.
+The current Protobuf profiles select savepoints written with 4.36.2 and 3.25.9.
 The current Flink/Protobuf matrix selects all 24 development fixtures.
 Remove superseded development savepoints when no supported test selects them; their history remains in Git.
 This rule does not remove snapshot-format baselines or published-release compatibility fixtures.
@@ -45,11 +45,11 @@ Use an output directory outside the repository, and review the resulting manifes
 Ordinary verification reads fixtures without changing them.
 Temporary automation belongs outside the repository.
 
-For example, from the repository root, capture the Flink 2.2.1 / Protobuf 3 fixtures with JDK 17:
+For example, from the repository root, capture the Flink 2.2.1 / Protobuf 4 fixtures with JDK 17:
 
 ```sh
-mise x -- ./mvnw -ntp clean -Pprotobuf3 -Dflink.version=2.2.1 -DskipTests package
-mise x -- ./mvnw -ntp -Pprotobuf3 -Dflink.version=2.2.1 \
+mise x -- ./mvnw -ntp clean -Pprotobuf4 -Dflink.version=2.2.1 -DskipTests package
+mise x -- ./mvnw -ntp -Pprotobuf4 -Dflink.version=2.2.1 \
   -Dtest=ProtobufSavepointFixtureITCase \
   -Dtest.production.classes="$PWD/target/flink-datastream-protobuf-0.2.0-SNAPSHOT.jar" \
   -Dprotobuf.fixture.capture=/tmp/protobuf-savepoint-capture \
@@ -57,7 +57,7 @@ mise x -- ./mvnw -ntp -Pprotobuf3 -Dflink.version=2.2.1 \
   surefire:test@integration-tests
 ```
 
-Repeat with `-Pprotobuf4` for Protobuf 4 and `-Dflink.version=2.3.0` for the ceiling.
+Repeat with `-Pprotobuf3` for Protobuf 3 and `-Dflink.version=2.3.0` for the ceiling.
 For LTS, use `-Dflink.compat=flink1 -Dflink.version=1.20.4` on both commands.
 Clean before changing a runtime or generated-code profile.
 The capture test exercises both backends and both settings, deletes its original temporary savepoints and writer checkpoint storage, and verifies restoration from the archives.

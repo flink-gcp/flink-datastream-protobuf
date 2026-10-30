@@ -239,7 +239,7 @@ The same job runs the [API compatibility gate](../development.md#api-compatibili
 mise x -- just baseline-upgrade /tmp/baseline-v0.1.0/flink2-pb3 2.3.0
 ```
 
-The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile and artifact line and the given Flink version.
+The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile, its exact Protobuf runtime and protoc version, its artifact line, and the given Flink version.
 Maven resolves this build's own dependencies, so the bundle's `dependencies/` tree and its `library.jar` are never on the classpath; apart from the bundle's own `baseline-check`, the retained inputs are data: state archives, snapshot fixtures, manifests, and schemas.
 The test refuses a Protobuf runtime other than the one that wrote the bundle and a Flink version that the bundle was not read with, so each run keeps the gencode/runtime pair and the Flink version fixed and changes only the library and the application schema.
 It also requires the current `original` and `changed` application descriptors to be byte-identical to the bundle's `apps/original/schema.pb` and `apps/changed/schema.pb`, which makes the `original` restore the unchanged-schema control.
@@ -277,5 +277,5 @@ The checksum checker is not the benchmark content gate in #41 and does not prove
 Retain original bytes privately if a separately sanitized derivative is needed, and identify that derivative with its own inventory.
 
 [`baseline-upgrade`](#restore-retained-state-with-the-current-library) implements the #16 check: it consumes the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with separately built new-schema applications.
-For #17, `api-compat` compares the retained `library.jar` with a candidate built for the same line and profile, and `baseline-consume` runs the retained `tools.jar` with the candidate on an explicit classpath of the current tree's dependencies, without recompiling the old consumer.
+For #17, `api-compat` compares the retained `library.jar` with a candidate built for the same line with Protobuf 4, and `baseline-consume` runs the retained `tools.jar` with the candidate on an explicit classpath of the current tree's dependencies, without recompiling the old consumer.
 Neither follow-up should rebuild a newer working tree and label it the old writer.

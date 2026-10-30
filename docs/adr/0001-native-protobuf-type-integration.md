@@ -30,6 +30,7 @@ limitations under the License.
 - Large-frame reads amended: 2026-10-25, [issue #113](https://github.com/flink-gcp/flink-datastream-protobuf/issues/113)
 - DynamicMessage design: 2026-10-29, extended by [ADR-0005](0005-descriptor-bound-dynamic-messages.md)
 - 1.0.0 persisted-format restart amended: 2026-10-29, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
+- Protobuf 4 build baseline amended: 2026-10-30, [issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141)
 - Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
@@ -96,6 +97,10 @@ Set `pipeline.generic-types: false` to reject that path, including in native exa
 The optional test-only Chill comparison remains separate from production dependencies and behavior.
 
 The target is full-runtime generated messages with protobuf-java 3.25.x and 4.x.
+Build each artifact line against protobuf-java and protoc 4.x, and verify that unchanged jar with paired 4.x and 3.25.x generated code and runtimes; [ADR-0003](0003-flink-version-compatibility.md) defines the check.
+Upstream [supports](https://protobuf.dev/support/version-support/) 4.x as its active line with quarterly minor releases, while 3.25.x receives only maintenance until 2027-03-31.
+Releasing one jar for both majors keeps a single artifact per Flink line; a separate jar per Protobuf major would double the published artifacts.
+Protobuf 2.x runtimes remain unsupported, and supporting Protobuf 5.x requires a separate decision.
 [ADR-0003](0003-flink-version-compatibility.md) replaces the initial Flink 2.3-only scope with current/previous Flink 2.x minor support and a separate Flink 1.20 LTS build.
 It defines the JDK matrix, artifact version lines, and runtime-specific release acceptance requirements.
 Flink core and protobuf-java remain provided and unrelocated so the application owns its runtime.

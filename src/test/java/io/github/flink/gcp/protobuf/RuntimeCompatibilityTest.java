@@ -18,6 +18,7 @@ package io.github.flink.gcp.protobuf;
 
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 
+import com.google.protobuf.Message;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -38,6 +39,16 @@ class RuntimeCompatibilityTest {
                                 .getLocation()
                                 .toURI());
         assertThat(location.getFileName().toString()).isEqualTo("flink-core-" + version + ".jar");
+    }
+
+    @Test
+    void loadsTheRequestedProtobufRuntime() throws Exception {
+        String version = System.getProperty("protobuf.test.protobuf.version");
+        assertThat(version).isNotBlank();
+        Path location =
+                Path.of(Message.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        assertThat(location.getFileName().toString())
+                .isEqualTo("protobuf-java-" + version + ".jar");
     }
 
     @Test

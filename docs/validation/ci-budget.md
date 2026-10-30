@@ -90,10 +90,14 @@ The rule in the [development guide](../development.md#ci-compiler-reuse-and-job-
 | Limit | Slowest measured | Previous | Current |
 |---|---:|---:|---:|
 | Matrix job | 501 s | 20 min | 20 min |
-| Binary compatibility job | 315 s | 20 min | 15 min |
+| Binary compatibility job | 365 s | 15 min | 15 min |
 | Development bundle job | 345 s | 30 min | 15 min |
 | Benchmark smoke command | 89 s | none | 5 min |
 | Retained v0.1.0 upgrade job | 322 s | 10 min | 15 min |
+
+[Issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141) changed the binary compatibility job from one cell per Protobuf profile to one per artifact line, each building the jar with Protobuf 4 and also running it with Protobuf 3 tests.
+In pull-request run [40918680497](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/40918680497), the 2.x cell, which runs the suite four times, took 365 seconds, and the LTS cell took 242 seconds.
+That run still used a full `verify` for the Protobuf 3 build, which the final recipe replaces with a build through `process-test-classes`; twice its 2.x duration stays within the 15-minute limit.
 
 The retained upgrade job fetches one bundle and restores its state with a clean Maven build; its ten jobs in the first pull-request run, [39451689508](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39451689508), took 59 to 122 seconds.
 The job then also runs the API compatibility gate, which rebuilds the candidate cleanly, and the retained compiled consumers; with those steps its ten jobs in run [39518523442](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39518523442) took 110 to 196 seconds.

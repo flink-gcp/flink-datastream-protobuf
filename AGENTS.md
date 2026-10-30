@@ -13,7 +13,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just verify`: build and run unit/integration tests and license checks.
 - `just verify-protobuf 3` / `just verify-protobuf 4`: clean verification for each runtime/gencode pair.
 - `just verify-flink <version> <protobuf-major>`: clean verification with the matching Flink adapter.
-- `just binary-compat <ceiling> <protobuf-major>`: run the unchanged 2.x floor jar and tests at the ceiling.
+- `just binary-compat flink2 <ceiling>` / `just binary-compat flink1`: run a line's unchanged Protobuf 4 jar at the 2.x ceiling and with Protobuf 3 tests.
 - `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.

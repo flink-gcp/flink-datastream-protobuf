@@ -152,7 +152,7 @@ public final class BaselineTool {
         String artifactVersion = directChild(model.getDocumentElement(), "version");
         String protobuf = property(model, "protobuf.version");
         require(
-                protobuf.equals(major.equals("3") ? "3.25.9" : "4.33.6"),
+                protobuf.equals(major.equals("3") ? "3.25.9" : "4.36.2"),
                 "Unexpected Protobuf runtime");
         require(property(model, "protoc.version").equals(protobuf), "Unpaired protoc/runtime");
         require(
@@ -504,9 +504,10 @@ public final class BaselineTool {
                 "Missing source revision");
         String major = manifest.getProperty("protobuf.major", "");
         require(major.equals("3") || major.equals("4"), "Unsupported Protobuf profile");
+        // Retained bundles keep the runtime that wrote them; accept any supported release.
         require(
                 manifest.getProperty("protobuf.version", "")
-                        .equals(major.equals("3") ? "3.25.9" : "4.33.6"),
+                        .matches(major.equals("3") ? "3\\.25\\.\\d+" : "4\\.\\d+\\.\\d+"),
                 "Unsupported Protobuf runtime");
         List<String> required =
                 new ArrayList<>(

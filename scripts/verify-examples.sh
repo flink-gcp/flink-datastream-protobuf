@@ -33,9 +33,9 @@ if [[ -f "$marker" && "$(cat "$marker")" != "$identity" ]]; then
 fi
 printf '%s\n' "$identity" > "$marker"
 library_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}version"))')
-protobuf_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E, sys; r=E.parse("pom.xml").getroot(); print(r.findtext("{*}properties/{*}protobuf.version") if sys.argv[1]=="3" else next(p.findtext("{*}properties/{*}protobuf.version") for p in r.findall("{*}profiles/{*}profile") if p.findtext("{*}id")=="protobuf4"))' "$major")
-# The 2.x library is always compiled at the floor, including a ceiling consumer run.
-./mvnw -ntp "-Pprotobuf$major" "-Dflink.compat=$compat" -DskipTests clean package
+protobuf_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E, sys; r=E.parse("pom.xml").getroot(); print(r.findtext("{*}properties/{*}protobuf.version") if sys.argv[1]=="4" else next(p.findtext("{*}properties/{*}protobuf.version") for p in r.findall("{*}profiles/{*}profile") if p.findtext("{*}id")=="protobuf3"))' "$major")
+# The library is always compiled with Protobuf 4, and the 2.x library at the floor, as for a release.
+./mvnw -ntp -Pprotobuf4 "-Dflink.compat=$compat" -DskipTests clean package
 ./mvnw -ntp org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file "-Dfile=target/flink-datastream-protobuf-$library_version.jar" -DpomFile=pom.xml "-DlocalRepositoryPath=$repository"
 consumer=(./mvnw -ntp -f examples/datastream/pom.xml "-Dmaven.repo.local=$repository" "-Dprotobuf.integration.version=$library_version" "-Dflink.version=$version" "-Dprotobuf.version=$protobuf_version")
 "${consumer[@]}" clean verify
