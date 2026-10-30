@@ -25,6 +25,7 @@ import org.apache.flink.runtime.minicluster.MiniCluster;
 import org.apache.flink.runtime.minicluster.MiniClusterConfiguration;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 
+import com.google.protobuf.DescriptorProtos.DescriptorProto;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
@@ -38,7 +39,9 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,8 +50,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Real job execution for isolated-schema and shared-classpath common-type recovery tests. */
 final class RuntimeRecoveryHarness implements AutoCloseable {
     static final String APPLICATION = "io.github.flink.gcp.protobuf.runtimeapp.RuntimeJob";
+    private static final String DYNAMIC_APPLICATION =
+            "io.github.flink.gcp.protobuf.runtimeapp.DynamicRuntimeJob";
     static final String MESSAGE =
             "io.github.flink.gcp.protobuf.runtimeapp.generated.RuntimeMessages$Entry";
+    private static final List<String> VARIANTS =
+            List.of(
+                    "original",
+                    "changed",
+                    "reserved",
+                    "incompatible",
+                    "enum-original",
+                    "enum-added");
+    private static final Map<DescriptorProto, String> ROOTS = new HashMap<>();
     static final Settings BASELINE = new Settings(false, 1024, 4);
     static final Settings RAISED = new Settings(true, 2048, 8);
     private final MiniCluster cluster;
@@ -85,38 +99,100 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
             String variant,
             boolean restart)
             throws Exception {
+        return submit(
+                directory, variant, APPLICATION, backend, kind, settings, savepoint, restart, null);
+    }
+
+    /**
+     * Starts the DynamicMessage application with the descriptor of a schema variant.
+     *
+     * @param variant schema variant whose descriptor set the application loads
+     * @param jar application jar variant: {@code dynamic} has no generated class, while a schema
+     *     variant's jar also contains that variant's generated class
+     */
+    Job startDynamic(
+            Path directory,
+            String backend,
+            String kind,
+            Settings settings,
+            String savepoint,
+            String variant,
+            String jar,
+            boolean restart)
+            throws Exception {
+        return submit(
+                directory,
+                jar,
+                DYNAMIC_APPLICATION,
+                backend,
+                kind,
+                settings,
+                savepoint,
+                restart,
+                apps().resolve(variant + "/schema.pb").toString());
+    }
+
+    /**
+     * @param schema descriptor set for the DynamicMessage application, or {@code null} for the
+     *     generated one
+     */
+    private Job submit(
+            Path directory,
+            String jarVariant,
+            String applicationName,
+            String backend,
+            String kind,
+            Settings settings,
+            String savepoint,
+            boolean restart,
+            String schema)
+            throws Exception {
         Files.createDirectories(directory);
         ClassLoader parent = getClass().getClassLoader();
-        for (String name : List.of(APPLICATION, MESSAGE)) {
+        for (String name : List.of(APPLICATION, DYNAMIC_APPLICATION, MESSAGE)) {
             assertThatThrownBy(() -> Class.forName(name, false, parent))
                     .isInstanceOf(ClassNotFoundException.class);
         }
-        Path jar = apps().resolve("application-" + variant + ".jar");
+        Path jar = apps().resolve("application-" + jarVariant + ".jar");
         assertThat(jar).isRegularFile();
         try (URLClassLoader loader = new URLClassLoader(new URL[] {jar.toUri().toURL()}, parent)) {
-            Class<?> application = loader.loadClass(APPLICATION);
+            Class<?> application = loader.loadClass(applicationName);
             assertThat(application.getClassLoader()).isSameAs(loader);
+            if (jarVariant.equals("dynamic")) {
+                assertThatThrownBy(() -> loader.loadClass(MESSAGE))
+                        .isInstanceOf(ClassNotFoundException.class);
+            } else {
+                assertThat(loader.loadClass(MESSAGE).getClassLoader()).isSameAs(loader);
+            }
+            List<Class<?>> parameters =
+                    new ArrayList<>(
+                            List.of(
+                                    String.class,
+                                    String.class,
+                                    String.class,
+                                    boolean.class,
+                                    int.class,
+                                    int.class,
+                                    boolean.class));
+            List<Object> arguments =
+                    new ArrayList<>(
+                            List.of(
+                                    directory.toString(),
+                                    backend,
+                                    kind,
+                                    settings.deterministic,
+                                    settings.size,
+                                    settings.depth,
+                                    restart));
+            if (schema != null) {
+                parameters.add(String.class);
+                arguments.add(schema);
+            }
             JobGraph graph =
                     (JobGraph)
                             application
-                                    .getMethod(
-                                            "create",
-                                            String.class,
-                                            String.class,
-                                            String.class,
-                                            boolean.class,
-                                            int.class,
-                                            int.class,
-                                            boolean.class)
-                                    .invoke(
-                                            null,
-                                            directory.toString(),
-                                            backend,
-                                            kind,
-                                            settings.deterministic,
-                                            settings.size,
-                                            settings.depth,
-                                            restart);
+                                    .getMethod("create", parameters.toArray(new Class<?>[0]))
+                                    .invoke(null, arguments.toArray());
             graph.addJar(new org.apache.flink.core.fs.Path(jar.toUri()));
             if (savepoint != null) {
                 graph.setSavepointRestoreSettings(
@@ -283,8 +359,11 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
                 List<String> lines = Files.readAllLines(observation);
                 assertThat(lines.get(0)).isEqualTo("true");
                 for (String line : lines.subList(1, lines.size())) {
+                    // The DynamicMessage application appends the descriptor of the value.
+                    String value = line.split(",", -1)[0];
                     messages.add(
-                            DynamicMessage.parseFrom(descriptor, Base64.getDecoder().decode(line)));
+                            DynamicMessage.parseFrom(
+                                    descriptor, Base64.getDecoder().decode(value)));
                 }
             }
             return messages;
@@ -310,6 +389,40 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
                 }
             }
             return values;
+        }
+
+        /**
+         * Names the schema variants whose root descriptors the restored operator-state values
+         * carried in the DynamicMessage application.
+         */
+        List<String> restoredSchemas(int attempt) throws Exception {
+            List<String> schemas = new ArrayList<>();
+            for (int subtask = 0; subtask < 2; subtask++) {
+                Path observation = directory.resolve("restore-" + attempt + "-" + subtask);
+                await(() -> Files.exists(observation));
+                List<String> lines = Files.readAllLines(observation);
+                for (String line : lines.subList(1, lines.size())) {
+                    schemas.add(variant(line.split(",", -1)[1]));
+                }
+            }
+            return schemas;
+        }
+
+        /**
+         * Names the schema variants whose root descriptors the ValueState and MapState values that
+         * an input replaced carried in the DynamicMessage application, ValueState first.
+         */
+        List<String> replacedSchemas(int attempt, int ordinal) throws Exception {
+            String[] fields =
+                    Files.readString(directory.resolve("value-" + attempt + "-" + ordinal))
+                            .split(",", -1);
+            List<String> schemas = new ArrayList<>();
+            for (String schema : List.of(fields[6], fields[7])) {
+                if (!schema.isEmpty()) {
+                    schemas.add(variant(schema));
+                }
+            }
+            return schemas;
         }
 
         String checkpoint() throws Exception {
@@ -390,6 +503,21 @@ final class RuntimeRecoveryHarness implements AutoCloseable {
                 cluster.requestJobResult(graph.getJobID()).get(30, TimeUnit.SECONDS);
             }
         }
+    }
+
+    /** Finds the schema variant whose root descriptor has the encoded content. */
+    private static synchronized String variant(String encoded) throws Exception {
+        if (ROOTS.isEmpty()) {
+            for (String variant : VARIANTS) {
+                ROOTS.put(descriptor(variant).toProto(), variant);
+            }
+        }
+        DescriptorProto observed = DescriptorProto.parseFrom(Base64.getDecoder().decode(encoded));
+        String variant = ROOTS.get(observed);
+        if (variant == null) {
+            throw new AssertionError("Unknown root descriptor: " + observed);
+        }
+        return variant;
     }
 
     private interface Condition {

@@ -64,6 +64,10 @@ def bytecode(jar):
             sys.exit(f"Missing isolated application jar: {application}")
         files.append(application)
         files.append(Path(f"target/runtime-app/{variant}/schema.pb"))
+    dynamic = Path("target/runtime-app/application-dynamic.jar")
+    if not dynamic.is_file():
+        sys.exit(f"Missing isolated application jar: {dynamic}")
+    files.append(dynamic)
     return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 
 

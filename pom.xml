@@ -228,6 +228,8 @@ limitations under the License.
                     <jar destfile="${project.build.directory}/runtime-app/application-incompatible.jar" basedir="${project.build.directory}/runtime-app/incompatible/classes"/>
                     <jar destfile="${project.build.directory}/runtime-app/application-enum-original.jar" basedir="${project.build.directory}/runtime-app/enum-original/classes"/>
                     <jar destfile="${project.build.directory}/runtime-app/application-enum-added.jar" basedir="${project.build.directory}/runtime-app/enum-added/classes"/>
+                    <!-- The DynamicMessage application loads its schema from a descriptor set and has no generated class. -->
+                    <jar destfile="${project.build.directory}/runtime-app/application-dynamic.jar" basedir="${project.build.directory}/runtime-app/original/classes" includes="io/github/flink/gcp/protobuf/runtimeapp/DynamicRuntimeJob*.class io/github/flink/gcp/protobuf/runtimeapp/ControlledSource*.class"/>
                     <jar destfile="${project.build.directory}/baseline/tools.jar" basedir="${project.build.testOutputDirectory}"/>
                 </target></configuration></execution></executions>
             </plugin>
