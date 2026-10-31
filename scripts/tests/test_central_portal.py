@@ -25,12 +25,12 @@ import json
 import sys
 import urllib.error
 from collections import deque
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import central_portal
+from conftest import load_script
+
+central_portal = load_script("central-portal.py")
 
 FIRST = "cbdbc784-e398-4996-8082-b9cbff37460c"
 SECOND = "bb77b450-7129-495d-8ad2-fb09fc1bfae2"

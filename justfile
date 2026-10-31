@@ -67,7 +67,7 @@ baseline-check bundle:
 # Arguments after the output are bundle names and an optional --archives <directory>.
 [positional-arguments]
 baseline-fetch tag output *args:
-    {{ python }} scripts/baseline_fetch.py fetch "$@"
+    {{ python }} scripts/baseline-fetch.py fetch "$@"
 
 # Exercise baseline retrieval with synthetic releases only.
 baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
@@ -76,7 +76,7 @@ baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
 # See "Publish a milestone baseline" in docs/validation/development-baselines.md.
 [positional-arguments]
 baseline-release +args:
-    {{ python }} scripts/baseline_release.py "$@"
+    {{ python }} scripts/baseline-release.py "$@"
 
 # Exercise baseline release assembly with synthetic bundles only.
 baseline-release-test: (test-scripts "scripts/tests/test_baseline_release.py")
@@ -121,12 +121,12 @@ release-stage version *args:
 # Stage and inspect both lines' Central bundles from the committed HEAD without uploading them.
 [positional-arguments]
 release-rehearse version output *args:
-    {{ python }} scripts/release_artifacts.py "$@"
+    {{ python }} scripts/release-artifacts.py "$@"
 
 # Capture a staging deployment ID, or inspect, publish, or drop Central Portal deployments (ADR-0006).
 [positional-arguments]
 central-portal +args:
-    {{ python }} scripts/central_portal.py "$@"
+    {{ python }} scripts/central-portal.py "$@"
 
 # Run the release-artifact, Portal helper, and Release workflow checks without Maven or Central.
 release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py" "scripts/tests/test_central_portal.py" "scripts/tests/test_release_workflow.py")
@@ -137,7 +137,7 @@ probe-chill:
 
 # Compare the Flink and Protobuf pins with Maven Central; fail when a newer release overtakes one.
 upstream-versions:
-    {{ python }} scripts/upstream_versions.py
+    {{ python }} scripts/upstream-versions.py
 
 # Exercise the upstream version check with synthetic pins and metadata only.
 upstream-versions-test: (test-scripts "scripts/tests/test_upstream_versions.py")

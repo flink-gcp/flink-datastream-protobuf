@@ -524,7 +524,7 @@ def download(gcloud, plan_data, vm, output, failures):
         if maintenance_events(result):
             failures.append(vm["name"] + "/" + result.name + ": host maintenance was recorded")
         checked = output / "checked" / vm["name"] / result.name
-        code = subprocess.run([sys.executable, str(ROOT / "scripts" / "benchmark_evidence.py"),
+        code = subprocess.run([sys.executable, str(ROOT / "scripts" / "benchmark-evidence.py"),
                                "check", str(result), str(checked)]).returncode
         if code != 0:
             failures.append(vm["name"] + "/" + result.name + ": evidence gate rejected the directory")

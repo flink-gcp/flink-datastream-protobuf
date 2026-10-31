@@ -17,13 +17,13 @@
 import io
 import json
 from pathlib import Path
-import sys
 import tarfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import gce_benchmark as tool
+from conftest import load_script
+
+tool = load_script("gce-benchmark.py")
 
 SOURCE = "a" * 40
 BASE = "b" * 40

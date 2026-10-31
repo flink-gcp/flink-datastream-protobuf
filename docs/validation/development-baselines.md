@@ -129,7 +129,7 @@ It works in one external work directory that holds `bundles/<bundle>/` and the m
    It checks each bundle with its own `BaselineTool`, the source revision and annotated tag, the reader results against each bundle's jars and case counts, the controls and their rejection messages, the CI run and its `CI passed` job, the commit that the run's source-freezing job actually checked out, the bundle names against their artifact lines and Protobuf profiles, member names that `baseline-fetch` accepts, the README and dispositions against the credential rules, and the review, which must explain exactly what a new scan of the work directory finds, so a reviewed file or match whose bytes changed fails, and writes `<work>/release/` with the archives, `INVENTORY.json`, `FINAL-BASELINE.json`, the verification archive, the README, and `SHA256SUMS`, whose digest it prints.
 6. After the maintainer approves publication, push the tag, create the GitHub pre-release with every file in `<work>/release/`, and run `mise x -- just baseline-release verify v0.Y.Z <work>`, which downloads every asset and compares it with the local bytes.
    The pre-release does not trigger the documentation deployment; [add the milestone to the site](../development.md#documentation-site-and-publication) with `gh workflow run ci.yaml --ref main`.
-7. Pin the printed `SHA256SUMS` digest in `scripts/baseline_fetch.py`, document the retained baseline here, and run `baseline-fetch` against the published release.
+7. Pin the printed `SHA256SUMS` digest in `scripts/baseline-fetch.py`, document the retained baseline here, and run `baseline-fetch` against the published release.
 
 Keep the work directory as described in [retention](#retention) until the published assets are verified; the release assets then become the durable shared copy.
 `just baseline-release-test` runs the assembly checks on synthetic bundles and requires `baseline-fetch` to accept the assembled release.
@@ -158,7 +158,7 @@ Obtain them with [`baseline-fetch`](#retrieve-the-retained-baseline); the releas
 ## Retained v0.2.0 baseline
 
 The [`v0.2.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.2.0) is the durable shared copy of the final v0.2.0 development baseline, assembled with [`baseline-release`](#publish-a-milestone-baseline) for [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63).
-Its source is annotated tag `v0.2.0`, commit `e697ee957000f3258ba4b6fd5940458514fada5c`, and its `SHA256SUMS` digest is pinned in `scripts/baseline_fetch.py`.
+Its source is annotated tag `v0.2.0`, commit `e697ee957000f3258ba4b6fd5940458514fada5c`, and its `SHA256SUMS` digest is pinned in `scripts/baseline-fetch.py`.
 The assets have the same names and roles as the v0.1.0 assets above, with the `v0.2.0-` prefix.
 The bundles use bundle format 2: besides the original-schema fixtures, each backend retains the `evolved` and `enum` fixtures described under [inspect and restore](#inspect-and-restore), and the runtime results have 20 cases on 2.x and 21 on LTS.
 The verification archive also holds the publication review, whose findings are public dependency literals and defaults, workflow keys, and synthetic test values, each with its disposition.
@@ -171,7 +171,7 @@ Obtain them with `mise x -- just baseline-fetch v0.2.0 <new-output>`; the releas
 ## Retained v0.3.0 baseline
 
 The [`v0.3.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.3.0) is the durable shared copy of the final v0.3.0 development baseline, assembled with [`baseline-release`](#publish-a-milestone-baseline) for [#146](https://github.com/flink-gcp/flink-datastream-protobuf/issues/146).
-Its source is annotated tag `v0.3.0`, commit `142862b9d86f449e3e4894715602a991a018fd63`, and its `SHA256SUMS` digest is pinned in `scripts/baseline_fetch.py`.
+Its source is annotated tag `v0.3.0`, commit `142862b9d86f449e3e4894715602a991a018fd63`, and its `SHA256SUMS` digest is pinned in `scripts/baseline-fetch.py`.
 The assets have the same names and roles as the v0.1.0 assets above, with the `v0.3.0-` prefix.
 The bundles use bundle format 3: besides the format 2 fixtures, each backend retains the `dynamic` fixture and each Flink version the DynamicMessage snapshot fixture described under [inspect and restore](#inspect-and-restore), and the runtime results have 25 cases on 2.x and 26 on LTS.
 The verification archive also holds the publication review; its findings are public dependency literals and defaults, workflow keys, and synthetic test values, and its reviewed files are the tracked CI Maven settings, `.github/maven/settings.xml`, in each source archive, each with its disposition.
@@ -198,7 +198,7 @@ With `--archives <directory>`, archives are kept in that directory instead and r
 
 The checks run in this order:
 
-1. The SHA-256 of the downloaded `SHA256SUMS` must equal the digest pinned for the tag in `scripts/baseline_fetch.py`, before any archive is downloaded.
+1. The SHA-256 of the downloaded `SHA256SUMS` must equal the digest pinned for the tag in `scripts/baseline-fetch.py`, before any archive is downloaded.
 2. `FINAL-BASELINE.json`, `INVENTORY.json`, and each selected archive must match their `SHA256SUMS` entries, and each archive must also match the name, size, and checksum recorded in `FINAL-BASELINE.json`.
 3. `FINAL-BASELINE.json` and `INVENTORY.json` must agree on each bundle's file count, total size, inner `SHA256SUMS` hash, and the `library.jar` and `tools.jar` hashes in the embedded manifest.
 4. Extraction accepts only directories and regular files under the bundle's top-level directory, with plain path components.

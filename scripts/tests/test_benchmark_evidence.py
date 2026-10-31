@@ -20,13 +20,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tarfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import benchmark_evidence as gate
+from conftest import load_script
+
+gate = load_script("benchmark-evidence.py")
 
 RESULT = "PROTOBUF_NATIVE-scalar-serialize-0.json"
 EVENTS = "PROTOBUF_NATIVE-scalar-serialize-allocation-execution-events.json"
@@ -284,7 +284,9 @@ def test_directory_copy_and_manifest_bind_exact_bytes(tmp_path):
     report = json.loads((output / "inventory.json").read_text())
     assert gate.digest(original) == report["members"][0]["sha256"]
     assert report["humanReviewRequired"]
-    assert gate.digest(Path(gate.__file__).read_bytes()) == report["validatorSha256"]
+    scripts = Path(__file__).resolve().parents[1]
+    validator = (scripts / "benchmark-evidence.py").read_bytes() + (scripts / "lib/credential_rules.py").read_bytes()
+    assert gate.digest(validator) == report["validatorSha256"]
     with pytest.raises(gate.Rejected, match="output-exists"):
         gate.check(source, output)
 

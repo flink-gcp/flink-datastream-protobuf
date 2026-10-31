@@ -19,14 +19,14 @@ import io
 import os
 from pathlib import Path
 import subprocess
-import sys
 import warnings
 import zipfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import release_artifacts as release
+from conftest import load_script
+
+release = load_script("release-artifacts.py")
 
 VERSION = "1.0.0"
 LTS = VERSION + "-1.20"

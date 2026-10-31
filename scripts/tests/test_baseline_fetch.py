@@ -20,13 +20,13 @@ import json
 import os
 from pathlib import Path
 import shutil
-import sys
 import tarfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import baseline_fetch as fetcher
+from conftest import load_script
+
+fetcher = load_script("baseline-fetch.py")
 
 TAG = "v0.1.0"
 BUNDLE = "flink1-pb3"
@@ -455,7 +455,7 @@ def run_result(monkeypatch, returncode):
     def run(command, **options):
         calls.append((command, options))
         return type("Result", (), {"returncode": returncode})()
-    monkeypatch.setattr(fetcher.subprocess, "run", run)
+    monkeypatch.setattr("subprocess.run", run)
     return calls
 
 

@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Runs one benchmark plan on a temporary VM created without a service account.
-# scripts/gce_benchmark.py uploads the inputs and starts this script as a root systemd unit.
+# scripts/gce-benchmark.py uploads the inputs and starts this script as a root systemd unit.
 set -euo pipefail
 # Command substitutions such as source=$(checkout ...) must also stop on the first failure.
 shopt -s inherit_errexit
