@@ -103,6 +103,8 @@ class EvidenceTest(unittest.TestCase):
                  ("allocation-and-execution-samples.json", encoded(summary)),
                  ("manifest.properties", b"java.version=17\nsource.status=\n"),
                  ("PROTOBUF_CHILL-opened.properties", b"lane=PROTOBUF_CHILL\nstatus=unsupported\nreason=synthetic\n"),
+                 ("PROTOBUF_DYNAMIC-plain.properties", b"lane=PROTOBUF_DYNAMIC\nstatus=supported\n"),
+                 ("PROTOBUF_DYNAMIC_FOREIGN-plain.properties", b"lane=PROTOBUF_DYNAMIC_FOREIGN\nstatus=supported\n"),
                  ("measurement-source.patch", b"--- a/source\n+++ b/source\n"),
                  ("console.log", b"Incomplete benchmark; synthetic failure\n"),
                  ("vm-manifest.txt", b"gce.machine.type=c3-standard-8\n"),

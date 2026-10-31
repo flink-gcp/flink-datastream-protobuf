@@ -526,6 +526,8 @@ Generation requires the Thrift compiler pinned in `benchmarks.just`; `just bench
 On macOS, put a modern Bison ahead of `/usr/bin/bison`, which is too old (Homebrew's `bison` is keg-only, so prepend `$(brew --prefix bison)/bin` to `PATH`); after fixing `PATH`, rerun with the same cache without deleting `<cache>/build`.
 Set `BENCHMARK_THRIFT_COMPILER` to `<cache>/build/compiler/cpp/bin/thrift`; otherwise generation uses `thrift` from `PATH` and rejects any other version.
 The [0.1.0 benchmark report](validation/serializer-benchmarks-v0.1.0.md) documents the corpus, operation semantics, matrices, and evidence format.
+Beyond the lanes of that report, the suite measures two DynamicMessage lanes over the generated lane's schema and corpus: `PROTOBUF_DYNAMIC` values carry the serializer's own descriptors, and `PROTOBUF_DYNAMIC_FOREIGN` values carry an equal-content descriptor from another instance.
+`just benchmark-run` writes their paired time ratios to `dynamic.csv` without a verdict, as [ADR-0004](adr/0004-serializer-benchmarks.md) decides.
 `just benchmark-pair` keeps the long-run fork, warmup, measurement, and block-order settings but measures only the native and Chill Protobuf lanes.
 Use it for controlled comparisons of native serializer changes; it does not replace a complete cross-format baseline.
 These recipes do not replace ordinary native verification or binary compatibility checks.
@@ -599,7 +601,7 @@ Before `execute`, confirm that the plan targets the intended project and billing
 `plan` counts every VM against the regional `CPUS`, machine-family (for example `C3_CPUS`), `INSTANCES`, and `IN_USE_ADDRESSES` quotas, because each VM uses an ephemeral external address for SSH, and against the project-wide `CPUS_ALL_REGIONS` quota.
 It reads each quota from its own scope and skips a quota that GCE does not report.
 Recheck current Compute Engine and persistent-disk pricing for the zone; the plan reports estimated VM-hours, not a price.
-Each VM's estimate is 25 minutes of setup plus a per-variant time that includes both load gates: 20 minutes for `check`, 25 for `smoke`, 95 for `pair`, and 300 for `run`.
+Each VM's estimate is 25 minutes of setup plus a per-variant time that includes both load gates: 20 minutes for `check`, 25 for `smoke`, 95 for `pair`, and 370 for `run`.
 The VM-hour estimate sums all VMs, including repeated variants, and the wall-clock estimate is the longest VM's.
 For the four variants of the comparison example in `pair` mode, the sequential placement takes one VM for 6.75 hours; the pairwise placement takes three VMs for 3.58 hours each, 10.75 VM-hours, so two such profiles need six VMs, 48 vCPUs on `c3-standard-8`, against the quotas above.
 `--approve` records that review; no other command creates resources.

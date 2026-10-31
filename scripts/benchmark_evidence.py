@@ -36,7 +36,7 @@ MAX_FILE = 64 * 1024 * 1024
 MAX_TOTAL = 256 * 1024 * 1024
 MAX_DEPTH = 64
 EVIDENCE_ROOT = "docs/validation/data"
-LANE = r"(?:POJO|TUPLE|AVRO_GENERIC|AVRO_SPECIFIC|KRYO|PROTOBUF_NATIVE|PROTOBUF_CHILL|THRIFT_CHILL)"
+LANE = r"(?:POJO|TUPLE|AVRO_GENERIC|AVRO_SPECIFIC|KRYO|PROTOBUF_NATIVE|PROTOBUF_CHILL|PROTOBUF_DYNAMIC|PROTOBUF_DYNAMIC_FOREIGN|THRIFT_CHILL)"
 WORKLOAD = r"(?:scalar|text|nested|collections|large)"
 OPERATION = r"(?:serialize|deserialize|objectCopy|streamCopy|deserializeReuse|objectCopyReuse|serializeSameInstance|buildAndSerialize)"
 CASE = LANE + "-" + WORKLOAD + "-" + OPERATION
@@ -55,6 +55,7 @@ TEXT_NAMES = {
 CSV_HEADERS = {
     "measurements.csv": "lane,workload,operation,deterministic,block,ns_per_op,derived_ops_per_second,allocated_bytes_per_op",
     "parity.csv": "workload,operation,native_over_chill,lower95,upper95,verdict",
+    "dynamic.csv": "workload,operation,dynamic_over_generated,dynamic_lower95,dynamic_upper95,foreign_over_own,foreign_lower95,foreign_upper95",
     "summary.csv": "protobuf_major,lane,workload,operation,mean_ns_per_op,min_fork_ns,max_fork_ns,mean_allocated_bytes_per_op,corpus_encoded_mean_bytes",
 }
 MANIFEST_KEYS = set("benchmark.flink.version benchmark.library.jar benchmark.protobuf.version benchmark.protoc.version benchmark.thrift.compiler corpus.records corpus.seed cpu cpu.count java.vendor java.version java.vm.name java.vm.version jmh.version jvm.arguments machine memory.bytes os.arch os.name os.version source.revision source.status thrift.compiler.version timestamp.utc".split())

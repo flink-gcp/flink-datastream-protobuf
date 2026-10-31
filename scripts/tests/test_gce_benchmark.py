@@ -287,8 +287,8 @@ class GceBenchmarkTest(unittest.TestCase):
                          [(vm["name"], [v["name"] for v in vm["variants"]]) for vm in plan["vms"]])
         self.assertEqual("protobuf-4-b1.patch", plan["vms"][1]["variants"][0]["patch"])
         self.assertEqual([[["a1", "a2"]], [], []], [vm["comparisons"] for vm in plan["vms"]])
-        self.assertEqual([25 + 2 * 300, 25 + 300, 25 + 300], [vm["estimatedMinutes"] for vm in plan["vms"]])
-        self.assertEqual((21.25, 10.42), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
+        self.assertEqual([25 + 2 * 370, 25 + 370, 25 + 370], [vm["estimatedMinutes"] for vm in plan["vms"]])
+        self.assertEqual((25.92, 12.75), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
         gcloud = FakeGcloud()
         plan = self.planned(gcloud, name="grouped", profiles=GROUPED)
         with contextlib.redirect_stdout(io.StringIO()):
@@ -312,8 +312,8 @@ class GceBenchmarkTest(unittest.TestCase):
                           (PB3, ["candidate"], [])],
                          [(vm["name"], [v["name"] for v in vm["variants"]], vm["comparisons"]) for vm in plan["vms"]])
         # Six variant runs instead of four, but the longest VM measures two instead of four.
-        self.assertEqual([25 + 2 * 300] * 3 + [25 + 300], [vm["estimatedMinutes"] for vm in plan["vms"]])
-        self.assertEqual((36.67, 10.42), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
+        self.assertEqual([25 + 2 * 370] * 3 + [25 + 370], [vm["estimatedMinutes"] for vm in plan["vms"]])
+        self.assertEqual((44.83, 12.75), (plan["estimatedVmHours"], plan["estimatedWallHours"]))
         gcloud = FakeGcloud(quotas=roomy)
         plan = self.planned(gcloud, name="chain", profiles=CHAIN)
         with contextlib.redirect_stdout(io.StringIO()):

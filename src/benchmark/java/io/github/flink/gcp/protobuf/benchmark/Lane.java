@@ -29,11 +29,16 @@ import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.runtime.PojoSerializer;
 import org.apache.flink.api.java.typeutils.runtime.TupleSerializer;
 import org.apache.flink.api.java.typeutils.runtime.kryo.KryoSerializer;
+import org.apache.flink.core.memory.DataInputDeserializer;
+import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.formats.avro.typeutils.AvroSerializer;
 import org.apache.flink.formats.avro.typeutils.AvroTypeInfo;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.DynamicMessage;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.twitter.chill.protobuf.ProtobufSerializer;
 import com.twitter.chill.thrift.TBaseSerializer;
 import io.github.flink.gcp.protobuf.ProtobufTypeInformation;
@@ -42,6 +47,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.IndexedRecord;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
@@ -50,8 +56,16 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
-/** Explicit representation and Flink serializer selection; no registry mutation. */
+/**
+ * Explicit representation and Flink serializer selection; no registry mutation.
+ *
+ * <p>The two DynamicMessage lanes use descriptor-bound native type information over the generated
+ * lane's schema and corpus. {@code PROTOBUF_DYNAMIC} values carry the serializer's own descriptors;
+ * {@code PROTOBUF_DYNAMIC_FOREIGN} values carry an equal-content descriptor from another instance,
+ * so writing them takes the serializer's descriptor-acceptance cache path.
+ */
 public enum Lane {
     POJO,
     TUPLE,
@@ -59,8 +73,14 @@ public enum Lane {
     AVRO_GENERIC,
     PROTOBUF_NATIVE,
     PROTOBUF_CHILL,
+    PROTOBUF_DYNAMIC,
+    PROTOBUF_DYNAMIC_FOREIGN,
     THRIFT_CHILL,
     KRYO;
+
+    public boolean dynamic() {
+        return this == PROTOBUF_DYNAMIC || this == PROTOBUF_DYNAMIC_FOREIGN;
+    }
 
     public boolean generic() {
         return this == PROTOBUF_CHILL || this == THRIFT_CHILL || this == KRYO;
@@ -106,6 +126,13 @@ public enum Lane {
             case PROTOBUF_NATIVE -> {
                 info =
                         ProtobufTypeInformation.newBuilder(BenchmarkProtos.Record.class)
+                                .deterministicSerialization(deterministic)
+                                .build();
+                expected = Class.forName("io.github.flink.gcp.protobuf.ProtobufTypeSerializer");
+            }
+            case PROTOBUF_DYNAMIC, PROTOBUF_DYNAMIC_FOREIGN -> {
+                info =
+                        ProtobufTypeInformation.newBuilder(DynamicRecords.rebuild())
                                 .deterministicSerialization(deterministic)
                                 .build();
                 expected = Class.forName("io.github.flink.gcp.protobuf.ProtobufTypeSerializer");
@@ -240,6 +267,38 @@ public enum Lane {
         return result.toString();
     }
 
+    /**
+     * Returns the record construction for values written by this serializer.
+     *
+     * <p>The own-descriptor lane takes the serializer's descriptors from a value it decoded, as a
+     * downstream operator receives it. A serializer keeps the descriptor its type information was
+     * built with, but one that Java deserialization created, as on a TaskManager, rebuilds them.
+     */
+    public Function<Corpus.Value, Object> encoder(TypeSerializer<Object> serializer)
+            throws IOException {
+        if (!dynamic()) {
+            return this::encode;
+        }
+        DynamicRecords foreign = new DynamicRecords(DynamicRecords.rebuild());
+        if (this == PROTOBUF_DYNAMIC_FOREIGN) {
+            return foreign::build;
+        }
+        return new DynamicRecords(
+                        decodedDescriptor(serializer, foreign.build(Corpus.value("scalar", 0))))
+                ::build;
+    }
+
+    /** Writes and reads one DynamicMessage value and returns the decoded value's descriptor. */
+    static Descriptor decodedDescriptor(TypeSerializer<Object> serializer, Object value)
+            throws IOException {
+        DataOutputSerializer output = new DataOutputSerializer(4096);
+        serializer.serialize(value, output);
+        return ((DynamicMessage)
+                        serializer.deserialize(new DataInputDeserializer(output.getCopyOfBuffer())))
+                .getDescriptorForType();
+    }
+
+    /** Builds a record for lanes whose values do not depend on the serializer instance. */
     public Object encode(Corpus.Value v) {
         return switch (this) {
             case POJO -> pojo(v);
@@ -275,6 +334,8 @@ public enum Lane {
                 yield b.build();
             }
             case AVRO_SPECIFIC, AVRO_GENERIC -> avro(v);
+            case PROTOBUF_DYNAMIC, PROTOBUF_DYNAMIC_FOREIGN ->
+                    throw new IllegalStateException(this + " values need encoder(serializer)");
             case THRIFT_CHILL -> {
                 var t = new io.github.flink.gcp.protobuf.benchmark.generated.thrift.Record();
                 t.setId(v.id())
@@ -366,6 +427,14 @@ public enum Lane {
                     new Corpus.Child(p.child.code, p.child.name),
                     p.values,
                     p.attributes);
+        }
+        if (object instanceof DynamicMessage p) {
+            // Compare the wire content through the generated decoder of the same schema.
+            try {
+                return decode(BenchmarkProtos.Record.parseFrom(p.toByteString()));
+            } catch (InvalidProtocolBufferException e) {
+                throw new IllegalStateException(e);
+            }
         }
         if (object instanceof BenchmarkProtos.Record p) {
             return Corpus.decoded(

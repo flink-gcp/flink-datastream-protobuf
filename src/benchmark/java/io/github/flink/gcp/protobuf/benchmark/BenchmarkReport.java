@@ -19,6 +19,7 @@ package io.github.flink.gcp.protobuf.benchmark;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -61,70 +62,95 @@ public final class BenchmarkReport {
         List<String> parity =
                 new ArrayList<>(
                         List.of("workload,operation,native_over_chill,lower95,upper95,verdict"));
+        // Descriptive DynamicMessage ratios; ADR-0004 declares no tolerance for them.
+        List<String> dynamic =
+                new ArrayList<>(
+                        List.of(
+                                "workload,operation,dynamic_over_generated,dynamic_lower95,"
+                                        + "dynamic_upper95,foreign_over_own,foreign_lower95,"
+                                        + "foreign_upper95"));
         for (String workload : Corpus.WORKLOADS) {
             for (String operation : BenchmarkSuite.OPERATIONS) {
-                double[] logRatios = new double[5];
-                boolean supported = true;
-                for (int block = 0; block < 5; block++) {
-                    Path n =
-                            directory.resolve(
-                                    "PROTOBUF_NATIVE-"
-                                            + workload
-                                            + "-"
-                                            + operation
-                                            + "-"
-                                            + block
-                                            + ".json");
-                    Path c =
-                            directory.resolve(
-                                    "PROTOBUF_CHILL-"
-                                            + workload
-                                            + "-"
-                                            + operation
-                                            + "-"
-                                            + block
-                                            + ".json");
-                    if (!Files.exists(n) || !Files.exists(c)) {
-                        supported = false;
-                        break;
-                    }
-                    logRatios[block] =
-                            Math.log(
-                                    mapper.readTree(n.toFile())
-                                                    .get(0)
-                                                    .get("primaryMetric")
-                                                    .get("score")
-                                                    .asDouble()
-                                            / mapper.readTree(c.toFile())
-                                                    .get(0)
-                                                    .get("primaryMetric")
-                                                    .get("score")
-                                                    .asDouble());
-                }
-                if (!supported) {
+                double[] interval =
+                        ratio(
+                                directory,
+                                mapper,
+                                workload,
+                                operation,
+                                Lane.PROTOBUF_NATIVE,
+                                Lane.PROTOBUF_CHILL);
+                if (interval == null) {
                     parity.add(workload + "," + operation + ",,,,unsupported");
-                    continue;
+                } else {
+                    String verdict =
+                            interval[2] <= 1.10
+                                    ? "established"
+                                    : interval[1] > 1.10 ? "missed" : "inconclusive";
+                    parity.add(workload + "," + operation + "," + join(interval) + "," + verdict);
                 }
-                double[] interval = interval(logRatios);
-                String verdict =
-                        interval[2] <= 1.10
-                                ? "established"
-                                : interval[1] > 1.10 ? "missed" : "inconclusive";
-                parity.add(
-                        workload
-                                + ","
-                                + operation
-                                + ","
-                                + interval[0]
-                                + ","
-                                + interval[1]
-                                + ","
-                                + interval[2]
-                                + ","
-                                + verdict);
+                double[] dynamicOverGenerated =
+                        ratio(
+                                directory,
+                                mapper,
+                                workload,
+                                operation,
+                                Lane.PROTOBUF_DYNAMIC,
+                                Lane.PROTOBUF_NATIVE);
+                double[] foreignOverOwn =
+                        ratio(
+                                directory,
+                                mapper,
+                                workload,
+                                operation,
+                                Lane.PROTOBUF_DYNAMIC_FOREIGN,
+                                Lane.PROTOBUF_DYNAMIC);
+                if (dynamicOverGenerated != null && foreignOverOwn != null) {
+                    dynamic.add(
+                            workload
+                                    + ","
+                                    + operation
+                                    + ","
+                                    + join(dynamicOverGenerated)
+                                    + ","
+                                    + join(foreignOverOwn));
+                }
             }
         }
+        // Pair mode measures no DynamicMessage lane and writes no DynamicMessage report.
+        if (dynamic.size() > 1) {
+            Files.write(directory.resolve("dynamic.csv"), dynamic);
+        }
         Files.write(directory.resolve("parity.csv"), parity);
+    }
+
+    /** Returns the paired-block interval of numerator/denominator time, or null if absent. */
+    static double[] ratio(
+            Path directory,
+            ObjectMapper mapper,
+            String workload,
+            String operation,
+            Lane numerator,
+            Lane denominator)
+            throws IOException {
+        double[] logRatios = new double[5];
+        for (int block = 0; block < 5; block++) {
+            String suffix = "-" + workload + "-" + operation + "-" + block + ".json";
+            Path n = directory.resolve(numerator + suffix);
+            Path d = directory.resolve(denominator + suffix);
+            if (!Files.exists(n) || !Files.exists(d)) {
+                return null;
+            }
+            logRatios[block] = Math.log(score(mapper, n) / score(mapper, d));
+        }
+        return interval(logRatios);
+    }
+
+    private static double score(ObjectMapper mapper, Path file) throws IOException {
+        return mapper.readTree(file.toFile()).get(0).get("primaryMetric").get("score").asDouble();
+    }
+
+    private static String join(double[] interval) {
+        return interval[0] + "," + interval[1] + "," + interval[2];
     }
 
     static double[] interval(double[] logRatios) {
