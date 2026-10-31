@@ -117,6 +117,9 @@ def test_triggers_permissions_and_guards():
     assert WORKFLOW["concurrency"] == {"group": "release", "cancel-in-progress": False}
     assert JOB["if"] == "github.repository_id == '1358906035'"
     assert JOB["environment"] == "release"
+    # The mirror settings are global, so setup-java's user settings with the central server stay in effect.
+    assert JOB["env"] == {"MAVEN_ARGS": "--global-settings ${{ github.workspace }}/.github/maven/settings.xml"}
+    assert all(not step.get("uses", "").startswith("./.github/actions/maven") for step in JOB["steps"])
     checkout = JOB["steps"][0]
     assert checkout["with"]["persist-credentials"] is False and checkout["with"]["fetch-depth"] == 0
     assert STEPS["Assert the commit is on main"]["if"] == NOT_REHEARSAL

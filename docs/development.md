@@ -615,6 +615,7 @@ It is not a `<mirror>`, so an artifact that the mirror has not synced yet still 
 The action also sets `MVNW_REPOURL`, so the Maven Wrapper downloads Maven itself from the mirror, but only when the mirror holds the Maven version of every checkout's wrapper; otherwise it reports a warning and the wrapper downloads from Central, because `MVNW_REPOURL` replaces the wrapper's only URL.
 The Docs build calls the controller checkout's action, because the milestone sources it builds predate it.
 Local builds read neither variable and resolve from Central.
+The `Release` job sets `MAVEN_ARGS` to pass the same file with `--global-settings`, because `--settings` would replace the user settings in which `actions/setup-java` names the `central` server; it restores no Maven cache, and its Maven Wrapper downloads Maven from Central.
 
 The action then restores `~/.m2/repository` and `~/.m2/wrapper`, in place of `setup-java`'s `cache: maven`.
 Its key hashes every `pom.xml`, the wrapper properties, and the CI settings, and the `maven-repository-` prefix restores the newest entry when the exact key is missing.

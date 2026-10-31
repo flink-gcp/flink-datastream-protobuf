@@ -16,8 +16,9 @@ limitations under the License.
 -->
 <!--
 CI-only Maven settings that the .github/actions/maven action passes through MAVEN_ARGS
-(issue #135): Google's mirror of Maven Central is a repository ahead of Central, not a
-<mirror> of it. "CI Maven resolution" in docs/development.md describes the boundary.
+(issue #135), and that the Release job passes as global settings: Google's mirror of Maven
+Central is a repository ahead of Central, not a <mirror> of it. "CI Maven resolution" in
+docs/development.md describes the boundary.
 -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
     <profiles>
