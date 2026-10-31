@@ -26,7 +26,7 @@ limitations under the License.
 | [ADR-0002](0002-build-and-development-workflow.md) | A single Maven module with a shared local and CI workflow | Accepted |
 | [ADR-0003](0003-flink-version-compatibility.md) | Current/previous Flink 2.x minors and a separate 1.20 LTS build | Accepted; replaces ADR-0001's runtime scope |
 | [ADR-0004](0004-serializer-benchmarks.md) | Opt-in serializer benchmarks and practical comparison contract | Accepted |
-| [ADR-0005](0005-descriptor-bound-dynamic-messages.md) | Descriptor-bound DynamicMessage type and snapshot contracts | Accepted; extends ADR-0001; implemented, with runtime restore validation in #23 |
+| [ADR-0005](0005-descriptor-bound-dynamic-messages.md) | Descriptor-bound DynamicMessage type and snapshot contracts | Accepted; extends ADR-0001; implemented and validated |
 
 These records distinguish accepted design from implemented behavior.
 The native serializer, application-facing type integration, and versioned descriptor snapshots are implemented.

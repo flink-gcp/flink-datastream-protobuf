@@ -39,7 +39,7 @@ mise x -- just examples-verify 2.2.1 4 "$example_repo"
 
 Keep `example_repo` set for the following commands in the same shell.
 The recipe builds the Flink 2.x library with Protobuf 4 at its 2.2.1 compile floor, installs it locally, and compiles and tests the independent application against that jar.
-It also packages the application, launches all three entrypoints using the packaged classes, and checks the Maven launch commands below.
+It also packages the application, launches all four entrypoints using the packaged classes, and checks the Maven launch commands below.
 It needs neither a running Flink cluster nor Docker.
 Initial dependency downloads require network access.
 
@@ -118,10 +118,21 @@ Each record contains the account, running total, and previous event amount for t
 This bounded job demonstrates ValueState and MapState values; it is not a checkpoint/savepoint recovery test.
 See [state and recovery](usage.md#state-and-recovery) for persistent-state usage and the separate recovery evidence.
 
+Run the DynamicMessage example, which builds its descriptor from a descriptor set in the application jar instead of using the generated class:
+
+```sh
+mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
+  "-Dmaven.repo.local=$example_repo" \
+  exec:exec@dynamic
+```
+
+The result includes `alice:2`, `alice:5`, `alice:9`, and `bob:7`, the running total for each account.
+See [DynamicMessage values](dynamic-messages.md) for the descriptor, type information, and field-access rules that it follows.
+
 ## Submit the packaged application
 
 The verified application jar is `examples/datastream/target/example-job.jar`.
-It contains the example classes, generated Event, library, and unrelocated Protobuf runtime.
+It contains the example classes, generated Event, the Event descriptor set `event.pb`, library, and unrelocated Protobuf runtime.
 It excludes Flink classes, which the matching Flink distribution supplies.
 Submit the explicit example to a running Flink 2.2.1 cluster with:
 
@@ -129,7 +140,7 @@ Submit the explicit example to a running Flink 2.2.1 cluster with:
 "$FLINK_HOME/bin/flink" run examples/datastream/target/example-job.jar
 ```
 
-Use `-c io.github.flink.gcp.protobuf.examples.StatefulExample` for the state entrypoint.
+Use `-c io.github.flink.gcp.protobuf.examples.StatefulExample` for the state entrypoint and `-c io.github.flink.gcp.protobuf.examples.DynamicExample` for the DynamicMessage entrypoint.
 For the registration entrypoint, use `-c io.github.flink.gcp.protobuf.examples.RegisteredExample` and pass `examples/datastream/config` after the jar path; that directory must be available where the entrypoint executes.
 Avoid supplying a second, conflicting Protobuf runtime through the cluster classpath.
 The tests launch the packaged entrypoints locally with Flink dependencies; they do not deploy a remote cluster.

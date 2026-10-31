@@ -142,6 +142,7 @@ A field removed with a reservation remains in restored values as an unknown fiel
 The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores savepoints and checkpoints written by the retained 0.1.0 and 0.2.0 artifacts with the current library, unchanged and with the field addition and the reserved field removal, and requires the type change to be rejected.
 It runs for each retained bundle at the Flink and Protobuf versions that wrote and read it, on HashMap and RocksDB.
 It also restores state that the 0.2.0 artifact wrote after the field addition, and state of an enum-bearing schema unchanged and with an added enum value; the retained 0.1.0 runtime schema declares no enum.
+DynamicMessage state follows the same schema-change rules; the [DynamicMessage recovery tests](validation/runtime-recovery.md#dynamicmessage) verify them with state that the same development build writes, and no earlier milestone wrote DynamicMessage state.
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 

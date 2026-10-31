@@ -37,7 +37,8 @@ class PackagedExamplesIT {
     @TempDir Path directory;
 
     @ParameterizedTest
-    @ValueSource(strings = {"ExplicitExample", "RegisteredExample", "StatefulExample"})
+    @ValueSource(
+            strings = {"ExplicitExample", "RegisteredExample", "StatefulExample", "DynamicExample"})
     void runsThePackagedEntrypoint(String mainClass) throws Exception {
         Path jar = Path.of("target/example-job.jar").toAbsolutePath();
         try (var archive = new JarFile(jar.toFile())) {
@@ -46,6 +47,7 @@ class PackagedExamplesIT {
                     .contains(
                             "io/github/flink/gcp/protobuf/ProtobufTypeInformation.class",
                             "io/github/flink/gcp/protobuf/examples/generated/Event.class",
+                            "event.pb",
                             "com/google/protobuf/Message.class",
                             "META-INF/LICENSE",
                             "META-INF/NOTICE");
@@ -102,6 +104,8 @@ class PackagedExamplesIT {
                 case "RegisteredExample" -> assertThat(text).contains("alice:2", "bob:7");
                 case "StatefulExample" ->
                         assertThat(text).contains("alice:2:0", "bob:7:0", "alice:5:2", "alice:9:3");
+                case "DynamicExample" ->
+                        assertThat(text).contains("alice:2", "bob:7", "alice:5", "alice:9");
                 default -> throw new AssertionError(mainClass);
             }
         } finally {

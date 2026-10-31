@@ -38,7 +38,7 @@ Changing the generated code or the runtime is a separate update with its own rul
 
 ## Upgrade to 0.3.0
 
-0.3.0 adds [DynamicMessage values](usage.md#dynamicmessage-values) and leaves the generated-message API, snapshot format, and schema-change rules of 0.2.0 unchanged.
+0.3.0 adds [DynamicMessage values](dynamic-messages.md) and leaves the generated-message API, snapshot format, and schema-change rules of 0.2.0 unchanged.
 Two direct paths are tested, from 0.2.0 and from 0.1.0.
 The path from 0.1.0 also includes the [0.2.0 changes](#changes-from-010), and its tested results are the [0.1.0 results](#tested-restore-results) below.
 
