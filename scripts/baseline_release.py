@@ -171,7 +171,7 @@ def checked_controls(verification, outcomes):
                 "Negative control did not reject with its message before creating output: " + name)
 
 
-def members(name, data, findings, depth=0):
+def members(name, data, findings, depth=0, whole=None):
     """Yields (name, searchable bytes) for a file and, recursively, for what its archives and streams hold.
 
     A file's bytes other than its archive members' contents, such as a launcher prefix, local headers,
@@ -179,7 +179,10 @@ def members(name, data, findings, depth=0):
     as their own entries. An archive, stream, or member that cannot be read, or one nested too deeply to
     search, becomes a finding identified by its container's bytes. Like the evidence gate's rules, this
     supports human review of bytes this project produced; it does not detect deliberately hidden content.
+    When given, whole(name, data) receives every file and member with its complete bytes, contents included.
     """
+    if whole is not None:
+        whole(name, data)
     expanded = expand(name, data, findings, depth >= MAX_ARCHIVE_DEPTH)
     if expanded is None:
         yield name, data
@@ -187,7 +190,7 @@ def members(name, data, findings, depth=0):
     outside, nested = expanded
     yield name, outside
     for entry, body in nested:
-        yield from members(entry, body, findings, depth + 1)
+        yield from members(entry, body, findings, depth + 1, whole)
 
 
 def tar_header(data):
@@ -278,22 +281,36 @@ def patterns():
 
 
 def scan(work):
-    """Returns the sensitive file names and the findings in every bundle file and reader output."""
+    """Returns the files with sensitive names and the findings in every bundle file and reader output.
+
+    Each flagged file is identified by its name and the SHA-256 of its complete bytes, including the
+    contents of an archive, like a finding.
+    """
     verification = work / "verification"
     require(verification.is_dir() and not verification.is_symlink(), "Run read before review: " + str(verification))
     rules = patterns()
     roots = [(bundle_directory(work, bundle), bundle) for bundle in BUNDLES] + [(verification, "verification")]
     flagged, findings = [], []
+
+    def sensitive(name):
+        return any(fnmatch.fnmatch(re.split(r"[/:]", name)[-1], pattern) for pattern in SENSITIVE_NAMES)
+
+    def flag(name, data):
+        if sensitive(name):
+            flagged.append(finding(name, "sensitive-name", data))
+
     for root, prefix in roots:
         for path in sorted(root.rglob("*")):
             # A link could expose or, when the evidence is staged, overwrite a file outside the work directory.
             require(not path.is_symlink(), "Symbolic links are not retained inputs: " + str(path))
             if not path.is_file():
                 continue
-            for name, data in members(prefix + "/" + path.relative_to(root).as_posix(), path.read_bytes(), findings):
-                if any(fnmatch.fnmatch(re.split(r"[/:]", name)[-1], pattern) for pattern in SENSITIVE_NAMES):
-                    flagged.append(name)
+            relative = prefix + "/" + path.relative_to(root).as_posix()
+            for name, data in members(relative, path.read_bytes(), findings, whole=flag):
                 findings += [finding(name, kind, data) for kind, pattern in rules.items() if pattern.search(data)]
+    # A member that cannot be read keeps its name, which is flagged by the bytes of its archive.
+    flagged += [dict(f, kind="sensitive-name") for f in findings
+                if f["kind"] == "unreadable-archive-member" and sensitive(f["path"])]
     return flagged, findings
 
 
@@ -303,32 +320,43 @@ def review(work):
     require(not os.path.lexists(target), "Publication review already exists: " + str(target))
     flagged, findings = scan(work)
     record = {"scope": "All retained bundle files and nested ZIP/JAR members, plus reader outputs",
-              "raw_jvm_diagnostics_or_credential_files": flagged, "reviewed_matches": [],
-              "unresolved_matches": findings}
+              "raw_jvm_diagnostics_or_credential_files": flagged, "reviewed_files": [],
+              "reviewed_matches": [], "unresolved_matches": findings}
     target.write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
     print("%d flagged files and %d unresolved matches in %s" % (len(flagged), len(findings), target))
-    print("Inspect each entry; move a harmless match to reviewed_matches with a disposition before assemble.")
+    print("Inspect each entry; move a harmless file to reviewed_files and a harmless match to reviewed_matches,")
+    print("each with a disposition, before assemble.")
 
 
 def checked_review(work, readme):
     """Rescans the work directory and requires the review to explain exactly what the scan finds now.
 
-    The README and the dispositions are published too, so they must not match a credential rule.
+    A flagged file and a finding are explained only by an entry with the same path, rule, and SHA-256 and a
+    disposition. Only a flagged member of a bundle's source archive, which the tagged revision already
+    publishes, can be explained; a diagnostic or credential file elsewhere always blocks assembly. The README
+    and the dispositions are published too, so they must not match a credential rule.
     """
     record = json.loads((work / REVIEW).read_text(encoding="utf-8"))
     require(record.get("raw_jvm_diagnostics_or_credential_files") == []
             and record.get("unresolved_matches") == [],
             "Publication review has flagged files or unresolved matches: " + str(work / REVIEW))
-    reviewed = record.get("reviewed_matches", [])
-    require(all(match.get("disposition", "").strip() for match in reviewed),
-            "Every reviewed match needs a disposition")
-    published = [readme.encode()] + [m.get("disposition", "").encode() for m in reviewed]
+    reviewed, files = record.get("reviewed_matches", []), record.get("reviewed_files", [])
+    require(all(entry.get("disposition", "").strip() for entry in reviewed + files),
+            "Every reviewed match or file needs a disposition")
+    require(all(entry.get("path", "").partition("/source.zip:")[0] in BUNDLES
+                and ":" not in entry.get("path", "").partition("/source.zip:")[2] for entry in files),
+            "Only members of a bundle's source archive can be reviewed files")
+    published = [readme.encode()] + [entry.get("disposition", "").encode() for entry in reviewed + files]
     require(not any(pattern.search(text) for text in published for pattern in patterns().values()),
             "README.md or a disposition matches a credential rule")
     flagged, findings = scan(work)
-    require(not flagged, "Sensitive files found: " + ", ".join(flagged[:3]))
-    current = sorted((f["path"], f["kind"], f["sha256"]) for f in findings)
-    require(current == sorted((m.get("path"), m.get("kind"), m.get("sha256")) for m in reviewed),
+
+    def identities(entries):
+        return sorted((entry.get("path"), entry.get("kind"), entry.get("sha256")) for entry in entries)
+
+    require(identities(flagged) == identities(files),
+            "Sensitive files do not match the reviewed files: " + ", ".join(f["path"] for f in flagged[:3]))
+    require(identities(findings) == identities(reviewed),
             "Publication review does not match the current files; run review again")
     return record
 

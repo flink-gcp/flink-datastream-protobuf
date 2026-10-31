@@ -117,7 +117,7 @@ def reviewed(work, disposition="Public dependency bytecode literal"):
     """Writes a review that explains exactly the current findings."""
     _, findings = release.scan(work)
     record = {"scope": "test", "raw_jvm_diagnostics_or_credential_files": [], "unresolved_matches": [],
-              "reviewed_matches": [dict(f, disposition=disposition) for f in findings]}
+              "reviewed_files": [], "reviewed_matches": [dict(f, disposition=disposition) for f in findings]}
     write(work / release.REVIEW, json.dumps(record))
     return record
 
@@ -223,7 +223,7 @@ class ReleaseTest(unittest.TestCase):
         for name in ("hs_err_pid42.log", "recording.jfr", "heap.hprof.gz"):
             with self.subTest(name=name):
                 write(self.work / "verification" / name, "dump")
-                self.assertRejected("Sensitive files found")
+                self.assertRejected("Sensitive files do not match the reviewed files")
                 (self.work / "verification" / name).unlink()
         for disposition in ("Synthetic value password=hunter22", 'Quoted {"password":"hunter22"}'):
             with self.subTest(disposition=disposition):
@@ -398,7 +398,7 @@ class ReleaseTest(unittest.TestCase):
         write(self.work / "bundles" / "flink2-pb3" / "deep.jar", nested)
         write(self.work / "verification" / "key.pem", "x")
         flagged, findings = release.scan(self.work)
-        self.assertEqual(["verification/key.pem"], flagged)
+        self.assertEqual(["verification/key.pem"], [f["path"] for f in flagged])
         self.assertIn("archive-too-deep", {f["kind"] for f in findings if f["path"].startswith("flink2-pb3/deep.jar")})
 
     def test_scan_searches_bytes_outside_members_and_inside_streams(self):
@@ -515,11 +515,88 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual([("x.jar:a.class", "unreadable-archive-member", digest(bytes(data)))],
                          [(f["path"], f["kind"], f["sha256"]) for f in findings])
 
+    def source_settings(self, data=b"<settings/>"):
+        """Puts a tracked CI Maven settings file into the source archive that every bundle retains."""
+        source = jar({".github/maven/settings.xml": data})
+        for bundle in release.BUNDLES:
+            write(self.work / "bundles" / bundle / "source.zip", source)
+            seal(self.work / "bundles" / bundle)
+
+    def test_reviewed_source_file_is_accepted_only_with_its_bytes(self):
+        # A tracked repository file can carry a sensitive name without a secret.
+        self.source_settings()
+        record = reviewed(self.work)
+        self.assertRejected("Sensitive files do not match the reviewed files: flink2-pb3/source.zip:.github/maven/settings.xml")
+        flagged, _ = release.scan(self.work)
+        self.assertEqual({(bundle + "/source.zip:.github/maven/settings.xml", "sensitive-name", digest(b"<settings/>"))
+                          for bundle in release.BUNDLES},
+                         {(f["path"], f["kind"], f["sha256"]) for f in flagged})
+        files = [dict(f, disposition="Repository CI settings without credentials") for f in flagged]
+        write(self.work / release.REVIEW, json.dumps(dict(record, reviewed_files=files[:-1] + [dict(files[-1], disposition=" ")])))
+        self.assertRejected("needs a disposition")
+        write(self.work / release.REVIEW, json.dumps(dict(record, reviewed_files=files[1:])))
+        self.assertRejected("Sensitive files do not match the reviewed files")
+        write(self.work / release.REVIEW, json.dumps(dict(record, reviewed_files=files)))
+        self.assemble()
+        self.assertTrue((self.work / "release").is_dir())
+
+    def test_reviewed_source_file_with_changed_bytes_is_rejected(self):
+        self.source_settings()
+        record = reviewed(self.work)
+        flagged, _ = release.scan(self.work)
+        files = [dict(f, disposition="Repository CI settings without credentials") for f in flagged]
+        self.source_settings(b"<settings><servers/></settings>")
+        write(self.work / release.REVIEW, json.dumps(dict(reviewed(self.work), reviewed_files=files)))
+        self.assertRejected("Sensitive files do not match the reviewed files")
+        self.assertNotEqual(record["reviewed_matches"], [])
+
+    def test_a_flagged_file_outside_bundle_source_archives_cannot_be_reviewed(self):
+        # Neither a reader output nor an archive in the reader outputs named like a source archive qualifies.
+        for name, data in (("settings.xml", b"<settings/>"), ("source.zip", jar({"recording.jfr": b"x"}))):
+            with self.subTest(name):
+                write(self.work / "verification" / name, data)
+                record = reviewed(self.work)
+                flagged, _ = release.scan(self.work)
+                files = [dict(f, disposition="Reader output named like a credential file") for f in flagged]
+                write(self.work / release.REVIEW, json.dumps(dict(record, reviewed_files=files)))
+                self.assertRejected("Only members of a bundle's source archive can be reviewed files")
+                (self.work / "verification" / name).unlink()
+
+    def test_an_unreadable_sensitive_member_is_flagged(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+            archive.writestr("recording.jfr", b"x" * 64)
+        data = bytearray(buffer.getvalue())
+        # Corrupting the stored content fails its CRC, so the member cannot be read.
+        data[data.index(b"x" * 64)] ^= 1
+        write(self.work / "verification" / "diagnostics.zip", bytes(data))
+        flagged, _ = release.scan(self.work)
+        self.assertEqual([("verification/diagnostics.zip:recording.jfr", "sensitive-name", digest(bytes(data)))],
+                         [(f["path"], f["kind"], f["sha256"]) for f in flagged])
+
+    def test_a_flagged_archive_is_identified_by_its_contents(self):
+        # A same-size change inside a flagged archive changes its identity, not only its outside bytes.
+        def archive(payload):
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w") as tar:
+                info = tarfile.TarInfo("payload.bin")
+                info.size = len(payload)
+                tar.addfile(info, io.BytesIO(payload))
+            return buffer.getvalue()
+        first, second = archive(b"aaaa"), archive(b"bbbb")
+        write(self.work / "verification" / "core.tar", first)
+        identity, _ = release.scan(self.work)
+        write(self.work / "verification" / "core.tar", second)
+        changed, _ = release.scan(self.work)
+        self.assertEqual([("verification/core.tar", digest(first))], [(f["path"], f["sha256"]) for f in identity])
+        self.assertEqual([("verification/core.tar", digest(second))], [(f["path"], f["sha256"]) for f in changed])
+
     def test_scan_flags_diagnostics_inside_containers_and_compression(self):
         write(self.work / "verification" / "core.42.zip", jar({"payload.bin": b"x"}))
         write(self.work / "verification" / "recording.jfr.gz", gzip.compress(b"x"))
         flagged, _ = release.scan(self.work)
-        self.assertEqual({"verification/core.42.zip", "verification/recording.jfr.gz:recording.jfr"}, set(flagged))
+        self.assertEqual({"verification/core.42.zip", "verification/recording.jfr.gz:recording.jfr"},
+                         {f["path"] for f in flagged})
 
     def test_review_writes_every_finding_unresolved_once(self):
         (self.work / release.REVIEW).unlink()
@@ -528,6 +605,7 @@ class ReleaseTest(unittest.TestCase):
         record = json.loads((self.work / release.REVIEW).read_text())
         self.assertEqual(4, len(record["unresolved_matches"]))
         self.assertEqual([], record["reviewed_matches"])
+        self.assertEqual([], record["reviewed_files"])
         self.assertNotIn("BEGIN", json.dumps(record))
         with self.assertRaises(release.Rejected):
             release.review(self.work)
