@@ -170,11 +170,10 @@ GitHub does not expand Hugo shortcodes; adjacent source links let readers open t
 `DocumentationExamplesTest` checks launch versions; the standalone consumer compiles and executes the Example sources, and Hugo validates their referenced regions.
 Generated application code and jars remain under the example's ignored `target/` directory and are not library publication artifacts.
 
-`just docs-javadoc <flink1|flink2> <3|4>` calls [docs-javadoc.sh](../scripts/docs-javadoc.sh) to compile the selected production adapter and invoke Javadoc directly with Java 17 language/API targeting, full doclint, and warnings treated as errors.
-The output is `target/apidocs/`, mounted into the site at `api/java/`.
-The site's API reference uses this direct invocation; the release Javadoc jar uses the Maven plugin.
-The POM replaces the connector parent's Javadoc options, which disable doclint and add an export that javadoc rejects with `--release 17`, with full doclint and `failOnWarnings`, so `javadoc:javadoc` and the release `javadoc:jar` goal fail on the same warnings.
-The plugin skips generation when its previous output is current, so run it after `clean` when checking a documentation change.
+`just docs-javadoc <flink1|flink2> <3|4>` runs a clean `javadoc:javadoc` for the selected production adapter and Protobuf profile and writes `target/apidocs/`, which the site mounts at `api/java/`.
+The POM replaces the connector parent's Javadoc options, which disable doclint and add an export that javadoc rejects with `--release 17`, with full doclint and `failOnWarnings`, and the plugin passes `--release 17` from `maven.compiler.release`.
+The site's API reference and the release `javadoc:jar` goal therefore use one configuration and fail on the same warnings.
+The recipe cleans first, because the plugin skips generation when its previous output is current.
 Both adapters and Protobuf profiles are checked in CI.
 
 ### Documentation site and publication

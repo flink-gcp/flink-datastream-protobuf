@@ -50,7 +50,7 @@ The release neither compiles nor runs tests, because the release workflow builds
 It does not install the release version into the local repository, so a later check of the published artifacts cannot resolve a locally built copy instead of the one on Central.
 
 The POM replaces the parent's Javadoc options with full doclint and `failOnWarnings`.
-The Maven `javadoc:javadoc` goal and the release Javadoc jar therefore succeed without the incompatible export and fail on the same warnings as the direct `docs-javadoc` check.
+The Maven `javadoc:javadoc` goal, which also generates the site's API reference, and the release Javadoc jar therefore succeed without the incompatible export and fail on the same warnings.
 
 The published POM is the project POM with its release version.
 Its parent declares no dependencies, and the POM declares only `provided` and `test` dependencies, so neither line adds a transitive dependency to an application.
