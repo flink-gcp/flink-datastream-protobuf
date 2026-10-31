@@ -163,10 +163,12 @@ pin-actions:
 examples-verify version major repository:
     bash scripts/verify-examples.sh "$1" "$2" "$3"
 
-# Check the site's public API documentation by invoking javadoc directly.
+# Generate the site's API reference in target/apidocs with the POM's Javadoc configuration, which the release Javadoc jar also uses.
 [positional-arguments]
 docs-javadoc compat="flink2" major="4":
-    bash scripts/docs-javadoc.sh "$1" "$2"
+    test "$1" = flink1 || test "$1" = flink2
+    test "$2" = 3 || test "$2" = 4
+    {{ mvn }} "-Dflink.compat=$1" "-Pprotobuf$2" clean javadoc:javadoc '-DreportOutputDirectory=${project.build.directory}'
 
 # Render the existing Markdown with the pinned shared design.
 docs:
