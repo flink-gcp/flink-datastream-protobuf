@@ -51,8 +51,11 @@ import java.util.zip.ZipOutputStream;
 
 /** JDK-only development bundle launcher, also executable in Java source-file mode for bootstrap. */
 public final class BaselineTool {
-    /** Bundle format that capture writes; format 1 is the v0.1.0 layout without evolved state. */
-    static final String FORMAT = "2";
+    /**
+     * Bundle format that capture writes. Format 1 is the v0.1.0 layout without evolved state, and
+     * format 2 the v0.2.0 layout without DynamicMessage state.
+     */
+    static final String FORMAT = "3";
 
     private BaselineTool() {}
 
@@ -169,6 +172,9 @@ public final class BaselineTool {
                 Path.of("target/flink-datastream-protobuf-" + artifactVersion + ".jar"),
                 bundle.resolve("library.jar"));
         copy(Path.of("target/baseline/tools.jar"), bundle.resolve("tools.jar"));
+        copy(
+                Path.of("target/runtime-app/application-dynamic.jar"),
+                bundle.resolve("apps/application-dynamic.jar"));
         // Name every variant that pom.xml packages so that a missing jar fails the capture.
         for (String variant :
                 List.of(
@@ -427,17 +433,33 @@ public final class BaselineTool {
     /**
      * Returns the state fixtures under each backend: the original schema at baseline and raised
      * limits, then from format 2 state that the changed schema wrote after restoring original
-     * state, and state of the enum-bearing schema.
+     * state, and state of the enum-bearing schema, and from format 3 DynamicMessage state of the
+     * original schema.
      */
     static List<String> stateFixtures(String format) {
-        return format.equals("1")
-                ? List.of("baseline", "raised")
-                : List.of("baseline", "raised", "evolved", "enum");
+        return switch (format) {
+            case "1" -> List.of("baseline", "raised");
+            case "2" -> List.of("baseline", "raised", "evolved", "enum");
+            default -> List.of("baseline", "raised", "evolved", "enum", "dynamic");
+        };
+    }
+
+    /**
+     * Returns the serializer snapshot fixtures: generated messages at default and raised settings,
+     * and from format 3 a DynamicMessage type at default settings.
+     */
+    static List<String> snapshotFixtures(String format) {
+        return switch (format) {
+            case "1", "2" -> List.of("default", "raised");
+            default -> List.of("default", "raised", "dynamic");
+        };
     }
 
     static List<String> expectedCases(String version, String format) {
         List<String> cases = compiledCases(version);
-        cases.addAll(List.of("snapshot-default", "snapshot-raised"));
+        for (String name : snapshotFixtures(format)) {
+            cases.add("snapshot-" + name);
+        }
         for (String backend : List.of("hashmap", "rocksdb")) {
             for (String fixture : stateFixtures(format)) {
                 for (String kind : List.of("checkpoint", "savepoint")) {
@@ -495,7 +517,7 @@ public final class BaselineTool {
                 "Bundle checksum or file inventory mismatch");
         Properties manifest = load(bundle.resolve("manifest.properties"));
         String format = manifest.getProperty("format.version", "");
-        require(format.equals("1") || format.equals(FORMAT), "Unsupported bundle format");
+        require(List.of("1", "2", FORMAT).contains(format), "Unsupported bundle format");
         require(
                 manifest.getProperty("status", "").equals("development-tooling-baseline"),
                 "Unsupported bundle status");
@@ -520,6 +542,9 @@ public final class BaselineTool {
             required.add("apps/application-" + variant + ".jar");
             required.add("apps/" + variant + "/schema.pb");
         }
+        if (stateFixtures(format).contains("dynamic")) {
+            required.add("apps/application-dynamic.jar");
+        }
         for (String input : required) {
             require(expected.containsKey(input), "Missing required bundle input: " + input);
         }
@@ -529,7 +554,7 @@ public final class BaselineTool {
                     version,
                     format,
                     bundle.resolve("capture-" + version + "/result.properties"));
-            for (String setting : List.of("default", "raised")) {
+            for (String setting : snapshotFixtures(format)) {
                 require(
                         expected.containsKey(
                                 "fixtures/" + version + "/snapshot-" + setting + ".properties"),

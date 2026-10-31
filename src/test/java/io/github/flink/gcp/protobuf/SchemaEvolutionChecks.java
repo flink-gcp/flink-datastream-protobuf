@@ -16,6 +16,8 @@
 
 package io.github.flink.gcp.protobuf;
 
+import org.apache.flink.util.ExceptionUtils;
+
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.DynamicMessage;
@@ -182,6 +184,62 @@ final class SchemaEvolutionChecks {
                     .hasStackTraceContaining(RuntimeRecoveryHarness.MESSAGE)
                     .hasStackTraceContaining("cannot read the saved Protobuf schema: " + reason);
         }
+    }
+
+    /**
+     * Checks the descriptors that the DynamicMessage application's restored and replaced values
+     * carry.
+     *
+     * <p>Operator state and heap keyed state yield values that the restored serializer read, with
+     * the saved descriptor; RocksDB reads values with the application's serializer. Values that the
+     * first restore leaves untouched, such as half of the MapState values, carry the new descriptor
+     * after the second restore.
+     *
+     * @param writer schema variant that wrote the saved state
+     * @param reader schema variant of the restoring application
+     */
+    static Inspection carriedDescriptors(String backend, String writer, String reader) {
+        return (job, restore, first, end) -> {
+            String saved = restore == 1 ? writer : reader;
+            String keyed = backend.equals("hashmap") ? saved : reader;
+            assertThat(job.restoredSchemas(0))
+                    .as("Descriptors of restored operator values")
+                    .hasSize(first)
+                    .containsOnly(saved);
+            for (int input = first; input < end; input++) {
+                assertThat(job.replacedSchemas(0, input))
+                        .as("Descriptors of the values that input %s replaced", input)
+                        .containsExactly(keyed, keyed);
+            }
+        };
+    }
+
+    /**
+     * Requires a DynamicMessage restore to fail with Flink's incompatible-serializer exception.
+     *
+     * @param variant schema variant whose descriptor the restoring application uses
+     */
+    void incompatible(
+            String backend,
+            String kind,
+            RuntimeRecoveryHarness.Settings settings,
+            String saved,
+            String variant)
+            throws Exception {
+        try (var job = launcher.start(directories.get(), backend, kind, settings, saved, variant)) {
+            assertIncompatible(job.failure(), kind + " state restored by " + variant);
+        }
+    }
+
+    /** Flink rejects the new serializer at resolution, without a reason from the library. */
+    static void assertIncompatible(Throwable failure, String description) {
+        assertThat(failure)
+                .as(description)
+                .hasStackTraceContaining("StateMigrationException")
+                .hasStackTraceContaining("must not be incompatible");
+        assertThat(ExceptionUtils.stringifyException(failure))
+                .as(description)
+                .doesNotContain("cannot read the saved Protobuf schema");
     }
 
     /**

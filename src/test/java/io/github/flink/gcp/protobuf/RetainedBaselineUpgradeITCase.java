@@ -57,6 +57,7 @@ class RetainedBaselineUpgradeITCase {
     private String format;
     private RuntimeRecoveryHarness harness;
     private SchemaEvolutionChecks checks;
+    private SchemaEvolutionChecks dynamicChecks;
     private int sequence;
 
     @BeforeAll
@@ -79,6 +80,8 @@ class RetainedBaselineUpgradeITCase {
         assertThat(fixtures).isDirectory();
         harness = new RuntimeRecoveryHarness();
         checks = new SchemaEvolutionChecks(harness, () -> root.resolve("job-" + sequence++));
+        dynamicChecks =
+                BaselineRuntime.dynamicChecks(harness, () -> root.resolve("job-" + sequence++));
     }
 
     @AfterAll
@@ -92,7 +95,7 @@ class RetainedBaselineUpgradeITCase {
     void currentApplicationsKeepTheRetainedWriterAndChangedSchemas() throws Exception {
         // Each variant is the unchanged-schema control only if it is the writer's schema.
         List<String> variants = new ArrayList<>(List.of("original", "changed"));
-        if (evolvedFixtures()) {
+        if (BaselineTool.stateFixtures(format).contains("enum")) {
             variants.addAll(List.of("enum-original", "enum-added"));
         }
         for (String variant : variants) {
@@ -103,10 +106,18 @@ class RetainedBaselineUpgradeITCase {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"default", "raised"})
+    @ValueSource(strings = {"default", "raised", "dynamic"})
     void retainedSnapshotFixturesRestoreTheirValues(String name) throws Exception {
-        BaselineRuntime.checkSnapshot(
-                BaselineTool.load(fixtures.resolve("snapshot-" + name + ".properties")));
+        assumeTrue(
+                BaselineTool.snapshotFixtures(format).contains(name),
+                "Bundle format " + format + " has no " + name + " snapshot fixture");
+        Properties fixture =
+                BaselineTool.load(fixtures.resolve("snapshot-" + name + ".properties"));
+        if (name.equals("dynamic")) {
+            BaselineRuntime.checkDynamicSnapshot(fixture);
+        } else {
+            BaselineRuntime.checkSnapshot(fixture);
+        }
     }
 
     @ParameterizedTest
@@ -166,7 +177,7 @@ class RetainedBaselineUpgradeITCase {
 
     /**
      * Restores state that the retained library wrote after a supported schema evolution, and state
-     * of an enum-bearing schema, from bundle format 2.
+     * of an enum-bearing schema, from bundle format 2, and DynamicMessage state from format 3.
      */
     @ParameterizedTest
     @CsvSource({
@@ -177,28 +188,32 @@ class RetainedBaselineUpgradeITCase {
         "rocksdb, evolved, savepoint",
         "rocksdb, evolved, checkpoint",
         "rocksdb, enum, savepoint",
-        "rocksdb, enum, checkpoint"
+        "rocksdb, enum, checkpoint",
+        "hashmap, dynamic, savepoint",
+        "hashmap, dynamic, checkpoint",
+        "rocksdb, dynamic, savepoint",
+        "rocksdb, dynamic, checkpoint"
     })
-    void retainedEvolvedAndEnumStateRestores(String backend, String name, String kind)
+    void retainedLaterFormatStateRestores(String backend, String name, String kind)
             throws Exception {
-        assumeTrue(evolvedFixtures(), "Bundle format 1 has no evolved or enum state");
+        assumeTrue(
+                BaselineTool.stateFixtures(format).contains(name),
+                "Bundle format " + format + " has no " + name + " state");
         Path fixture = fixtures.resolve(backend + "/" + name);
         // The readers assume the writers, inputs, and baseline limits that capture records.
         assertThat(BaselineTool.load(fixture.resolve("state.properties")))
                 .isEqualTo(
-                        name.equals("evolved")
-                                ? BaselineRuntime.evolvedIdentity(backend)
-                                : BaselineRuntime.enumIdentity(backend));
+                        switch (name) {
+                            case "evolved" -> BaselineRuntime.evolvedIdentity(backend);
+                            case "enum" -> BaselineRuntime.enumIdentity(backend);
+                            default -> BaselineRuntime.dynamicIdentity(backend);
+                        });
         String state = extract(fixture.resolve(kind + ".zip"));
-        if (name.equals("evolved")) {
-            BaselineRuntime.readEvolved(checks, backend, state, kind);
-        } else {
-            BaselineRuntime.readEnum(checks, backend, state);
+        switch (name) {
+            case "evolved" -> BaselineRuntime.readEvolved(checks, backend, state, kind);
+            case "enum" -> BaselineRuntime.readEnum(checks, backend, state);
+            default -> BaselineRuntime.readDynamic(dynamicChecks, backend, state, kind);
         }
-    }
-
-    private boolean evolvedFixtures() {
-        return BaselineTool.stateFixtures(format).contains("evolved");
     }
 
     /** Reads the writer's settings and requires the state identity that the checks assume. */

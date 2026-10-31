@@ -51,7 +51,7 @@ The source archive includes the schemas/imports and the reader and consumer sour
 The companion `tools.jar` contains compiled test instruments, test messages, and test resources including the existing fixed fixtures; it is never attached as a Maven publication artifact.
 It retains the compiled explicit type construction, builder, factory, registered transport, and LTS legacy-entry-point checks for subsequent API investigations.
 The explicit consumer, registration transport check, and LTS legacy check run in separate JVMs from the state writer and reader.
-LTS results include an additional `legacy-entry-point` case, giving 21 cases on LTS and 20 on 2.x; the v0.1.0 bundles, which lack the evolved and enum fixtures below, have 13 and 12.
+LTS results include an additional `legacy-entry-point` case, giving 26 cases on LTS and 25 on 2.x; the format 2 bundles of v0.2.0, which lack the DynamicMessage fixtures below, have 21 and 20, and the format 1 bundles of v0.1.0, which also lack the evolved and enum fixtures, have 13 and 12.
 This is a concrete consumer inventory, not an exhaustive public-API compatibility checker.
 `baseline-consume` reruns it against a candidate library, and the [API compatibility gate](../development.md#api-compatibility-gate) compares the annotated API separately.
 
@@ -71,7 +71,7 @@ The reader does not use `target/classes`, regenerate messages, or replace a miss
 To run without a checkout, use `java -cp <bundle>/tools.jar io.github.flink.gcp.protobuf.BaselineTool check <bundle>` or the corresponding `read <bundle> <flink-version> <new-results>` arguments.
 Use trusted bundles: the reader executes their Java code, and the internal checksum inventory establishes integrity against that inventory, not publisher authenticity.
 
-Snapshot fixtures contain the full descriptor closure and a framed representative value, with default and raised serializer settings.
+Snapshot fixtures contain the full descriptor closure and a framed representative value, with default and raised serializer settings for the generated message and, from format 3, default settings for a DynamicMessage type of the same schema.
 Runtime fixtures contain canonical savepoints and full, nonincremental checkpoints for HashMap and RocksDB, with the existing baseline and raised test budgets.
 State manifests record settings, scalar-keyed ValueState/MapState and operator ListState identities, UIDs, parallelism, the input cursor, expected counts, and unknown fields.
 The retained application sources define the expected nested runtime values.
@@ -80,16 +80,17 @@ For these original-schema fixtures, it also checks checkpoint failure/replay and
 The rejected schema change is the field addition in the v0.1.0 bundles and the `count` type change in capture from the current source, which accepts the field addition.
 Incomplete archives cannot pass by finding files in the original writer directories.
 
-Capture from the current source writes bundle format 2, which adds two fixtures per backend at the baseline budget for the next milestone's upgrade checks:
+Bundle format 2 adds two fixtures per backend at the baseline budget for the next milestone's upgrade checks, and format 3, which capture from the current source writes, adds a third:
 
 | Fixture | Writer | Reader checks |
 |---|---|---|
 | `evolved` | The `original` schema writes inputs 0 to 7; the `changed` schema restores that savepoint, processes inputs 8 to 11, and writes the archives | Restore with `changed`, with `added` empty for inputs 0 to 7 and set from input 8; the savepoint restore with `original` is rejected because it removes `added` without reserving its number |
 | `enum` | The `enum-original` schema writes inputs 0 to 7 | Restore with `enum-original` and with `enum-added`; restored values keep `KIND_FIRST`, and `enum-added` writes `KIND_SECOND` for new inputs |
+| `dynamic` (format 3) | The [DynamicMessage application](runtime-recovery.md#dynamicmessage) writes inputs 0 to 7 with the `original` descriptor | Restore with the DynamicMessage application and the `original` descriptor, and with the `changed` one, checking the descriptors that restored values carry; the savepoint restore with `incompatible` fails with Flink's incompatible-serializer exception |
 
-Their manifests also record the writer schemas, and capture deletes the savepoint that the `evolved` writer restored as well as both writers' state.
+Their manifests also record the writer schemas, and the `dynamic` manifest its writer application; capture deletes the savepoint that the `evolved` writer restored as well as each writer's state.
 Each reader check restores the archive, processes four more inputs, and restores the savepoint that it then writes, as the [schema-evolution test](runtime-recovery.md#schema-changes) does, checking the restored and replaced values and continued processing each time.
-Format 2 bundles also require the `enum-original` and `enum-added` applications and schemas; `check` still accepts the format 1 layout of the v0.1.0 bundles.
+Format 2 bundles also require the `enum-original` and `enum-added` applications and schemas, and format 3 bundles also `apps/application-dynamic.jar`; `check` still accepts the format 1 layout of the v0.1.0 bundles and the format 2 layout of the v0.2.0 bundles.
 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.
 Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.4 runs on JDK 17.
@@ -199,7 +200,7 @@ The checksums establish integrity against that retained inventory, not publisher
 `baseline-check` executes code from the bundle, so it runs only after the archive and every extracted file have matched the inventory.
 Add a pin for a later designated baseline only after reviewing its `SHA256SUMS` and final manifest, as the [publication procedure](#publish-a-milestone-baseline) does.
 
-The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, and in format 2 also `apps/enum-original/schema.pb` and `apps/enum-added/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
+The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, and from format 2 also `apps/enum-original/schema.pb` and `apps/enum-added/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
 The `dependencies/` tree was resolved on macOS/aarch64.
 Several of its jars carry native libraries, such as RocksDB, Netty, Snappy, and LZ4 for a set of operating systems and architectures, and that resolution and its native loading are not claimed for another host.
 CI consumers must not put that tree on a classpath; they resolve their runtime dependencies for the runner instead.
@@ -242,7 +243,7 @@ mise x -- just baseline-upgrade /tmp/baseline-v0.1.0/flink2-pb3 2.3.0
 The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile, its exact Protobuf runtime and protoc version, its artifact line, and the given Flink version.
 Maven resolves this build's own dependencies, so the bundle's `dependencies/` tree and its `library.jar` are never on the classpath; apart from the bundle's own `baseline-check`, the retained inputs are data: state archives, snapshot fixtures, manifests, and schemas.
 The test refuses a Protobuf runtime other than the one that wrote the bundle and a Flink version that the bundle was not read with, so each run keeps the gencode/runtime pair and the Flink version fixed and changes only the library and the application schema.
-It also requires the current `original` and `changed` application descriptors, and for format 2 the `enum-original` and `enum-added` ones, to be byte-identical to the bundle's schemas, which makes the restore with the writer's schema the unchanged-schema control.
+It also requires the current `original` and `changed` application descriptors, and from format 2 the `enum-original` and `enum-added` ones, to be byte-identical to the bundle's schemas, which makes the restore with the writer's schema the unchanged-schema control.
 
 For each backend, setting budget, and archive kind (the canonical savepoint and the full checkpoint), the test requires the state identity recorded in `state.properties` and restores the archive with the writer's recorded settings into the [runtime schemas](runtime-recovery.md#schema-changes) that differ from the retained writer:
 
@@ -257,10 +258,11 @@ The restore checks are those of the [schema-evolution test](runtime-recovery.md#
 Each retained archive holds all three state kinds, so the rejection shows only that whichever state the backend restores first fails; the schema-evolution test rejects each state kind from a savepoint that holds only that kind.
 The current library must restore each snapshot fixture's framed value at its recorded settings; when it writes the fixture's snapshot version, it must also write byte-identical snapshot metadata, which shows that the snapshot format and test schema are unchanged.
 The current library writes snapshot version 2, so the version-1 fixtures retained from v0.1.0 check only the restore.
+From format 3, the DynamicMessage snapshot fixture restores without the application's descriptor, at default settings; its restored root must have the test schema's content, and its value must keep every field.
 The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here.
 
-For format 2 bundles, the test also restores each backend's `evolved` and `enum` fixtures, both archive kinds, with the [reader checks](#inspect-and-restore) of the bundle's own reader: `evolved` restores into `changed`, and its savepoint is rejected by `original`, and `enum` restores into `enum-original` and `enum-added`.
-It requires their recorded backend, writer schemas, and baseline limits; format 1 bundles skip these cases.
+From format 2, the test also restores each backend's `evolved` and `enum` fixtures, and from format 3 its `dynamic` fixture, both archive kinds, with the [reader checks](#inspect-and-restore) of the bundle's own reader: `evolved` restores into `changed`, and its savepoint is rejected by `original`; `enum` restores into `enum-original` and `enum-added`; and `dynamic` restores into the DynamicMessage application with `original` and `changed`, with the descriptors that restored values carry as in the [DynamicMessage recovery test](runtime-recovery.md#dynamicmessage), and its savepoint is rejected with `incompatible`.
+It requires their recorded state identity to equal what capture writes; bundles of an earlier format skip the cases that their format lacks.
 On 2026-10-21 all ten combinations of the v0.1.0 bundles passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
 
 ## Retention

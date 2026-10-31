@@ -17,6 +17,7 @@
 package io.github.flink.gcp.protobuf;
 
 import org.apache.flink.api.common.serialization.SerializerConfigImpl;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
@@ -24,6 +25,7 @@ import org.apache.flink.core.memory.DataOutputSerializer;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import io.github.flink.gcp.protobuf.snapshotgenerated.SnapshotMessages.Envelope;
 
@@ -34,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 import static io.github.flink.gcp.protobuf.RuntimeRecoveryHarness.BASELINE;
 import static io.github.flink.gcp.protobuf.RuntimeRecoveryHarness.RAISED;
@@ -98,9 +101,13 @@ public final class BaselineRuntime {
         if (capture) {
             Files.createDirectories(fixtures);
         }
-        for (boolean raised : List.of(false, true)) {
-            String name = raised ? "raised" : "default";
-            snapshot(fixtures.resolve("snapshot-" + name + ".properties"), capture, raised);
+        for (String name : BaselineTool.snapshotFixtures(BaselineTool.FORMAT)) {
+            Path file = fixtures.resolve("snapshot-" + name + ".properties");
+            if (name.equals("dynamic")) {
+                dynamicSnapshot(file, capture);
+            } else {
+                snapshot(file, capture, name.equals("raised"));
+            }
             cases.add("snapshot-" + name);
         }
         Path work = Files.createDirectory(results.resolve("work"));
@@ -109,6 +116,8 @@ public final class BaselineRuntime {
             var checks =
                     new SchemaEvolutionChecks(
                             harness, () -> work.resolve("evolution-" + sequence[0]++));
+            var dynamicChecks =
+                    dynamicChecks(harness, () -> work.resolve("dynamic-" + sequence[0]++));
             for (String backend : List.of("hashmap", "rocksdb")) {
                 for (String name : BaselineTool.stateFixtures(BaselineTool.FORMAT)) {
                     String identity = backend + "/" + name;
@@ -120,7 +129,24 @@ public final class BaselineRuntime {
                         switch (name) {
                             case "evolved" ->
                                     captureEvolved(harness, work, prefix, backend, fixture);
-                            case "enum" -> captureEnum(harness, work, prefix, backend, fixture);
+                            case "enum" ->
+                                    captureWriter(
+                                            generated(harness),
+                                            "enum-original",
+                                            enumIdentity(backend),
+                                            work,
+                                            prefix,
+                                            backend,
+                                            fixture);
+                            case "dynamic" ->
+                                    captureWriter(
+                                            dynamic(harness),
+                                            "original",
+                                            dynamicIdentity(backend),
+                                            work,
+                                            prefix,
+                                            backend,
+                                            fixture);
                             default ->
                                     captureOriginal(
                                             harness, work, prefix, backend, settings, fixture);
@@ -134,6 +160,7 @@ public final class BaselineRuntime {
                         switch (name) {
                             case "evolved" -> readEvolved(checks, backend, saved, kind);
                             case "enum" -> readEnum(checks, backend, saved);
+                            case "dynamic" -> readDynamic(dynamicChecks, backend, saved, kind);
                             default ->
                                     readOriginal(
                                             harness, checks, work, prefix, backend, settings, saved,
@@ -240,15 +267,20 @@ public final class BaselineRuntime {
         return state;
     }
 
-    /** Archives inputs 0 to 7 of the enum-original schema at the baseline limits. */
-    private static void captureEnum(
-            RuntimeRecoveryHarness harness, Path work, String prefix, String backend, Path fixture)
+    /** Archives inputs 0 to 7 of a writer application at the baseline limits. */
+    private static void captureWriter(
+            SchemaEvolutionChecks.Launcher launcher,
+            String variant,
+            Properties identity,
+            Path work,
+            String prefix,
+            String backend,
+            Path fixture)
             throws Exception {
         Path writerDirectory = work.resolve(prefix + "-writer");
         Path saved;
         try (var writer =
-                harness.start(
-                        writerDirectory, backend, "all", BASELINE, null, "enum-original", false)) {
+                launcher.start(writerDirectory, backend, "all", BASELINE, null, variant)) {
             writer.process(0, 8, 0);
             saved = Path.of(URI.create(writer.savepoint(work.resolve(prefix + "-saved"))));
             BaselineTool.zip(saved, fixture.resolve("savepoint.zip"));
@@ -256,7 +288,7 @@ public final class BaselineRuntime {
                     Path.of(URI.create(writer.checkpoint())), fixture.resolve("checkpoint.zip"));
         }
         deleteWriterState(work, saved, writerDirectory);
-        BaselineTool.save(enumIdentity(backend), fixture.resolve("state.properties"));
+        BaselineTool.save(identity, fixture.resolve("state.properties"));
     }
 
     /** The state identity that capture records for an {@code enum} fixture. */
@@ -265,6 +297,64 @@ public final class BaselineRuntime {
         state.setProperty("writer.schemas", "enum-original");
         state.setProperty("expected.detail.kind", "KIND_FIRST");
         return state;
+    }
+
+    /** The state identity that capture records for a {@code dynamic} fixture. */
+    static Properties dynamicIdentity(String backend) {
+        Properties state = stateIdentity(backend, BASELINE);
+        state.setProperty("writer.schemas", "original");
+        state.setProperty("writer.application", "DynamicRuntimeJob");
+        return state;
+    }
+
+    /** Restore checks with the DynamicMessage application, which has no generated class. */
+    static SchemaEvolutionChecks dynamicChecks(
+            RuntimeRecoveryHarness harness, Supplier<Path> directories) {
+        return new SchemaEvolutionChecks(dynamic(harness), directories);
+    }
+
+    private static SchemaEvolutionChecks.Launcher generated(RuntimeRecoveryHarness harness) {
+        return (directory, backend, kind, settings, saved, variant) ->
+                harness.start(directory, backend, kind, settings, saved, variant, false);
+    }
+
+    private static SchemaEvolutionChecks.Launcher dynamic(RuntimeRecoveryHarness harness) {
+        return (directory, backend, kind, settings, saved, variant) ->
+                harness.startDynamic(
+                        directory, backend, kind, settings, saved, variant, "dynamic", false);
+    }
+
+    /**
+     * Restores DynamicMessage state unchanged and with the changed schema, with the descriptors
+     * that restored values carry, and requires the incompatible schema to be rejected.
+     */
+    static void readDynamic(SchemaEvolutionChecks checks, String backend, String saved, String kind)
+            throws Exception {
+        Descriptor original = RuntimeRecoveryHarness.descriptor("original");
+        checks.restoreTwice(
+                backend,
+                BASELINE,
+                saved,
+                8,
+                "original",
+                original,
+                value -> value.getField(original.findFieldByName("payload")),
+                ordinal -> "v".repeat(8),
+                SchemaEvolutionChecks.carriedDescriptors(backend, "original", "original"));
+        Descriptor changed = RuntimeRecoveryHarness.descriptor("changed");
+        checks.restoreTwice(
+                backend,
+                BASELINE,
+                saved,
+                8,
+                "changed",
+                changed,
+                value -> value.getField(changed.findFieldByName("added")),
+                ordinal -> ordinal < 8 ? "" : "added-" + ordinal,
+                SchemaEvolutionChecks.carriedDescriptors(backend, "original", "changed"));
+        if (kind.equals("savepoint")) {
+            checks.incompatible(backend, "all", BASELINE, saved, "incompatible");
+        }
     }
 
     /** Removes a writer's state so that missing archive contents cannot pass unnoticed. */
@@ -385,50 +475,65 @@ public final class BaselineRuntime {
     private static void snapshot(Path file, boolean capture, boolean raised) throws Exception {
         int size = raised ? 134217728 : 67108864;
         int depth = raised ? 200 : 100;
-        var info =
-                ProtobufTypeInformation.newBuilder(Envelope.class)
-                        .deterministicSerialization(raised)
-                        .maxMessageSize(size)
-                        .recursionLimit(depth)
-                        .build();
-        var serializer = info.createSerializer(new SerializerConfigImpl());
         if (capture) {
-            DataOutputSerializer snapshot = new DataOutputSerializer(32);
-            TypeSerializerSnapshot.writeVersionedSnapshot(
-                    snapshot, serializer.snapshotConfiguration());
-            DataOutputSerializer message = new DataOutputSerializer(32);
-            serializer.serialize(ProtobufTypeSerializerSnapshotTest.value(), message);
+            var serializer =
+                    ProtobufTypeInformation.newBuilder(Envelope.class)
+                            .deterministicSerialization(raised)
+                            .maxMessageSize(size)
+                            .recursionLimit(depth)
+                            .build()
+                            .createSerializer(new SerializerConfigImpl());
             Properties properties = new Properties();
-            properties.setProperty(
-                    "snapshot.base64",
-                    Base64.getEncoder().encodeToString(snapshot.getCopyOfBuffer()));
-            properties.setProperty(
-                    "message.base64",
-                    Base64.getEncoder().encodeToString(message.getCopyOfBuffer()));
-            properties.setProperty(
-                    "snapshot.class", serializer.snapshotConfiguration().getClass().getName());
-            properties.setProperty(
-                    "snapshot.version",
-                    Integer.toString(serializer.snapshotConfiguration().getCurrentVersion()));
             properties.setProperty("settings.deterministic", Boolean.toString(raised));
             properties.setProperty("settings.maxMessageSize", Integer.toString(size));
             properties.setProperty("settings.recursionLimit", Integer.toString(depth));
-            properties.setProperty(
-                    "schema.sources",
-                    "src/test/proto/snapshot.proto,src/test/proto/snapshot_dependency.proto");
-            properties.setProperty(
-                    "expected.value",
-                    "id=42,kind=READY,detail=saved,child.id=7,nested.text=nested,unknown.100=99");
-            BaselineTool.save(properties, file);
+            writeSnapshot(file, serializer, ProtobufTypeSerializerSnapshotTest.value(), properties);
         }
         checkSnapshot(BaselineTool.load(file));
     }
 
-    /**
-     * Returns the state identity that capture records and readers require.
-     *
-     * @param settings writer settings of the retained state
-     */
+    /** Writes or checks the DynamicMessage snapshot fixture of the snapshot test schema. */
+    private static void dynamicSnapshot(Path file, boolean capture) throws Exception {
+        if (capture) {
+            Properties properties = new Properties();
+            properties.setProperty("root.full.name", Envelope.getDescriptor().getFullName());
+            writeSnapshot(
+                    file,
+                    dynamicSerializer(),
+                    DynamicMessage.parseFrom(
+                            Envelope.getDescriptor(),
+                            ProtobufTypeSerializerSnapshotTest.value().toByteArray()),
+                    properties);
+        }
+        checkDynamicSnapshot(BaselineTool.load(file));
+    }
+
+    /** Records a serializer's versioned snapshot and a framed value of the snapshot test schema. */
+    private static <T> void writeSnapshot(
+            Path file, TypeSerializer<T> serializer, T value, Properties properties)
+            throws Exception {
+        DataOutputSerializer snapshot = new DataOutputSerializer(32);
+        TypeSerializerSnapshot.writeVersionedSnapshot(snapshot, serializer.snapshotConfiguration());
+        DataOutputSerializer message = new DataOutputSerializer(32);
+        serializer.serialize(value, message);
+        properties.setProperty(
+                "snapshot.base64", Base64.getEncoder().encodeToString(snapshot.getCopyOfBuffer()));
+        properties.setProperty(
+                "message.base64", Base64.getEncoder().encodeToString(message.getCopyOfBuffer()));
+        properties.setProperty(
+                "snapshot.class", serializer.snapshotConfiguration().getClass().getName());
+        properties.setProperty(
+                "snapshot.version",
+                Integer.toString(serializer.snapshotConfiguration().getCurrentVersion()));
+        properties.setProperty(
+                "schema.sources",
+                "src/test/proto/snapshot.proto,src/test/proto/snapshot_dependency.proto");
+        properties.setProperty(
+                "expected.value",
+                "id=42,kind=READY,detail=saved,child.id=7,nested.text=nested,unknown.100=99");
+        BaselineTool.save(properties, file);
+    }
+
     static Properties stateIdentity(String backend, RuntimeRecoveryHarness.Settings settings) {
         Properties state = new Properties();
         state.setProperty("backend", backend);
@@ -467,6 +572,40 @@ public final class BaselineRuntime {
                                 Integer.parseInt(fixture.getProperty("settings.recursionLimit")))
                         .build()
                         .createSerializer(new SerializerConfigImpl());
+        assertThat(restoreSnapshot(fixture, serializer))
+                .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
+    }
+
+    /**
+     * Restores a DynamicMessage snapshot fixture without the application's descriptor and decodes
+     * its framed value, as {@link #checkSnapshot(Properties)} does for the generated message.
+     *
+     * <p>The restored root must have the content of the test schema's root, and the value must keep
+     * every field: unknown field 100 is its only unknown field.
+     */
+    static void checkDynamicSnapshot(Properties fixture) throws Exception {
+        assertThat(fixture.getProperty("snapshot.class"))
+                .isEqualTo(ProtobufDynamicMessageSerializerSnapshot.class.getName());
+        DynamicMessage restored = restoreSnapshot(fixture, dynamicSerializer());
+        assertThat(restored.getDescriptorForType().toProto())
+                .isEqualTo(Envelope.getDescriptor().toProto());
+        assertThat(unknownFieldNumbers(restored)).containsExactly("100");
+        assertThat(Envelope.parseFrom(restored.toByteArray()))
+                .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
+    }
+
+    private static TypeSerializer<DynamicMessage> dynamicSerializer() {
+        return ProtobufTypeInformation.of(Envelope.getDescriptor())
+                .createSerializer(new SerializerConfigImpl());
+    }
+
+    /**
+     * Requires a fixture's snapshot to resolve as compatible with the current serializer, and to
+     * match its bytes when it has the current version, then decodes the framed value with the
+     * restored serializer.
+     */
+    private static <T> T restoreSnapshot(Properties fixture, TypeSerializer<T> serializer)
+            throws Exception {
         byte[] bytes = Base64.getDecoder().decode(fixture.getProperty("snapshot.base64"));
         if (serializer.snapshotConfiguration().getCurrentVersion()
                 == Integer.parseInt(fixture.getProperty("snapshot.version"))) {
@@ -475,7 +614,7 @@ public final class BaselineRuntime {
                     current, serializer.snapshotConfiguration());
             assertThat(current.getCopyOfBuffer()).as("Current snapshot bytes").isEqualTo(bytes);
         }
-        TypeSerializerSnapshot<Envelope> saved =
+        TypeSerializerSnapshot<T> saved =
                 TypeSerializerSnapshot.readVersionedSnapshot(
                         new DataInputDeserializer(bytes), BaselineRuntime.class.getClassLoader());
         assertThat(
@@ -484,14 +623,28 @@ public final class BaselineRuntime {
                                 .resolveSchemaCompatibility(saved)
                                 .isCompatibleAsIs())
                 .isTrue();
-        assertThat(
-                        saved.restoreSerializer()
-                                .deserialize(
-                                        new DataInputDeserializer(
-                                                Base64.getDecoder()
-                                                        .decode(
-                                                                fixture.getProperty(
-                                                                        "message.base64")))))
-                .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
+        return saved.restoreSerializer()
+                .deserialize(
+                        new DataInputDeserializer(
+                                Base64.getDecoder().decode(fixture.getProperty("message.base64"))));
+    }
+
+    /** Lists the unknown-field numbers of a message and its nested messages by field path. */
+    private static List<String> unknownFieldNumbers(Message message) {
+        List<String> numbers = new ArrayList<>();
+        for (int number : message.getUnknownFields().asMap().keySet()) {
+            numbers.add(Integer.toString(number));
+        }
+        message.getAllFields()
+                .forEach(
+                        (field, value) -> {
+                            if (field.getJavaType() == FieldDescriptor.JavaType.MESSAGE
+                                    && !field.isRepeated()) {
+                                for (String nested : unknownFieldNumbers((Message) value)) {
+                                    numbers.add(field.getName() + "." + nested);
+                                }
+                            }
+                        });
+        return numbers;
     }
 }
