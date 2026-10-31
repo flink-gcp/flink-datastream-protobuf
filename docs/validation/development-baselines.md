@@ -161,7 +161,7 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.2.0
 `FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #63 select these exact bundles as the milestone baseline.
 Do not rename, re-tag, or replace these assets.
 Obtain them with `mise x -- just baseline-fetch v0.2.0 <new-output>`; the release `README.md` lists equivalent manual commands.
-The 0.3.0 upgrade checks consume them; the current CI still restores and checks only the v0.1.0 bundles.
+CI restores and checks them with the current library as it does the v0.1.0 bundles; see [retained bundles in CI](#retained-bundles-in-ci).
 
 ## Retrieve the retained baseline
 
@@ -199,15 +199,15 @@ The checksums establish integrity against that retained inventory, not publisher
 `baseline-check` executes code from the bundle, so it runs only after the archive and every extracted file have matched the inventory.
 Add a pin for a later designated baseline only after reviewing its `SHA256SUMS` and final manifest, as the [publication procedure](#publish-a-milestone-baseline) does.
 
-The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
+The follow-up checks consume only part of each bundle: the state archives and snapshot fixtures under `fixtures/`, the manifests (`manifest.properties` and the state and capture properties), the schemas `apps/original/schema.pb` and `apps/changed/schema.pb`, and in format 2 also `apps/enum-original/schema.pb` and `apps/enum-added/schema.pb`, `library.jar`, and the compiled consumers in `tools.jar`.
 The `dependencies/` tree was resolved on macOS/aarch64.
 Several of its jars carry native libraries, such as RocksDB, Netty, Snappy, and LZ4 for a set of operating systems and architectures, and that resolution and its native loading are not claimed for another host.
 CI consumers must not put that tree on a classpath; they resolve their runtime dependencies for the runner instead.
-For the same reason, CI does not run `baseline-read` on the retained v0.1.0 bundles, because the reader starts the retained code with those dependency jars.
+For the same reason, CI does not run `baseline-read` on the retained bundles, because the reader starts the retained code with those dependency jars.
 
 ### Retained bundles in CI
 
-The composite action `.github/actions/baseline-fetch` fetches one bundle per job:
+The composite action `.github/actions/baseline-fetch` fetches one bundle per invocation:
 
 ```yaml
 - uses: ./.github/actions/baseline-fetch
@@ -225,11 +225,11 @@ After a hit the action also passes `--restored`, so an entry without the expecte
 On a miss it downloads and verifies the archive, then saves it after the bundle passes; a failed run saves nothing.
 A restored archive that is missing or fails verification fails the job without replacing the entry; delete it with `gh cache delete <key>`, using the key in the error annotation.
 The job does not fall back to a fresh download, so a corrupt or replaced entry stays visible instead of being bypassed.
-The four entries total about 780 MB of the repository's Actions cache quota.
+The eight entries, four for each retained milestone, total about 1.6 GB of the repository's Actions cache quota.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-The Verify workflow's retained-baseline job runs this action for each v0.1.0 bundle, then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-The same job runs the [API compatibility gate](../development.md#api-compatibility-gate) once and the retained compiled consumers against the candidate at each of those Flink versions and JDKs.
+The Verify workflow runs one retained-baseline job per bundle name, which runs this action for the v0.1.0 and the v0.2.0 bundle of that name, then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each of them at each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+The same job runs the [API compatibility gate](../development.md#api-compatibility-gate) once for each bundle and the retained compiled consumers of both against the candidate at each of those Flink versions and JDKs.
 
 ## Restore retained state with the current library
 
@@ -242,7 +242,7 @@ mise x -- just baseline-upgrade /tmp/baseline-v0.1.0/flink2-pb3 2.3.0
 The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile, its exact Protobuf runtime and protoc version, its artifact line, and the given Flink version.
 Maven resolves this build's own dependencies, so the bundle's `dependencies/` tree and its `library.jar` are never on the classpath; apart from the bundle's own `baseline-check`, the retained inputs are data: state archives, snapshot fixtures, manifests, and schemas.
 The test refuses a Protobuf runtime other than the one that wrote the bundle and a Flink version that the bundle was not read with, so each run keeps the gencode/runtime pair and the Flink version fixed and changes only the library and the application schema.
-It also requires the current `original` and `changed` application descriptors to be byte-identical to the bundle's `apps/original/schema.pb` and `apps/changed/schema.pb`, which makes the `original` restore the unchanged-schema control.
+It also requires the current `original` and `changed` application descriptors, and for format 2 the `enum-original` and `enum-added` ones, to be byte-identical to the bundle's schemas, which makes the restore with the writer's schema the unchanged-schema control.
 
 For each backend, setting budget, and archive kind (the canonical savepoint and the full checkpoint), the test requires the state identity recorded in `state.properties` and restores the archive with the writer's recorded settings into the [runtime schemas](runtime-recovery.md#schema-changes) that differ from the retained writer:
 
@@ -257,8 +257,11 @@ The restore checks are those of the [schema-evolution test](runtime-recovery.md#
 Each retained archive holds all three state kinds, so the rejection shows only that whichever state the backend restores first fails; the schema-evolution test rejects each state kind from a savepoint that holds only that kind.
 The current library must restore each snapshot fixture's framed value at its recorded settings; when it writes the fixture's snapshot version, it must also write byte-identical snapshot metadata, which shows that the snapshot format and test schema are unchanged.
 The current library writes snapshot version 2, so the version-1 fixtures retained from v0.1.0 check only the restore.
-The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here; it is verified only with state that the same development build writes and restores, in the [schema-evolution test](runtime-recovery.md#schema-changes).
-On 2026-10-21 all ten combinations passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
+The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here.
+
+For format 2 bundles, the test also restores each backend's `evolved` and `enum` fixtures, both archive kinds, with the [reader checks](#inspect-and-restore) of the bundle's own reader: `evolved` restores into `changed`, and its savepoint is rejected by `original`, and `enum` restores into `enum-original` and `enum-added`.
+It requires their recorded backend, writer schemas, and baseline limits; format 1 bundles skip these cases.
+On 2026-10-21 all ten combinations of the v0.1.0 bundles passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
 
 ## Retention
 

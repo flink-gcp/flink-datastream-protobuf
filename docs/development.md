@@ -389,7 +389,7 @@ An intentional 0.x break is accepted only by adding that member to the plugin-le
 Exclude the affected member, never its whole class or package; an excluded member is no longer compared at all, so remove the entry when the baseline moves past the break.
 Do not add excludes inside an execution: Maven merges an execution's `<excludes>` with the plugin-level list element by element, so the first entry would replace the `@Internal` exclude for that comparison.
 Review these entries, and the build-break settings beside them, as part of the gate; nothing else checks them.
-The profile currently excludes no member, because the current API matches the four retained 0.1.0 libraries.
+The profile currently excludes no member, because the current API keeps every member of the four retained 0.1.0 and four retained 0.2.0 libraries.
 Do not exclude a member to work around an unexplained difference; ADR-0001's 0.x policy allows only documented intentional breaks.
 
 The same Maven run checks a negative control built from the candidate, with japicmp's build break disabled for that comparison only.
@@ -410,8 +410,8 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-The Verify workflow runs one retained-baseline job for each v0.1.0 bundle, covering every Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-On JDK 17 the job runs `baseline-upgrade` for each Flink version, then `api-compat` once, then `baseline-consume` for each Flink version; the 2.x jobs then switch to JDK 21 and repeat `baseline-upgrade` and `baseline-consume` with the same candidate jar.
+The Verify workflow runs one retained-baseline job for each bundle name, covering the v0.1.0 and v0.2.0 bundles of that name at every Flink version and JDK that they were read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
+On JDK 17 the job runs `baseline-upgrade` for each bundle and Flink version, then `api-compat` once for each bundle, then `baseline-consume` for each bundle and Flink version; the 2.x jobs then switch to JDK 21 and repeat `baseline-upgrade` and `baseline-consume` with the same candidate jar.
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 
