@@ -799,8 +799,10 @@ Before changing the release profile, the guard, or the inspection, also run a si
 
 ### Publishing a release
 
-The `Release` workflow in `.github/workflows/release.yaml` runs with the repository secrets `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, the project release key shared with flink-connector-gcp, and `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`, a Central Portal user token for the `io.github.flink-gcp` namespace.
-Pull requests and Verify never read them.
+The `Release` job in `.github/workflows/release.yaml` runs in the `release` environment, whose secrets are `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, the project release key shared with flink-connector-gcp, and `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`, a Central Portal user token for the `io.github.flink-gcp` namespace.
+The environment admits only the `main` branch and `v*` tags and has no required reviewers, and the repository ruleset `release tags` lets only administrators create, move, or delete `v*` tags.
+Pull requests and Verify never read the secrets.
+Register a replacement value with `gh secret set <name> --env release`; the repository holds no release secret of its own.
 The workflow's `actions/setup-java` step writes Maven settings whose `central` server reads the token pair from the environment, which only the staging steps set.
 
 1. Optionally, on the `main` commit to release, after its `CI passed` succeeds, run `gh workflow run release.yaml --ref main -f version=X.Y.Z`.

@@ -42,6 +42,8 @@ jobs:
     if: github.repository_id == '1358906035'
     name: Rehearse, stage, and publish both lines
     runs-on: ubuntu-latest
+    # The release secrets are environment secrets; the environment admits only main and v* tags.
+    environment: release
     permissions:
       contents: write
     # Two validations and the publication wait take up to 30 minutes each.
