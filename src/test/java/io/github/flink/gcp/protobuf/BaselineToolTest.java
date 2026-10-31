@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -172,7 +173,16 @@ class BaselineToolTest {
                 .noneMatch(name -> name.contains("/evolved/") || name.contains("/enum/"));
         assertThat(BaselineTool.expectedCases("1.20.4", "2"))
                 .hasSize(21)
-                .contains("legacy-entry-point");
+                .contains("legacy-entry-point")
+                .noneMatch(name -> name.contains("dynamic"));
+        // Format 3 adds a DynamicMessage snapshot fixture and two archives per backend.
+        assertThat(BaselineTool.expectedCases("1.20.4", "3"))
+                .hasSize(26)
+                .contains(
+                        "snapshot-dynamic",
+                        "hashmap/dynamic/checkpoint",
+                        "rocksdb/dynamic/savepoint");
+        assertThat(BaselineTool.expectedCases("2.2.1", "3")).hasSize(25);
         assertThat(BaselineTool.expectedCases("2.2.1", "2"))
                 .hasSize(20)
                 .doesNotContain("legacy-entry-point")
@@ -195,10 +205,13 @@ class BaselineToolTest {
         "2, apps/enum-original/schema.pb, apps/enum-original/schema.pb",
         "2, apps/application-enum-added.jar, apps/application-enum-added.jar",
         "2, apps/enum-added/schema.pb, apps/enum-added/schema.pb",
-        "3, '', Unsupported bundle format"
+        // The v0.2.0 layout has no DynamicMessage application.
+        "2, dynamic, capture-2.2.1/result.properties",
+        "3, apps/application-dynamic.jar, apps/application-dynamic.jar",
+        "4, '', Unsupported bundle format"
     })
-    void requiresTheEnumApplicationsOnlyFromFormatTwo(String format, String absent, String failure)
-            throws Exception {
+    void requiresEachFormatsApplicationsOnlyFromThatFormat(
+            String format, String absent, String failure) throws Exception {
         Path bundle = bundle(format, "3", "3.25.9", absent);
         assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
     }
@@ -218,6 +231,72 @@ class BaselineToolTest {
             throws Exception {
         Path bundle = bundle("2", major, protobuf, "");
         assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        // Complete bundles of each format pass; format 2 needs no DynamicMessage fixture.
+        "2, '', ''",
+        "3, '', ''",
+        "3, fixtures/2.2.1/snapshot-dynamic.properties, Missing snapshot fixture",
+        "3, fixtures/2.3.0/rocksdb/dynamic/checkpoint.zip, Missing state fixture",
+        "3, fixtures/2.2.1/hashmap/dynamic/savepoint.zip, Missing state fixture"
+    })
+    void requiresEachFormatsFixtures(String format, String absent, String failure)
+            throws Exception {
+        Path bundle = bundle(format, "4", "4.36.2", "");
+        Files.delete(bundle.resolve("SHA256SUMS"));
+        Properties manifest = BaselineTool.load(bundle.resolve("manifest.properties"));
+        for (String version : BaselineTool.runtimes("flink2")) {
+            Properties result = new Properties();
+            List<String> cases = BaselineTool.expectedCases(version, format);
+            result.setProperty("status", "passed");
+            result.setProperty("flink.version", version);
+            result.setProperty("case.count", Integer.toString(cases.size()));
+            result.setProperty("cases", String.join(",", cases));
+            result.setProperty("library.sha256", BaselineTool.hash(bundle.resolve("library.jar")));
+            result.setProperty("consumer.sha256", BaselineTool.hash(bundle.resolve("tools.jar")));
+            Files.createDirectories(bundle.resolve("capture-" + version));
+            BaselineTool.save(result, bundle.resolve("capture-" + version + "/result.properties"));
+            Path fixtures = bundle.resolve("fixtures/" + version);
+            for (String name : BaselineTool.snapshotFixtures(format)) {
+                write(fixtures.resolve("snapshot-" + name + ".properties"), absent);
+            }
+            for (String backend : List.of("hashmap", "rocksdb")) {
+                for (String name : BaselineTool.stateFixtures(format)) {
+                    for (String kind : List.of("savepoint", "checkpoint")) {
+                        Path archive = fixtures.resolve(backend + "/" + name + "/" + kind + ".zip");
+                        if (absent.isEmpty() || !archive.toString().endsWith(absent)) {
+                            Files.createDirectories(archive.getParent());
+                            zip(archive);
+                        }
+                    }
+                }
+            }
+        }
+        zip(bundle.resolve("source.zip"));
+        assertThat(manifest.getProperty("format.version")).isEqualTo(format);
+        BaselineTool.seal(bundle);
+        if (failure.isEmpty()) {
+            assertThat(BaselineTool.check(bundle)).isEqualTo(manifest);
+        } else {
+            assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+        }
+    }
+
+    private static void zip(Path archive) throws Exception {
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(archive))) {
+            output.putNextEntry(new ZipEntry("_metadata"));
+            output.closeEntry();
+        }
+    }
+
+    /** Writes a placeholder file unless its path ends with the absent name. */
+    private static void write(Path file, String absent) throws Exception {
+        if (absent.isEmpty() || !file.toString().endsWith(absent)) {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, file.getFileName().toString());
+        }
     }
 
     private Path bundle(String format, String major, String protobuf, String absent)
@@ -246,7 +325,8 @@ class BaselineToolTest {
                         "apps/application-enum-original.jar",
                         "apps/enum-original/schema.pb",
                         "apps/application-enum-added.jar",
-                        "apps/enum-added/schema.pb")) {
+                        "apps/enum-added/schema.pb",
+                        "apps/application-dynamic.jar")) {
             if (absent.isEmpty() || !name.contains(absent)) {
                 Files.createDirectories(bundle.resolve(name).getParent());
                 Files.writeString(bundle.resolve(name), name);

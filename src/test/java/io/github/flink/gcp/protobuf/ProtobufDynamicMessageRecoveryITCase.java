@@ -167,14 +167,14 @@ class ProtobufDynamicMessageRecoveryITCase {
             throws Exception {
         for (String kind : List.of("value", "map", "operator")) {
             String saved = saved(backend, kind, "original");
-            rejected(backend, kind, saved, "incompatible");
+            checks.incompatible(backend, kind, BASELINE, saved, "incompatible");
             accepted(backend, kind, saved, "original");
         }
         String changed = saved(backend, "all", "changed");
-        rejected(backend, "all", changed, "original");
+        checks.incompatible(backend, "all", BASELINE, changed, "original");
         accepted(backend, "all", changed, "changed");
         String enumAdded = saved(backend, "all", "enum-added");
-        rejected(backend, "all", enumAdded, "enum-original");
+        checks.incompatible(backend, "all", BASELINE, enumAdded, "enum-original");
         accepted(backend, "all", enumAdded, "enum-added");
     }
 
@@ -219,7 +219,8 @@ class ProtobufDynamicMessageRecoveryITCase {
                         "original",
                         false)) {
             Throwable failure = job.failure();
-            assertIncompatible(failure, "Generated state restored with the generated class");
+            SchemaEvolutionChecks.assertIncompatible(
+                    failure, "Generated state restored with the generated class");
             assertThat(ExceptionUtils.stringifyException(failure))
                     .as("The generated class loads from the application jar")
                     .doesNotContain("ClassNotFoundException");
@@ -227,7 +228,8 @@ class ProtobufDynamicMessageRecoveryITCase {
         String dynamic = saved(backend, "all", "original");
         try (var job =
                 harness.start(directory(), backend, "all", BASELINE, dynamic, "original", false)) {
-            assertIncompatible(job.failure(), "DynamicMessage state restored as generated");
+            SchemaEvolutionChecks.assertIncompatible(
+                    job.failure(), "DynamicMessage state restored as generated");
         }
     }
 
@@ -252,23 +254,7 @@ class ProtobufDynamicMessageRecoveryITCase {
                 decoder,
                 observed,
                 expected,
-                (job, restore, first, end) -> {
-                    // Operator state and heap keyed state yield values that the restored
-                    // serializer read; RocksDB reads values with the application's serializer.
-                    // Values that the first restore leaves untouched, such as half of the MapState
-                    // values, carry the new descriptor after the second restore.
-                    String saved = restore == 1 ? writer : reader;
-                    String keyed = backend.equals("hashmap") ? saved : reader;
-                    assertThat(job.restoredSchemas(0))
-                            .as("Descriptors of restored operator values")
-                            .hasSize(first)
-                            .containsOnly(saved);
-                    for (int input = first; input < end; input++) {
-                        assertThat(job.replacedSchemas(0, input))
-                                .as("Descriptors of the values that input %s replaced", input)
-                                .containsExactly(keyed, keyed);
-                    }
-                });
+                SchemaEvolutionChecks.carriedDescriptors(backend, writer, reader));
     }
 
     private String saved(String backend, String kind, String variant) throws Exception {
@@ -284,23 +270,5 @@ class ProtobufDynamicMessageRecoveryITCase {
             job.assertRestored(0, 8);
             job.process(8, 12, 0);
         }
-    }
-
-    private void rejected(String backend, String kind, String savepoint, String variant)
-            throws Exception {
-        try (var job = dynamic(directory(), backend, kind, BASELINE, savepoint, variant)) {
-            assertIncompatible(job.failure(), kind + " state restored by " + variant);
-        }
-    }
-
-    /** Flink rejects the new serializer at resolution, without a reason from the library. */
-    private static void assertIncompatible(Throwable failure, String description) {
-        assertThat(failure)
-                .as(description)
-                .hasStackTraceContaining("StateMigrationException")
-                .hasStackTraceContaining("must not be incompatible");
-        assertThat(ExceptionUtils.stringifyException(failure))
-                .as(description)
-                .doesNotContain("cannot read the saved Protobuf schema");
     }
 }
