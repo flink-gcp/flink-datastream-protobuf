@@ -25,6 +25,7 @@ limitations under the License.
 - Supersedes: The Flink 2.3-only runtime scope in [ADR-0001](0001-native-protobuf-type-integration.md)
 - Amends: The build matrix in [ADR-0002](0002-build-and-development-workflow.md)
 - Unchanged-jar check amended: 2026-10-30, [issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141)
+- Release discovery amended: 2026-10-31, [issue #142](https://github.com/flink-gcp/flink-datastream-protobuf/issues/142)
 - Current instructions: [Development](../development.md)
 
 ## Context
@@ -71,6 +72,8 @@ The source-build matrix covers JDK 21; it does not substitute for the binary che
 This single-module library runs the supported matrix and binary checks on every PR as well as main pushes, manual runs, and a weekly schedule.
 This is more frequent than the connector's weekly compatibility lanes while preserving its support contract.
 The scheduled run checks the pinned supported versions; it is not automatic discovery of new Flink releases or a next-SNAPSHOT early-warning lane.
+A separate weekly [upstream release check](../development.md#upstream-release-check) outside the PR gate reports upstream releases that overtake the pins.
+It does not move a pin or the window; each update remains the reviewed change described here.
 Before moving the supported window, explicitly review the new release, advance the floor and ceiling together, update documentation, and pass the matrix and binary checks.
 Dependabot must not independently advance Flink minor or major versions; patch updates remain reviewable.
 Support for a newly released minor starts with that reviewed range update, not merely its upstream publication.

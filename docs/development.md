@@ -78,6 +78,8 @@ mise x -- just --list
 | `just benchmark-evidence-test` | Run the gate's synthetic positive and negative controls |
 | `just gce-benchmark <command> ...` | Plan, run, collect, and clean up temporary GCE benchmark VMs; see [Temporary GCE execution](#temporary-gce-execution) |
 | `just gce-benchmark-test` | Run the GCE operator tooling tests against a recording gcloud double and the VM runner tests against local stubs, without cloud access |
+| `just upstream-versions` | Compare the Flink and Protobuf pins with Maven Central and name each pin that a newer release overtakes; see [Upstream release check](#upstream-release-check) |
+| `just upstream-versions-test` | Run the upstream version check against synthetic pins and metadata without network access |
 | `just test-scripts [test-file...]` | Run the `scripts/tests` suite through the locked pytest, or only the given files; the per-tool test recipes delegate to it |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
@@ -435,7 +437,7 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
 | Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, not on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
@@ -761,7 +763,7 @@ The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inhe
 
 Dependabot checks Maven, GitHub Actions, and the root uv project weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
 Update the Python minor by hand: change `python` in `mise.toml` and `requires-python` together, relock, and run `just test-scripts` and `just test-doc-versions`.
-During dependency maintenance, also check the `protobuf3` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
+The absence of a Dependabot PR does not establish that the `protobuf3` and `flink1` profile pins or `FLINK_CEILING` are current; the [upstream release check](#upstream-release-check) reports them.
 Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.
 Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.
 Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including the matrix checks.
@@ -813,6 +815,32 @@ GitHub [prefers submitted data](https://docs.github.com/en/code-security/concept
 Test-scoped dependencies, including the whole benchmark graph, are submitted with the development scope.
 The standalone example is not submitted, because it resolves the unpublished development library, and keeps its static entry.
 A failed job appears in the Actions tab and notifies the user who triggered it (for the weekly run, the user who last changed its cron line); an HTTP error from the snapshot API fails the job, but a response whose result is neither `SUCCESS` nor `ACCEPTED` is only logged as an error in a passing job, so check the run log when an expected alert is missing.
+
+### Upstream release check
+
+Dependabot proposes runtime updates only for the root `pom.xml` properties: patches of the Flink floor, and minors and patches of the default Protobuf pin.
+Its ignore rules exclude new Flink minors and majors and new Protobuf majors, and it reads neither the `flink1` and `protobuf3` profile pins nor `FLINK_CEILING`.
+The weekly `Upstream versions` workflow, also started through `workflow_dispatch`, therefore runs `just upstream-versions`, which compares the Flink 2.x floor, ceiling, and 1.20 LTS pins and both Protobuf pins with the `org.apache.flink:flink-core` and `com.google.protobuf:protobuf-java` metadata on Maven Central.
+CI does not call this workflow, so a new upstream release never fails a pull request; Lint runs only the check's offline tests.
+
+The check counts only final `x.y.z` releases, not previews or release candidates.
+It fails, naming each overtaken pin and the file that holds it, when Maven Central lists one of the following releases:
+
+| Pin | Overtaking release |
+|---|---|
+| Flink 2.x floor, ceiling, and 1.20 LTS | A newer patch of the pinned minor |
+| Flink 2.x ceiling | A newer minor of the ceiling's major, or a release of a newer Flink major |
+| Protobuf 4 default and `protobuf3` profile | A newer minor or patch of the pinned major |
+| Protobuf 4 default | A release of a newer Protobuf major |
+
+When it cannot read a pin or the metadata, it fails with an error that names the file, URL, or artifact instead of listing pins; rerun it after a transient network error.
+A failed scheduled run notifies the user who last changed its cron line, and a finding repeats every week until its pin moves, including a Protobuf 4 update whose Dependabot PR is still open.
+
+Respond to each finding through the [version-update procedure](#updating-protobuf-schemas-or-flink):
+
+- **A new Flink 2.x minor**: follow the "Supported Flink minor window" row of the version-update table. The next library release containing the moved window is a new minor version.
+- **A newer patch or Protobuf minor**: update the pin and its exact-version fixtures. This leads to a release only when the update fixes a defect that affects users.
+- **A new Flink or Protobuf major**: decide its support under [ADR-0003](adr/0003-flink-version-compatibility.md) or [ADR-0001](adr/0001-native-protobuf-type-integration.md) before moving any pin. To defer support, raise that upstream's entry in `DECIDED_MAJORS` in `scripts/upstream_versions.py` in the change that records the decision; the check then reports only later majors.
 
 ## Agent tooling
 
