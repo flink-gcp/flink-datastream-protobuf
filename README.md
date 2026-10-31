@@ -9,7 +9,7 @@ MiniCluster tests verify checkpoint recovery and savepoint restoration with Hash
 No Maven Central release is available.
 Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
 
-The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:0.3.0-SNAPSHOT`.
+The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:1.0.0-SNAPSHOT`.
 Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to build/install it locally and run the compiled application examples.
 It targets full-runtime generated Protobuf messages and DynamicMessage values with protobuf-java 4.x and 3.25.x.
 Each artifact line is built with Protobuf 4.36.2, and CI runs that jar unchanged with protobuf-java/protoc 4.36.2 and 3.25.9.
@@ -70,7 +70,7 @@ There is no message-key opt-in: deterministic bytes do not make generated messag
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
 The unpublished 0.x milestones are development milestones whose APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Version 1.0.0 will establish the stable API and forward-restore contract.
-The current roadmap ends at 0.3.0; the remaining work will determine whether further development milestones or preparation for 1.0.0 comes next.
+The capability roadmap ended at 0.3.0, and the remaining work prepares the first release.
 The [1.0.0 publication work](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) must validate and publish both `1.0.0` and `1.0.0-1.20`, verify consumers, and retain fixtures from each published artifact.
 No calendar deadline is set.
 The library has no Kryo/Chill implementation or internal fallback; Flink can still select its own generic serializer when native integration is not selected, so native usage must set `pipeline.generic-types: false`.

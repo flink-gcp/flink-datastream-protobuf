@@ -27,7 +27,7 @@ limitations under the License.
     </parent>
     <groupId>io.github.flink-gcp</groupId>
     <artifactId>flink-datastream-protobuf</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <name>Flink DataStream Protobuf</name>
     <description>Native Protocol Buffers type integration for Apache Flink DataStream, with explicit type information, factory registration, and versioned descriptor snapshots for serializer restoration across unchanged and supported changed schemas.</description>
     <url>https://github.com/flink-gcp/flink-datastream-protobuf</url>

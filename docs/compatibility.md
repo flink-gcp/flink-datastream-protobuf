@@ -27,7 +27,7 @@ The 0.x versions denote development milestones; 1.0.0 is the planned first Maven
 
 ## Development builds before 1.0.0
 
-The current source version is `0.3.0-SNAPSHOT`, a development build that restores supported schema changes.
+The current source version is `1.0.0-SNAPSHOT`, a development build that restores supported schema changes.
 The 0.x versions are development milestones, not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 
