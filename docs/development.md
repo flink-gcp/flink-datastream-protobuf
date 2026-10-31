@@ -955,7 +955,7 @@ Neither MCP server is required to build or test the project.
 ## Next implementation steps
 
 The [ADR-0001 release contract](adr/0001-native-protobuf-type-integration.md) defines the initial public entry points, settings/defaults, framing, snapshot format, and descriptor normalization.
-Versions 0.1.0, 0.2.0, and 0.3.0 are unpublished development milestones and permit documented breaking changes while the design matures.
+Versions 0.1.0, 0.2.0, and 0.3.0 were unpublished development milestones that permitted documented breaking changes while the design matured.
 Version 1.0.0 is the stabilization point and first Maven Central publication.
 The development sequence and current implementation status are:
 
@@ -969,14 +969,13 @@ The development sequence and current implementation status are:
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) adds the upgrade guide from 0.1.0 and the [API compatibility gate](#api-compatibility-gate), which checks each candidate against the retained 0.1.0 libraries; [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63) then retains the 0.2.0 baseline and publishes the `v0.2.0` pre-release, which the next documentation deployment lists as the 0.2 milestone.
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) designs explicit-descriptor DynamicMessage support in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md), [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) implements its type information, serializer, and snapshot, and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) verifies state recovery and completes the usage documentation. Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
 8. [#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) restarts the persisted formats at version 1 for 1.0.0 under new snapshot class names; the library no longer reads 0.x state, and the 0.x fixtures, upgrade guide, and CI checks against the 0.x bundles are removed.
-9. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
+9. [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) implements publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` under ADR-0006, following ADR-0003's effective-model guards and two-artifact validation requirement, and the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) are rerun on Google Compute Engine from the fixed candidate. The first-release milestone completes only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
-No further 0.x milestone followed 0.3.0, and the remaining work prepares 1.0.0.
-The 1.0.0 milestone tracks first publication, with no calendar deadline.
+No further 0.x milestone followed 0.3.0, and the 1.0.0 milestone tracked the first publication.
 
 Implementation PRs update documentation for behavior they actually deliver.
 Construction and registration examples describe implemented APIs; the runtime acceptance suite verifies checkpoint/savepoint recovery with unchanged and supported changed schemas.
-The README distinguishes current transport support from the remaining release requirements.
+The README describes the published release and its supported transport.
 The optional Chill probe is not a production fallback or a release acceptance substitute.
 
 ### Contract acceptance scenarios

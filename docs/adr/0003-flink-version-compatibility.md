@@ -88,12 +88,11 @@ Users on 1.20 must supply explicit list element TypeInformation.
 ### State and release acceptance
 
 Issues #9, #10, and #11 must apply their production integration and unchanged-schema restore acceptance to each supported runtime and artifact line.
-The remaining release work in #13 must publish and verify both version lines, retain per-line published-artifact provenance, and keep released-state fixtures for each supported runtime.
+The release work in #13 must publish and verify both version lines, retain per-line published-artifact provenance, and keep released-state fixtures for each supported runtime.
 Before publication, guard the effective Maven model: bare versions must use the exact recorded 2.x floor and `flink2`; `-1.20` versions must use the pinned 1.20 toolchain and `flink1`.
 Checking only command-line substrings is insufficient because Maven properties can be overridden.
 Both staged artifacts must validate before either is published; publish both before announcing the GitHub release.
 The two publications are not transactional, so the release workflow must record partial failures and recovery instructions; [ADR-0006](0006-central-portal-releases.md) records how it does.
-These are requirements for #13, not implemented publication automation.
 
 Source and binary compatibility do not imply saved-state compatibility across Flink versions.
 Library-only upgrade fixtures keep the Flink version fixed and use the matching artifact line.

@@ -22,17 +22,15 @@ limitations under the License.
 
 Adding a field can preserve Protobuf binary compatibility, and the current development library restores state across that change.
 It accepts unchanged schemas and the [supported schema changes](#schema-changes), and it rejects other changes to the declarations that saved values reach when the job restores its state.
-No library release has been published yet.
-The 0.x versions denote development milestones; 1.0.0 is the planned first Maven Central release.
+Version 1.0.0 is the first release published to Maven Central; the 0.x versions were unpublished development milestones.
 
 ## Development builds before 1.0.0
 
-The current source version is `1.0.0-SNAPSHOT`, a development build that restores supported schema changes.
+A build of this source is the development version `1.0.0-SNAPSHOT`, which restores supported schema changes.
 The 0.x versions are development milestones, not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 
-[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned first release and the start of the [stable API and forward-restore contract](#compatibility-from-100).
-Its preparation follows the [quickstart's Maven Central transition](quickstart.md#switch-to-maven-central-at-100).
+Version 1.0.0 is the first release and the start of the [stable API and forward-restore contract](#compatibility-from-100).
 Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling](validation/development-baselines.md).
 
 Version 1.0.0 restarts the persisted formats at version 1 under snapshot classes that the 0.1.0, 0.2.0, and 0.3.0 milestones never wrote, and it removes their snapshot classes.

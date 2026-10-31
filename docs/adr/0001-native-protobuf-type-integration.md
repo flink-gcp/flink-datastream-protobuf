@@ -401,9 +401,8 @@ DynamicMessage requires an explicit root descriptor because its Java class alone
 [ADR-0005](0005-descriptor-bound-dynamic-messages.md) selects shared type information and serializer classes with a separate dynamic snapshot class, leaving the generated snapshot format unchanged.
 Automatic generated-to-dynamic saved-state conversion remains outside the release scope unless separately designed and tested.
 
-The current capability roadmap ends at 0.3.0; the 1.0.0 milestone tracks stabilization and first publication, without a calendar deadline or automatic completion after 0.3.0.
-After 0.3.0, assess remaining design issues, missing implementation and validation gaps.
-If further development is needed, define 0.4.0 or later 0.x milestones from that assessment; otherwise, refine the compatibility contract and prepare 1.0.0.
+The capability roadmap ended at 0.3.0; the 1.0.0 milestone tracked stabilization and first publication, without a calendar deadline or automatic completion after 0.3.0.
+The assessment after 0.3.0 of remaining design issues and implementation and validation gaps defined no further 0.x milestone, so the compatibility contract was refined for 1.0.0.
 Version 1.0.0 is the stabilization point for the application-facing API, configuration defaults, persisted formats and supported forward-restore contract.
 Before publishing it, implement and validate the generated/dynamic construction and restoration design of ADR-0005, define the supported runtime and upgrade matrix, and verify those guarantees against candidate fixtures.
 Consumer verification and fixture capture from the actual published 1.0.0 artifacts complete the publication gate; no earlier published artifact exists.

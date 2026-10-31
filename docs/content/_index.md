@@ -23,8 +23,8 @@ Native Protocol Buffers type integration for the Apache Flink DataStream API.
 Use generated Protobuf messages with explicit type information or factory registration, with generic types disabled.
 
 This is **{{< param DocsVersion >}}** documentation.
-Development follows `main`; 0.x milestones are unpublished and their APIs and state formats may change.
-The first Maven Central release is planned for 1.0.0.
+Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LTS; Development follows `main`.
+The 0.x milestones were unpublished, and their APIs and state formats are not compatibility contracts.
 
 Start with the [quickstart](docs/quickstart.md), then read [usage and configuration](docs/usage.md).
 The [compatibility guide](docs/compatibility.md) distinguishes wire compatibility from saved-state compatibility.
