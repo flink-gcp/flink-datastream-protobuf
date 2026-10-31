@@ -59,7 +59,10 @@ The POM is not flattened; consequently, the `X.Y.Z-1.20` POM still names the 2.x
 ### Signing key and credentials
 
 Both repositories in the namespace use the same project release key and Central Portal token.
-The key's private part and passphrase are repository secrets, `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, and the token pair is `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`.
+The key's private part and passphrase are `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, and the token pair is `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`.
+They are secrets of the `release` environment, which only the `Release` job uses and whose deployment policy admits only the `main` branch and `v*` tags, without required reviewers.
+A repository ruleset restricts creating, moving, and deleting `v*` tags to repository administrators.
+A run from any other ref, including a dispatch from an unmerged branch whose workflow file drops the ancestry check, therefore receives no release secret, and only an administrator can cut the tag that publishes.
 Pull-request builds and the CI rehearsal read none of them.
 
 ### Effective-model guard
