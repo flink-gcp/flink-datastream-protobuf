@@ -18,6 +18,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -763,3 +764,42 @@ def test_main_maps_arguments_and_reports_rejection(work, monkeypatch, capsys):
     assert calls[-1] == (work, Path("c").absolute(), "j17", "j21")
     assert release.main(["review", str(work)]) == 1
     assert "baseline-release: Publication review already exists" in capsys.readouterr().err
+
+
+
+BASELINE_TOOL = fetcher.ROOT / "src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java"
+BASELINE_SOURCE = BASELINE_TOOL.read_text(encoding="utf-8")
+DRIFT = " differ between BaselineTool.runtimes and READERS in scripts/baseline-release.py"
+
+
+def baseline_tool_runtimes():
+    """Returns each artifact line's Flink versions as the tracked BaselineTool.runtimes switch names them.
+
+    The readers run each bundle's own tools.jar, built at the tagged capture checkout, so the two
+    agree at release when baseline-release runs from that checkout, whatever form the tag takes.
+    """
+    method = re.search(r"static List<String> runtimes\(String line\) \{(.*?)\n    \}", BASELINE_SOURCE, re.S)
+    assert method, "BaselineTool.runtimes not found in " + str(BASELINE_TOOL)
+    body = re.sub(r"//[^\n]*|/\*.*?\*/", "", method.group(1), flags=re.S)
+    cases = re.findall(r'case "([^"]+)"\s*->\s*List\.of\(([^)]*)\);', body)
+    assert cases and [line for line, _ in cases] == re.findall(r'case "([^"]+)"', body), \
+        "Cannot parse every case of BaselineTool.runtimes as case \"<line>\" -> List.of(<versions>);"
+    return {line: re.findall(r'"([^"]+)"', versions) for line, versions in cases}
+
+
+def test_readers_match_baseline_tool_runtimes():
+    runtimes = baseline_tool_runtimes()
+    assert {line: sorted(versions) for line, versions in runtimes.items()} == \
+        {line: sorted(versions) for line, (versions, _) in release.READERS.items()}, "Flink runtimes" + DRIFT
+
+
+@pytest.mark.parametrize("control", release.NEGATIVE_CONTROLS, ids=lambda control: control[0])
+def test_negative_control_reaches_its_rejection(control):
+    name, bundle, version, jdk, message, _ = control
+    line = bundle.split("-")[0]
+    runtimes = baseline_tool_runtimes()
+    # BaselineTool read checks the Flink runtime before the JDK.
+    expected = ("Unsupported Flink runtime" if version not in runtimes[line]
+                else "Unsupported JDK for artifact line" if jdk not in release.READERS[line][1] else None)
+    assert message == expected, "%s expects %r but BaselineTool.runtimes leads to %r" % (name, message, expected)
+    assert '"%s"' % message in BASELINE_SOURCE, name + " expects a message that BaselineTool no longer reports"
