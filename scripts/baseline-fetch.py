@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Download, verify, and extract retained development bundles from their GitHub pre-release."""
+"""Download, verify, and extract retained bundles from a milestone pre-release or a release."""
 
 import argparse
 import hashlib
@@ -74,8 +74,10 @@ def verified(path, name, entries, size=None):
 def designation(tag, release, entries, bundles):
     final = json.loads(verified(release / DESIGNATION, DESIGNATION, entries).read_text(encoding="utf-8"))
     inventory = json.loads(verified(release / INVENTORY, INVENTORY, entries).read_text(encoding="utf-8"))
-    require(final.get("format_version") == 1 and final.get("milestone") == tag
-            and final.get("milestone_final") is True, DESIGNATION + " does not designate " + tag)
+    # Format 1 designates a 0.x development milestone, format 2 a published release.
+    require((final.get("format_version") == 1 and final.get("milestone") == tag and final.get("milestone_final") is True)
+            or (final.get("format_version") == 2 and final.get("tag") == tag and final.get("final") is True),
+            DESIGNATION + " does not designate " + tag)
     recorded = {bundle.get("name"): bundle for bundle in final.get("bundles", [])}
     require(len(recorded) == len(final["bundles"]), "Duplicate bundle in " + DESIGNATION)
     selected = {}

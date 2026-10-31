@@ -22,10 +22,17 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -244,10 +251,210 @@ class BaselineToolTest {
     })
     void requiresEachFormatsFixtures(String format, String absent, String failure)
             throws Exception {
-        Path bundle = bundle(format, "4", "4.36.2", "");
-        Files.delete(bundle.resolve("SHA256SUMS"));
+        Path bundle = complete("flink2", format, absent, Map.of(), false);
         Properties manifest = BaselineTool.load(bundle.resolve("manifest.properties"));
-        for (String version : BaselineTool.runtimes("flink2")) {
+        assertThat(manifest.getProperty("format.version")).isEqualTo(format);
+        if (failure.isEmpty()) {
+            assertThat(BaselineTool.check(bundle)).isEqualTo(manifest);
+        } else {
+            assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "flink2, 1.0.0, v1.0.0",
+        "flink2, 10.20.30, v10.20.30",
+        "flink1, 1.0.0-1.20, v1.0.0",
+        "flink2, 1.0.0-1.20, other artifact line",
+        "flink1, 1.0.0, other artifact line",
+        "flink1, 1.0.0-1.21, Expected a released",
+        "flink2, 1.0.0-SNAPSHOT, Expected a released",
+        "flink2, v1.0.0, Expected a released",
+        "flink2, 01.0.0, Expected a released"
+    })
+    void namesTheReleaseTagOfAPublishedVersionOnItsLine(
+            String line, String version, String result) {
+        if (result.startsWith("v")) {
+            assertThat(BaselineTool.releaseTag(line, version)).isEqualTo(result);
+        } else {
+            assertThatThrownBy(() -> BaselineTool.releaseTag(line, version))
+                    .hasMessageContaining(result);
+        }
+    }
+
+    @Test
+    void fetchesThePublishedLibraryAndSignatureAfterCheckingItsChecksum() throws Exception {
+        Path central = temporary.resolve("central");
+        publish(central, "1.0.0", "published jar".getBytes(StandardCharsets.UTF_8), null, true);
+        Path bundle = Files.createDirectory(temporary.resolve("bundle"));
+        String repository = central.toUri().toString().replaceAll("/$", "");
+        assertThat(BaselineTool.fetchPublished(repository, "1.0.0", bundle))
+                .isEqualTo(BaselineTool.publishedUrl(repository, "1.0.0"))
+                .isEqualTo(
+                        repository
+                                + "/io/github/flink-gcp/flink-datastream-protobuf/1.0.0/"
+                                + "flink-datastream-protobuf-1.0.0.jar");
+        assertThat(bundle.resolve("library.jar")).hasContent("published jar");
+        assertThat(bundle.resolve("library.jar.asc")).hasContent("signature");
+        assertThat(names(bundle)).containsExactlyInAnyOrder("library.jar", "library.jar.asc");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "'0000000000000000000000000000000000000000', true, does not match its published SHA-1",
+        "'', false, .jar.asc"
+    })
+    void leavesNoLibraryWhenThePublishedDownloadOrChecksumFails(
+            String sha1, boolean signature, String failure) throws Exception {
+        Path central = temporary.resolve("central");
+        publish(
+                central,
+                "1.0.0",
+                "published jar".getBytes(StandardCharsets.UTF_8),
+                sha1.isEmpty() ? null : sha1,
+                signature);
+        Path bundle = Files.createDirectory(temporary.resolve("bundle"));
+        String repository = central.toUri().toString().replaceAll("/$", "");
+        assertThatThrownBy(() -> BaselineTool.fetchPublished(repository, "1.0.0", bundle))
+                .hasMessageContaining(failure);
+        assertThat(names(bundle)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "annotated-head, ''",
+        "lightweight, needs the annotated release tag v1.0.0",
+        "annotated-earlier, must run on the commit of v1.0.0",
+        "missing, Git command failed"
+    })
+    void requiresTheAnnotatedReleaseTagOnTheCheckedOutCommit(String tag, String failure)
+            throws Exception {
+        Path repository = Files.createDirectory(temporary.resolve("repository"));
+        git(repository, "init", "-q");
+        git(repository, "commit", "-q", "--allow-empty", "-m", "first");
+        if (tag.equals("annotated-earlier")) {
+            git(repository, "tag", "-a", "v1.0.0", "-m", "release");
+        }
+        git(repository, "commit", "-q", "--allow-empty", "-m", "second");
+        if (tag.equals("annotated-head")) {
+            git(repository, "tag", "-a", "v1.0.0", "-m", "release");
+        } else if (tag.equals("lightweight")) {
+            git(repository, "tag", "v1.0.0");
+        }
+        if (failure.isEmpty()) {
+            BaselineTool.requireReleaseCommit(repository, "v1.0.0");
+        } else {
+            assertThatThrownBy(() -> BaselineTool.requireReleaseCommit(repository, "v1.0.0"))
+                    .hasMessageContaining(failure);
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "flink2, '', '', ''",
+        "flink1, '', '', ''",
+        "flink2, status, other, Unsupported bundle status",
+        "flink2, library.jar.asc, '', Missing required bundle input: library.jar.asc",
+        "flink2, release.tag, v1.0.1, Published bundle does not name its release",
+        "flink2, writer.artifact, io.github.flink-gcp:flink-datastream-protobuf:1.0.1, Published bundle does not name its release",
+        "flink2, writer.artifact, org.example:other:1.0.0, Published bundle does not name its release",
+        "flink2, library.url, https://example.org/flink-datastream-protobuf-1.0.0.jar, Published bundle does not name its release",
+        "flink1, writer.artifact, io.github.flink-gcp:flink-datastream-protobuf:1.0.0, other artifact line"
+    })
+    void requiresAPublishedBundleToNameItsCentralReleaseAndKeepItsSignature(
+            String line, String broken, String value, String failure) throws Exception {
+        String version = line.equals("flink1") ? "1.0.0-1.20" : "1.0.0";
+        Map<String, String> release =
+                new HashMap<>(
+                        Map.of(
+                                "status",
+                                BaselineTool.PUBLISHED,
+                                "release.tag",
+                                "v1.0.0",
+                                "writer.artifact",
+                                "io.github.flink-gcp:flink-datastream-protobuf:" + version,
+                                "library.url",
+                                BaselineTool.publishedUrl(BaselineTool.CENTRAL, version)));
+        if (!broken.isEmpty() && !broken.equals("library.jar.asc")) {
+            release.put(broken, value);
+        }
+        Path bundle = complete(line, "3", "", release, !broken.equals("library.jar.asc"));
+        if (failure.isEmpty()) {
+            assertThat(BaselineTool.check(bundle).getProperty("status"))
+                    .isEqualTo(BaselineTool.PUBLISHED);
+        } else {
+            assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
+        }
+    }
+
+    private static List<String> names(Path directory) throws Exception {
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.map(path -> path.getFileName().toString()).toList();
+        }
+    }
+
+    private static void git(Path repository, String... arguments) throws Exception {
+        List<String> command =
+                new ArrayList<>(
+                        List.of(
+                                "git",
+                                "-C",
+                                repository.toString(),
+                                "-c",
+                                "user.name=test",
+                                "-c",
+                                "user.email=test@invalid",
+                                "-c",
+                                "commit.gpgsign=false",
+                                "-c",
+                                "tag.gpgsign=false"));
+        command.addAll(List.of(arguments));
+        Process process = new ProcessBuilder(command).inheritIO().start();
+        assertThat(process.waitFor()).isZero();
+    }
+
+    private Path publish(Path central, String version, byte[] jar, String sha1, boolean signature)
+            throws Exception {
+        Path directory =
+                Files.createDirectories(
+                        central.resolve(
+                                "io/github/flink-gcp/flink-datastream-protobuf/" + version));
+        Path published = directory.resolve("flink-datastream-protobuf-" + version + ".jar");
+        Files.write(published, jar);
+        if (signature) {
+            Files.writeString(
+                    published.resolveSibling(published.getFileName() + ".asc"), "signature");
+        }
+        String digest =
+                sha1 != null
+                        ? sha1
+                        : HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(jar));
+        Files.writeString(
+                published.resolveSibling(published.getFileName() + ".sha1"), digest + "\n");
+        return published;
+    }
+
+    /** Returns a sealed bundle of the line with every capture result and fixture of the format. */
+    private Path complete(
+            String line,
+            String format,
+            String absent,
+            Map<String, String> manifestOverrides,
+            boolean signature)
+            throws Exception {
+        Path bundle = bundle(format, "4", "4.36.2", "", line);
+        Files.delete(bundle.resolve("SHA256SUMS"));
+        if (!manifestOverrides.isEmpty()) {
+            Properties overridden = BaselineTool.load(bundle.resolve("manifest.properties"));
+            manifestOverrides.forEach(overridden::setProperty);
+            Files.delete(bundle.resolve("manifest.properties"));
+            BaselineTool.save(overridden, bundle.resolve("manifest.properties"));
+        }
+        if (signature) {
+            Files.writeString(bundle.resolve("library.jar.asc"), "signature");
+        }
+        for (String version : BaselineTool.runtimes(line)) {
             Properties result = new Properties();
             List<String> cases = BaselineTool.expectedCases(version, format);
             result.setProperty("status", "passed");
@@ -275,13 +482,8 @@ class BaselineToolTest {
             }
         }
         zip(bundle.resolve("source.zip"));
-        assertThat(manifest.getProperty("format.version")).isEqualTo(format);
         BaselineTool.seal(bundle);
-        if (failure.isEmpty()) {
-            assertThat(BaselineTool.check(bundle)).isEqualTo(manifest);
-        } else {
-            assertThatThrownBy(() -> BaselineTool.check(bundle)).hasMessageContaining(failure);
-        }
+        return bundle;
     }
 
     private static void zip(Path archive) throws Exception {
@@ -301,6 +503,11 @@ class BaselineToolTest {
 
     private Path bundle(String format, String major, String protobuf, String absent)
             throws Exception {
+        return bundle(format, major, protobuf, absent, "flink2");
+    }
+
+    private Path bundle(String format, String major, String protobuf, String absent, String line)
+            throws Exception {
         Path bundle = Files.createDirectory(temporary.resolve("bundle"));
         Files.writeString(
                 bundle.resolve("manifest.properties"),
@@ -309,7 +516,7 @@ class BaselineToolTest {
                         "format.version=" + format,
                         "status=development-tooling-baseline",
                         "source.revision=" + "a".repeat(40),
-                        "line=flink2",
+                        "line=" + line,
                         "protobuf.major=" + major,
                         "protobuf.version=" + protobuf));
         for (String name :

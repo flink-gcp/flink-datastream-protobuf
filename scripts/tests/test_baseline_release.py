@@ -189,16 +189,17 @@ def capture_checkout(tmp_path):
     return checkout, git(checkout, "rev-parse", "HEAD")
 
 
-def test_assembled_release_passes_the_retrieval_checks(work, answers, tmp_path, monkeypatch):
+def test_assembled_release_passes_the_retrieval_checks(work, answers, tmp_path, monkeypatch, capsys):
     assets = assemble(work)
+    assert "gh release upload" not in capsys.readouterr().out
     assert sorted(path.name for path in assets.iterdir()) == sorted(
         ["FINAL-BASELINE.json", "INVENTORY.json", "README.md", "SHA256SUMS", TAG + "-verification.tar.gz"]
         + [TAG + "-" + b + ".tar.gz" for b in release.BUNDLES])
     assert answers.checked == [work / "bundles" / b for b in release.BUNDLES]
     final = json.loads((assets / "FINAL-BASELINE.json").read_text())
-    assert (final["milestone"], final["source_revision"], final["annotated_tag_object"],
-            final["embedded_artifact_version"], final["ci_url"]) == (
-        TAG, REVISION, TAG_OBJECT, "0.9.0-SNAPSHOT", "https://example.org/runs/1")
+    assert (final["format_version"], final["milestone"], final["maven_central_publication"], final["source_revision"],
+            final["annotated_tag_object"], final["embedded_artifact_version"], final["ci_url"]) == (
+        1, TAG, False, REVISION, TAG_OBJECT, "0.9.0-SNAPSHOT", "https://example.org/runs/1")
     # The manifest is recorded as written, with the properties escape kept, as in v0.1.0.
     assert "\\:" in final["bundles"][0]["manifest"]["writer.artifact"]
     assert len(final["readers"]) == 10
@@ -342,9 +343,68 @@ def test_ci_must_have_frozen_the_tagged_commit_in_one_job(work, answers):
 def test_readme_and_tag_must_name_the_release(work):
     write(work / "README.md", "# " + TAG + "\n")
     assert_rejected(work, "README.md must name")
+    for tag in ("v1.0", "1.0.0", "v1.0.0-1.20", "v01.0.0"):
+        with pytest.raises(release.Rejected) as raised:
+            release.assemble(tag, work, "1")
+        assert "Expected a release tag such as v1.0.0 or a milestone tag" in str(raised.value)
+
+
+def published_bundles(work, tag="v1.0.0", **manifest):
+    """Replaces the milestone bundles with bundles that the published artifacts of `tag` wrote."""
+    for bundle in release.BUNDLES:
+        shutil.rmtree(work / "bundles" / bundle)
+        version = tag[1:] + ("-1.20" if bundle.startswith("flink1") else "")
+        values = {"status": "published-release-baseline", "release.tag": tag,
+                  "writer.artifact": "io.github.flink-gcp\\:flink-datastream-protobuf\\:" + version}
+        values.update(manifest)
+        capture_bundle(work / "bundles" / bundle, bundle, **values)
+    write(work / "README.md", "# %s\n\nCommit %s, tag object %s.\n" % (tag, REVISION, TAG_OBJECT))
+
+
+def test_published_release_assembles_a_format_2_designation_that_fetch_accepts(work, tmp_path, monkeypatch, capsys):
+    published_bundles(work)
+    release.assemble("v1.0.0", work, "1")
+    assets = work / "release"
+    final = json.loads((assets / "FINAL-BASELINE.json").read_text())
+    assert (final["format_version"], final["tag"], final["final"], final["maven_central_publication"]) == (
+        2, "v1.0.0", True, True)
+    assert "milestone" not in final and "embedded_artifact_version" not in final
+    assert "gh release upload v1.0.0 " in capsys.readouterr().out
+
+    def download(tag, names, directory):
+        for name in names:
+            shutil.copyfile(assets / name, Path(directory) / name)
+
+    monkeypatch.setitem(fetcher.RELEASES, "v1.0.0", digest((assets / "SHA256SUMS").read_bytes()))
+    monkeypatch.setattr(fetcher, "download", download)
+    monkeypatch.setattr(fetcher, "baseline_check", lambda bundle: None)
+    fetcher.fetch("v1.0.0", str(tmp_path / "fetched"), [])
+    for bundle in release.BUNDLES:
+        assert (tmp_path / "fetched" / bundle / "SHA256SUMS").read_bytes() == (
+            work / "bundles" / bundle / "SHA256SUMS").read_bytes()
+
+
+@pytest.mark.parametrize("manifest", [{"status": "development-tooling-baseline"}, {"release.tag": "v1.0.1"},
+                                      {"source.revision": "c" * 40}],
+                         ids=["status", "release.tag", "source.revision"])
+def test_published_bundles_must_name_the_release_that_wrote_them(work, manifest):
+    published_bundles(work, **manifest)
     with pytest.raises(release.Rejected) as raised:
         release.assemble("v1.0.0", work, "1")
-    assert "Expected a development milestone tag" in str(raised.value)
+    assert "Bundle was not captured from the published artifact of v1.0.0 at " + REVISION in str(raised.value)
+    assert not (work / "release").exists()
+
+
+def test_published_bundles_cannot_designate_a_milestone(work):
+    published_bundles(work, tag="v0.9.0")
+    assert_rejected(work, "Bundle was not captured as a development baseline of " + REVISION)
+
+
+def test_milestone_bundles_cannot_designate_a_release(work):
+    write(work / "README.md", "# v1.0.0\n\nCommit %s, tag object %s.\n" % (REVISION, TAG_OBJECT))
+    with pytest.raises(release.Rejected) as raised:
+        release.assemble("v1.0.0", work, "1")
+    assert "Bundle was not captured from the published artifact of v1.0.0" in str(raised.value)
 
 
 @pytest.mark.parametrize("text", [

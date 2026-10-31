@@ -53,12 +53,12 @@ mise x -- just --list
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat flink2 2.3.0` | Build the 2.x jar at the POM's floor with Protobuf 4, then run it unchanged at the ceiling and with Protobuf 3 tests at the floor and ceiling |
 | `just binary-compat flink1` | Build the LTS jar with Protobuf 4, then run it unchanged with Protobuf 3 tests |
-| `just baseline-capture <line> <major> <output>` | Capture a development bundle in a new external directory |
+| `just baseline-capture <line> <major> <output> [<published-version>]` | Capture a development bundle in a new external directory, or, from the release tag, a bundle that the published jar writes |
 | `just baseline-check <bundle>` | Check retained inventory and checksums without rebuilding |
 | `just baseline-read <bundle> <version> <output>` | Restore retained inputs into a new result directory |
 | `just baseline-fetch <tag> <output> [bundle...] [--archives <dir>]` | Download, verify, extract, and check retained release bundles in a new external directory |
 | `just baseline-fetch-test` | Run the retrieval checks against synthetic releases without network access |
-| `just baseline-release read\|review\|assemble\|verify ...` | Read, review, assemble, and verify a milestone's retained bundles for its pre-release; see [publishing a milestone baseline](validation/development-baselines.md#publish-a-milestone-baseline) |
+| `just baseline-release read\|review\|assemble\|verify ...` | Read, review, assemble, and verify the retained bundles of a milestone pre-release or a published release; see [publishing a milestone baseline](validation/development-baselines.md#publish-a-milestone-baseline) and [retaining a published release](validation/development-baselines.md#retain-a-published-release) |
 | `just baseline-release-test` | Run the release assembly checks against synthetic bundles, including retrieval of the assembled assets |
 | `just baseline-upgrade <bundle> <version>` | Restore a verified bundle's retained state with the current library and new-schema applications; see [restoring retained state](validation/development-baselines.md#restore-retained-state-with-the-current-library) |
 | `just api-compat <bundle>` | Build the candidate for the bundle's line with Protobuf 4, compare its annotated API with the retained library, and run the negative control |
@@ -824,7 +824,7 @@ After the workflow succeeds:
 1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` serves.
 2. Verify consumers and capture fixtures from both published versions; ADR-0001 makes this the completion gate of the first release.
    Run `just examples-verify <flink-version> <protobuf-major> <new-repository> <published-version>` with `X.Y.Z` at the 2.x floor and ceiling and with `X.Y.Z-1.20` at the LTS version, each with Protobuf 3 and 4, and a new repository for every run.
-   The fixture capture from the published versions is part of [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) and not yet available.
+   Capture and retain the four bundles that the published versions write as the [development baselines guide](validation/development-baselines.md#retain-a-published-release) describes, and attach them to the release.
 3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
    For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](compatibility.md#development-builds-before-100) does.
 4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.

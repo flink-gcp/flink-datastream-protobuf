@@ -14,10 +14,10 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just verify-protobuf 3` / `just verify-protobuf 4`: clean verification for each runtime/gencode pair.
 - `just verify-flink <version> <protobuf-major>`: clean verification with the matching Flink adapter.
 - `just binary-compat flink2 <ceiling>` / `just binary-compat flink1`: run a line's unchanged Protobuf 4 jar at the 2.x ceiling and with Protobuf 3 tests.
-- `just baseline-capture <line> <protobuf-major> <new-output>`: retain development writers and state in a new external directory.
+- `just baseline-capture <line> <protobuf-major> <new-output> [<published-version>]`: retain development writers and state in a new external directory, or, with a published version, the state that the jar on Maven Central writes.
 - `just baseline-check <bundle>` / `just baseline-read <bundle> <version> <new-output>`: check or restore retained inputs without rebuilding.
 - `just baseline-fetch <tag> <new-output> [bundle...] [--archives <dir>]`: download and verify retained release bundles against the pinned inventory; `just baseline-fetch-test` runs its synthetic tests.
-- `just baseline-release read|review|assemble|verify ...`: read, review, assemble, and verify a milestone's retained bundles for its pre-release; `just baseline-release-test` runs its synthetic tests.
+- `just baseline-release read|review|assemble|verify ...`: read, review, assemble, and verify the retained bundles of a milestone pre-release or a published release; `just baseline-release-test` runs its synthetic tests.
 - `just baseline-upgrade <bundle> <version>`: restore a verified bundle's retained state with the current library and new-schema applications.
 - `just api-compat <bundle>`: compare the candidate's `@Public`/`@PublicEvolving` API with a retained library through japicmp, with a negative control.
 - `just baseline-consume <bundle> <candidate-jar> <version> <new-output>`: run a retained bundle's compiled consumers against a candidate jar without recompiling them.

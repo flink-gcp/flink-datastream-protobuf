@@ -68,7 +68,8 @@ class RetainedBaselineUpgradeITCase {
         assertThat(selected).as("Run through just baseline-upgrade with a bundle").isNotBlank();
         bundle = Path.of(selected).toRealPath();
         Properties manifest = BaselineTool.load(bundle.resolve("manifest.properties"));
-        assertThat(manifest.getProperty("status")).isEqualTo("development-tooling-baseline");
+        assertThat(manifest.getProperty("status"))
+                .isIn(BaselineTool.DEVELOPMENT, BaselineTool.PUBLISHED);
         // Library-only controls keep the gencode/runtime pair and the Flink version fixed.
         assertThat(manifest.getProperty("protobuf.version"))
                 .as("Select the Protobuf profile that wrote the bundle")

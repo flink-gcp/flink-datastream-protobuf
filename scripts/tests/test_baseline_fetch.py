@@ -235,6 +235,21 @@ def final_field(path, value):
     return mutate
 
 
+def release_designation(designated, **fields):
+    """Rewrites the milestone designation as a format 2 release designation, then applies `fields`."""
+    def mutate(final, inventory):
+        for key in ("milestone", "milestone_final"):
+            final.pop(key)
+        final.update({"format_version": 2, "tag": designated, "final": True} | fields)
+    return mutate
+
+
+def test_accepts_a_release_designation(release, tmp_path):
+    release(mutate=release_designation(TAG))
+    fetcher.fetch(TAG, str(tmp_path / "output"), [BUNDLE])
+    assert (tmp_path / "output" / BUNDLE).is_dir()
+
+
 @pytest.mark.parametrize(("mutate", "message"), [
     (final_field(["format_version"], lambda _: 2), "does not designate " + TAG),
     (final_field(["milestone"], lambda _: "v0.0.9"), "does not designate " + TAG),
@@ -245,7 +260,11 @@ def final_field(path, value):
     (final_field(["bundles", 0, "asset", "sha256"], lambda _: "0" * 64),
      "FINAL-BASELINE.json and SHA256SUMS disagree"),
     (final_field(["bundles", 0, "asset", "bytes"], lambda size: size + 1), "Size mismatch: " + ARCHIVE),
-], ids=["format", "milestone", "final", "duplicate", "absent", "name", "checksum", "size"])
+    (release_designation("v0.0.9"), "does not designate " + TAG),
+    (release_designation(TAG, final="true"), "does not designate " + TAG),
+    (release_designation(TAG, format_version=1), "does not designate " + TAG),
+], ids=["format", "milestone", "final", "duplicate", "absent", "name", "checksum", "size",
+        "release-tag", "release-final", "release-format"])
 def test_rejects_designation_that_does_not_select_the_archive(release, rejected, mutate, message):
     release(mutate=mutate)
     rejected(message)
