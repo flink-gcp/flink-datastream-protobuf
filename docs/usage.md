@@ -60,8 +60,7 @@ The reader would parse such a field into the declared one.
 A length-delimited value of a message or map field becomes that field's message, whose nesting could exceed the recursion limit that the writer checked; any other value becomes that field's value, which replaces a singular value already set, adds an element to a repeated field, selects another oneof member, or fails the read for invalid UTF-8 or a malformed packed value.
 A repeated numeric or enum field accepts both its packed and its unpacked encoding.
 Parsing never produces such a field, because the parser merges those bytes into the declared field; only a value whose unknown fields the application set or merged directly can carry one, for example unknown fields copied from a message of another type.
-Earlier development builds, including 0.1.0, wrote such values, so an application that builds them now fails when serializing them.
-State that those builds wrote is not affected: reading either merges the bytes into the declared field, so restored values no longer carry the collision, or fails for malformed content, as it already did with those builds.
+An application that builds such values fails when serializing them.
 Serialization likewise rejects an unknown-field number above 536,870,911, the [largest field number](https://protobuf.dev/programming-guides/proto3/#assigning), because its wire tag would wrap to another field's tag, which the reader then parses as that field, or to an invalid tag for field zero, which fails the read.
 Other unknown fields are written unchanged, and the reader keeps them as unknown fields: those with undeclared numbers, those with a wire type that the declared field does not accept, and everything inside unknown groups.
 
@@ -226,12 +225,8 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 
 ## Development upgrades and API reference
 
-The 0.1.0 contract rejected schema changes, including otherwise wire-safe field additions.
-Current `0.3.0-SNAPSHOT` development builds restore the supported schema changes; the [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state written by the retained 0.1.0 and 0.2.0 artifacts across a field addition and a reserved field removal.
-The [upgrade guide](upgrade.md) lists the API changes and intentional breaks of each milestone and the upgrade procedure.
-[DynamicMessage values](dynamic-messages.md) are new in the [0.3.0 milestone](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20).
-Read [Protobuf/state compatibility and development-build upgrade guidance](compatibility.md) before changing an application or dependency.
-The unpublished 0.x milestones can break APIs, defaults, runtime requirements, and saved-state compatibility.
+Current `0.3.0-SNAPSHOT` development builds restore the supported schema changes.
+Read [Protobuf/state compatibility](compatibility.md) before changing an application or dependency.
 Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.
 
 Generate the API reference with `mise x -- just docs-javadoc`, then open `target/apidocs/index.html`.

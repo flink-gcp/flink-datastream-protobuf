@@ -37,13 +37,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Restores state retained by an earlier development milestone with the current library and
- * applications that contain only the current tree's generated classes.
+ * Restores state retained in a baseline bundle with the current library and applications that
+ * contain only the current tree's generated classes.
  *
  * <p>The {@code retained-baseline} group is excluded by default; {@code just baseline-upgrade}
- * includes it and names a verified bundle in {@code protobuf.test.retained.bundle}. The bundle's
- * dependency jars and retained library are not used: Maven resolves this build's dependencies, so
- * the test executes no retained code and reads only retained data.
+ * includes it and names a verified bundle in {@code protobuf.test.retained.bundle}. CI runs it on
+ * the bundle that the same build captured; a bundle retained from a published release exercises the
+ * forward-restore contract from that release. The bundle's dependency jars and retained library are
+ * not used: Maven resolves this build's dependencies, so the test executes no retained code and
+ * reads only retained data.
  */
 @Tag("retained-baseline")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

@@ -32,7 +32,7 @@ import java.io.IOException;
 /**
  * Version-1 metadata for restoring DynamicMessage value serializers from their saved descriptors.
  *
- * <p>The payload is the generated snapshot's version-2 layout without the class name: framing and
+ * <p>The payload is the generated snapshot's version-1 layout without the class name: framing and
  * normalization versions, the root's full name, the four settings, and the normalized descriptor
  * closure with its SHA-256 fingerprint. Restoration rebuilds the saved descriptors without loading
  * application classes or consulting the application's descriptor. Compatibility resolution
@@ -42,7 +42,7 @@ import java.io.IOException;
  * compatible.
  */
 @Internal
-public final class ProtobufDynamicMessageSerializerSnapshot
+public final class ProtobufDynamicSerializerSnapshot
         implements TypeSerializerSnapshot<DynamicMessage> {
     private static final int VERSION = 1;
 
@@ -51,10 +51,10 @@ public final class ProtobufDynamicMessageSerializerSnapshot
     private FileDescriptorSet schema;
 
     /** Creates an empty snapshot for Flink's versioned metadata reader. */
-    public ProtobufDynamicMessageSerializerSnapshot() {}
+    public ProtobufDynamicSerializerSnapshot() {}
 
     /** Captures immutable metadata without retaining descriptors or parsers. */
-    ProtobufDynamicMessageSerializerSnapshot(
+    ProtobufDynamicSerializerSnapshot(
             String fullName, ProtobufSerializerSettings settings, FileDescriptorSet schema) {
         this.fullName = fullName;
         this.settings = settings;
@@ -89,7 +89,7 @@ public final class ProtobufDynamicMessageSerializerSnapshot
         out.writeInt(settings.maxMessageSize());
         out.writeInt(settings.recursionLimit());
         out.writeByte(settings.largePayloadAliasing() ? 1 : 0);
-        ProtobufTypeSerializerSnapshot.writeDescriptors(out, bytes);
+        ProtobufGeneratedSerializerSnapshot.writeDescriptors(out, bytes);
     }
 
     /**
@@ -111,22 +111,22 @@ public final class ProtobufDynamicMessageSerializerSnapshot
                 throw new IOException(
                         "Unsupported Protobuf DynamicMessage snapshot version: " + readVersion);
             }
-            ProtobufTypeSerializerSnapshot.requireVersion(
+            ProtobufGeneratedSerializerSnapshot.requireVersion(
                     in.readInt(), ProtobufTypeSerializer.FRAMING_VERSION, "framing");
-            ProtobufTypeSerializerSnapshot.requireVersion(
+            ProtobufGeneratedSerializerSnapshot.requireVersion(
                     in.readInt(), ProtobufSchema.NORMALIZATION_VERSION, "normalization");
             String savedName = in.readUTF();
             ProtobufSchema.validateName(savedName, "Protobuf message full name");
             boolean deterministic =
-                    ProtobufTypeSerializerSnapshot.readFlag(in, "deterministic serialization");
+                    ProtobufGeneratedSerializerSnapshot.readFlag(in, "deterministic serialization");
             int maxMessageSize = in.readInt();
             int recursionLimit = in.readInt();
             boolean aliasing =
-                    ProtobufTypeSerializerSnapshot.readFlag(in, "large-payload aliasing");
+                    ProtobufGeneratedSerializerSnapshot.readFlag(in, "large-payload aliasing");
             ProtobufSerializerSettings savedSettings =
                     new ProtobufSerializerSettings(
                             deterministic, maxMessageSize, recursionLimit, aliasing);
-            FileDescriptorSet decoded = ProtobufTypeSerializerSnapshot.readDescriptors(in);
+            FileDescriptorSet decoded = ProtobufGeneratedSerializerSnapshot.readDescriptors(in);
             FileDescriptorSet savedSchema = ProtobufSchema.normalize(decoded, savedName);
             fullName = savedName;
             settings = savedSettings;
@@ -173,7 +173,7 @@ public final class ProtobufDynamicMessageSerializerSnapshot
     public TypeSerializerSchemaCompatibility<DynamicMessage> resolveSchemaCompatibility(
             TypeSerializerSnapshot<DynamicMessage> oldSerializerSnapshot) {
         requireInitialized();
-        if (!(oldSerializerSnapshot instanceof ProtobufDynamicMessageSerializerSnapshot old)) {
+        if (!(oldSerializerSnapshot instanceof ProtobufDynamicSerializerSnapshot old)) {
             return TypeSerializerSchemaCompatibility.incompatible();
         }
         old.requireInitialized();

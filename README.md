@@ -60,20 +60,16 @@ The milestone table includes implemented transport, common-type acceptance, and 
 | Milestone | Planned capability |
 |---|---|
 | [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Native generated-message integration and unchanged-schema state restore, including common Google Well-Known Types and OpenTelemetry composite messages; GitHub Pages development documentation and benchmark evidence |
-| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution and restore from retained 0.1.0 development state |
-| [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage support, with documented API/state upgrade behavior |
+| [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution |
+| [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20) | Explicit-descriptor DynamicMessage support |
 
-The 0.1.0 contract rejected changed schemas, including otherwise wire-safe field additions.
-Current development builds restore value state across supported field additions, reserved field removals, and enum value additions, with equal or increased reader limits and either deterministic mode; CI also restores state written by the retained 0.1.0 and 0.2.0 artifacts with the current library, across a field addition and a reserved field removal, and the 0.2.0 state written after a field addition or with an enum-bearing schema, including an added enum value.
+Current development builds restore value state across supported field additions, reserved field removals, and enum value additions, with equal or increased reader limits and either deterministic mode.
 See [Protobuf updates and state compatibility](docs/compatibility.md) for schema examples, the exact supported changes, and Java runtime version guarantees.
-The [upgrade guide](docs/upgrade.md) lists the API changes, intentional breaks, and tested restore results of each milestone.
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
-The unpublished 0.x milestones may contain breaking changes to APIs, defaults, runtime requirements, or saved-state compatibility while the design matures toward 1.0.0.
-Each milestone must document its specific breaks, supported upgrade paths, and required migration or fresh-state/replay procedure; read the [development-build compatibility guidance](docs/compatibility.md#development-builds-before-100) before upgrading.
-Separate API checks and attributable development-state fixtures must verify supported paths and explicit rejection of unsupported state.
-Version 1.0.0 will establish the stable API and forward-restore contract; compatibility with every earlier development artifact is not implied.
+The unpublished 0.x milestones are development milestones whose APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
+Version 1.0.0 will establish the stable API and forward-restore contract.
 The current roadmap ends at 0.3.0; the remaining work will determine whether further development milestones or preparation for 1.0.0 comes next.
 The [1.0.0 publication work](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) must validate and publish both `1.0.0` and `1.0.0-1.20`, verify consumers, and retain fixtures from each published artifact.
 No calendar deadline is set.

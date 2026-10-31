@@ -55,6 +55,7 @@ jobs:
               - .gitignore
               - .github/workflows/ci.yaml
               - .github/workflows/verify.yaml
+              - scripts/api-compat.sh
             benchmarks:
               - *baseline
               - scripts/benchmark_evidence.py

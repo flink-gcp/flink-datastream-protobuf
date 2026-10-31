@@ -285,7 +285,7 @@ public final class RuntimeJob {
                             .getClass()
                             .getName()
                             .equals(
-                                    "io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot")) {
+                                    "io.github.flink.gcp.protobuf.ProtobufGeneratedSerializerSnapshot")) {
                 throw new IllegalStateException(
                         "Production serializer and snapshot were not selected");
             }

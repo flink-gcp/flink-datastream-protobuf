@@ -175,4 +175,4 @@ During [1.0.0 preparation](https://github.com/flink-gcp/flink-datastream-protobu
 Keep the development recipe for contributors.
 After both artifacts are published, verify these same examples using a fresh Maven repository without first installing the library, and with the release's supported runtime/gencode settings.
 Only then describe Central resolution as verified.
-This switch does not promise source or state compatibility with arbitrary development snapshots; consult the [compatibility and upgrade guidance](compatibility.md) first.
+This switch does not promise source or state compatibility with arbitrary development snapshots; consult the [compatibility guidance](compatibility.md) first.

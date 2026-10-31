@@ -25,6 +25,7 @@ limitations under the License.
 - Issue: [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21)
 - Extends: The generated-message contracts in [ADR-0001](0001-native-protobuf-type-integration.md), which apply here except where this record states otherwise
 - Implementation: Implemented by [issue #22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22); [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) validated state recovery and the upgrade paths and documented usage
+- 1.0.0 persisted-format restart: 2026-10-31, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) renamed the dynamic snapshot class and kept its layout
 
 ## Context
 
@@ -192,7 +193,7 @@ A separate snapshot class gives each kind its own version line and reader, and t
 
 ### Dynamic snapshot format version 1
 
-Add `io.github.flink.gcp.protobuf.ProtobufDynamicMessageSerializerSnapshot`, `@Internal`, with a public no-argument constructor.
+Add `io.github.flink.gcp.protobuf.ProtobufDynamicSerializerSnapshot`, `@Internal`, with a public no-argument constructor.
 `getCurrentVersion()` returns `1`, and the payload after Flink's envelope has this fixed order:
 
 | Field | Encoding |
@@ -208,9 +209,9 @@ Add `io.github.flink.gcp.protobuf.ProtobufDynamicMessageSerializerSnapshot`, `@I
 | Normalized FileDescriptorSet | Exactly the declared number of bytes |
 | Descriptor fingerprint | Exactly 32 SHA-256 bytes, without a length prefix |
 
-This is generated snapshot version 2 without the class name, with the same limits and fingerprint semantics.
-The generated snapshot class keeps writing version 2 and reading versions 1 and 2 in 0.3.0.
-Format identifiers, breaking changes, and the 1.0.0 format restart follow the [compatibility policy before 1.0.0](0001-native-protobuf-type-integration.md#compatibility-policy-before-100) in ADR-0001.
+This is the [generated snapshot format version 1](0001-native-protobuf-type-integration.md#generated-snapshot-format-version-1) without the class name, with the same limits and fingerprint semantics.
+In 0.3.0 this layout was written under the class name `ProtobufDynamicMessageSerializerSnapshot`; the 1.0.0 format restart in the [compatibility policy before 1.0.0](0001-native-protobuf-type-integration.md#compatibility-policy-before-100) moved it to the current class name, which no 0.x artifact wrote, and the library no longer reads the 0.x class.
+Format identifiers and breaking changes follow that policy.
 
 `readSnapshot` decodes the metadata and normalizes the saved set against its root, as the generated reader does, without loading any application class; malformed, truncated, or unsupported data fails there with `IOException`.
 `restoreSerializer` rebuilds the saved descriptors, applies the construction validation, and returns a reader with the saved settings; a failure there throws `IllegalStateException` naming the full name and the failed rule.
@@ -229,9 +230,8 @@ Flink's `incompatible` result carries no reason, and a dynamic `restoreSerialize
 
 The added overloads leave every existing signature unchanged.
 The factory's exception for `DynamicMessage.class` changes from `IllegalArgumentException` to `InvalidTypesException`, an intentional behavior change for a class that 0.2.0 rejected as well; generated and other classes keep their behavior.
-The generated snapshot class, format, and evaluator are unchanged in 0.3.0, so 0.1.0 and 0.2.0 generated state is expected to restore through the same reader.
-No restore path is dropped in 0.3.0, so no breaking-change procedure is required for state.
-The direct paths from 0.1.0 and from 0.2.0 are offered and tested; the path from 0.1.0 through 0.2.0, which ADR-0001 leaves to each milestone, is not offered, because 1.0.0 rejects all 0.x state.
+The generated snapshot class, format, and evaluator were unchanged in 0.3.0, so 0.1.0 and 0.2.0 generated state restored through the same reader, and the direct paths from 0.1.0 and from 0.2.0 were tested.
+The 1.0.0 format restart superseded those development paths: 1.0.0 reads no 0.x state.
 
 The library still implements no Kryo or Chill serializer and no internal generic fallback, for either kind.
 
@@ -249,7 +249,7 @@ Issue #23 verifies on HashMap and RocksDB backends:
 
 - Restore after a supported schema change for value state, MapState values, and operator list state, including the descriptor that restored values carry before and after a second restore, and restored values left untouched until the next checkpoint.
 - Rejection of each unsupported schema change against an accepted control that differs only in that change, and of both cross-kind directions with and without the generated class.
-- The direct generated upgrade paths from the retained 0.1.0 and 0.2.0 baselines with `baseline-upgrade`, `api-compat`, and `baseline-consume`, and the upgrade-guide entry for the factory change.
+- The direct generated upgrade paths from the retained 0.1.0 and 0.2.0 baselines with `baseline-upgrade`, `api-compat`, and `baseline-consume`, and the upgrade-guide entry for the factory change; the 1.0.0 format restart removed these 0.x checks and the 0.x upgrade guide.
 - The user documentation of descriptor handling, field access through the value, explicit composite type information, and the evaluator rules for dynamic restore.
 
 ### Source basis

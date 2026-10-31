@@ -71,8 +71,6 @@ class DocumentationExamplesTest {
                         "and " + protobuf3 + " generated code with runtime " + protobuf3);
         assertThat(Files.readString(Path.of("docs/usage.md")))
                 .contains("Current `" + version + "` development builds");
-        assertThat(Files.readString(Path.of("src/test/resources/savepoints/v1/README.md")))
-                .contains("/target/flink-datastream-protobuf-" + version + ".jar");
     }
 
     private static String property(Document document, String expression) throws Exception {

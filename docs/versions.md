@@ -24,7 +24,7 @@ Before 1.0.0, the site contains Development from `main` and each 0.x development
 A milestone is a published GitHub pre-release tagged `v0.Y.Z`; the site keeps the latest patch of each 0.x minor and labels it, for example, `0.1 (development milestone)`.
 A milestone page shows only its tagged source, so behavior added on `main` afterwards appears only in Development.
 Neither Development nor milestone documentation implies that artifacts are available on Maven Central.
-Existing development evidence and upgrade guidance remain in the source tree.
+Existing development evidence remains in the source tree.
 Milestones leave the site when the first stable release is published.
 
 From 1.0.0, the site keeps the latest patch of the current and previous published minor series, plus Development.

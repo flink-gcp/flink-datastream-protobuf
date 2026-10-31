@@ -198,7 +198,7 @@ jobs:
     name: Development bundle / ${{ matrix.line }} / Protobuf ${{ matrix.protobuf }}
     if: github.event_name != 'pull_request' || inputs.baseline
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -233,6 +233,31 @@ jobs:
           for version in $versions; do
             just baseline-read "$RUNNER_TEMP/baseline" "$version" "$RUNNER_TEMP/read-17-$version"
           done
+      # Keeps the forward-restore check working on the bundle that this build wrote until a published
+      # release is retained; see "Restore retained state with the current library" in
+      # docs/validation/development-baselines.md.
+      - name: Restore the bundle's state with the current library on JDK 17
+        env:
+          LINE: ${{ matrix.line }}
+        run: |
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          for version in $versions; do
+            just baseline-upgrade "$RUNNER_TEMP/baseline" "$version"
+          done
+      # The same build wrote the bundle, so these keep the API gate and the compiled consumers
+      # working rather than compare releases; see "API compatibility gate" in docs/development.md.
+      - name: Compare the annotated API with the bundle's library
+        run: |
+          just api-compat "$RUNNER_TEMP/baseline"
+          cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
+      - name: Run the bundle's compiled consumers on the candidate with JDK 17
+        env:
+          LINE: ${{ matrix.line }}
+        run: |
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          for version in $versions; do
+            just baseline-consume "$RUNNER_TEMP/baseline" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$version"
+          done
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         if: matrix.line == 'flink2'
         with:
@@ -244,117 +269,10 @@ jobs:
           for version in 2.2.1 2.3.0; do
             just baseline-read "$RUNNER_TEMP/baseline" "$version" "$RUNNER_TEMP/read-21-$version"
           done
-      - name: Show failed development capture or reader logs
+      - name: Show failed development capture, reader, or consumer logs
         if: failure()
         run: |
-          for directory in "$RUNNER_TEMP/baseline" "$RUNNER_TEMP"/read-*; do
-            if [[ -d "$directory" ]]; then
-              find "$directory" -name '*.log' -type f -exec tail -n 60 {} +
-            fi
-          done
-  retained-baseline:
-    # One job per bundle keeps Verify within the plan's 20 concurrent jobs; see docs/validation/ci-budget.md.
-    name: Retained upgrade / ${{ matrix.bundle }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        # The Flink versions and JDKs that each retained bundle was read with.
-        include:
-          - {bundle: flink2-pb3, flink: '2.2.1 2.3.0', jdk21: true}
-          - {bundle: flink2-pb4, flink: '2.2.1 2.3.0', jdk21: true}
-          - {bundle: flink1-pb3, flink: '1.20.4', jdk21: false}
-          - {bundle: flink1-pb4, flink: '1.20.4', jdk21: false}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-          persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
-        with:
-          install_args: python uv
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: just
-      # Each retained milestone is a direct upgrade path to the current library.
-      # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
-      - name: Fetch and check the retained v0.1.0 bundle
-        id: fetch-v010
-        uses: ./.github/actions/baseline-fetch
-        with:
-          tag: v0.1.0
-          bundle: ${{ matrix.bundle }}
-          output: ${{ runner.temp }}/v0.1.0
-      - name: Fetch and check the retained v0.2.0 bundle
-        id: fetch-v020
-        uses: ./.github/actions/baseline-fetch
-        with:
-          tag: v0.2.0
-          bundle: ${{ matrix.bundle }}
-          output: ${{ runner.temp }}/v0.2.0
-      # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
-      - name: Restore the retained state with the current library on JDK 17
-        env:
-          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
-          FLINK: ${{ matrix.flink }}
-        run: |
-          test -n "$FLINK"
-          for bundle in $BUNDLES; do
-            for version in $FLINK; do
-              echo "Restoring $bundle at Flink $version"
-              just baseline-upgrade "$bundle" "$version"
-            done
-          done
-      # See "API compatibility gate" in docs/development.md.
-      - name: Compare the annotated API with the retained libraries
-        env:
-          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
-        run: |
-          for bundle in $BUNDLES; do
-            just api-compat "$bundle"
-          done
-          # The upgrade builds below clean target/; keep the compared candidate for every consumer run.
-          cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
-      - name: Run the retained compiled consumers on the candidate with JDK 17
-        env:
-          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
-          FLINK: ${{ matrix.flink }}
-        run: |
-          for bundle in $BUNDLES; do
-            tag=$(basename "$(dirname "$bundle")")
-            for version in $FLINK; do
-              just baseline-consume "$bundle" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$tag-$version"
-            done
-          done
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        if: matrix.jdk21
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Restore the retained state and run the consumers again on JDK 21
-        if: matrix.jdk21
-        env:
-          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
-          FLINK: ${{ matrix.flink }}
-        run: |
-          for bundle in $BUNDLES; do
-            tag=$(basename "$(dirname "$bundle")")
-            for version in $FLINK; do
-              echo "Restoring $bundle at Flink $version"
-              just baseline-upgrade "$bundle" "$version"
-              just baseline-consume "$bundle" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-21-$tag-$version"
-            done
-          done
-      - name: Show failed consumer logs
-        if: failure()
-        run: |
-          for directory in "$RUNNER_TEMP"/consume-*; do
+          for directory in "$RUNNER_TEMP/baseline" "$RUNNER_TEMP"/read-* "$RUNNER_TEMP"/consume-*; do
             if [[ -d "$directory" ]]; then
               find "$directory" -name '*.log' -type f -exec tail -n 60 {} +
             fi

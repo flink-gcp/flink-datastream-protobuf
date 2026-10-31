@@ -44,14 +44,16 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class ProtobufTypeSerializerSnapshotTest {
+class ProtobufGeneratedSerializerSnapshotTest {
     private static final ClassLoader LOADER =
-            ProtobufTypeSerializerSnapshotTest.class.getClassLoader();
+            ProtobufGeneratedSerializerSnapshotTest.class.getClassLoader();
     private static final ProtobufSerializerSettings DEFAULT = ProtobufSerializerSettings.DEFAULT;
 
     @Test
@@ -60,8 +62,8 @@ class ProtobufTypeSerializerSnapshotTest {
         DataInputDeserializer in =
                 new DataInputDeserializer(versioned(serializer.snapshotConfiguration()));
         assertThat(in.readUTF())
-                .isEqualTo("io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot");
-        assertThat(in.readInt()).isEqualTo(2);
+                .isEqualTo("io.github.flink.gcp.protobuf.ProtobufGeneratedSerializerSnapshot");
+        assertThat(in.readInt()).isEqualTo(1);
         Payload payload = Payload.read(in);
         assertThat(payload.framing).isEqualTo(1);
         assertThat(payload.normalization).isEqualTo(1);
@@ -77,6 +79,22 @@ class ProtobufTypeSerializerSnapshotTest {
         assertThat(payload.schema().getFileList())
                 .extracting(FileDescriptorProto::getName)
                 .containsExactly("snapshot_dependency.proto", "snapshot.proto");
+    }
+
+    /**
+     * Pins the frozen bytes of the snapshot and of one framed value, which both Protobuf profiles
+     * must write identically; a change to the layout, normalization, or descriptor encoding fails
+     * here rather than when a retained release's state is restored.
+     */
+    @Test
+    void snapshotAndFramedValueBytesAreFrozen() throws Exception {
+        ProtobufTypeSerializer<Envelope> serializer = serializer(DEFAULT);
+        assertThat(HexFormat.of().formatHex(sha256(versioned(serializer.snapshotConfiguration()))))
+                .isEqualTo("51d67c207f5a5bfc3edd7dd9a54eec46cb987be872dd113de5cb9ff99a8451d0");
+        DataOutputSerializer message = new DataOutputSerializer(32);
+        serializer.serialize(value(), message);
+        assertThat(Base64.getEncoder().encodeToString(message.getCopyOfBuffer()))
+                .isEqualTo("AAAAHggqEgcKBXNhdmVkGgIIByABKggKBm5lc3RlZKAGYw==");
     }
 
     @Test
@@ -468,10 +486,10 @@ class ProtobufTypeSerializerSnapshotTest {
 
     @Test
     void unsupportedVersionsFailBeforeDecodingFurtherData() throws Exception {
-        for (int version : List.of(-1, 0, 3, Integer.MAX_VALUE)) {
+        for (int version : List.of(-1, 0, 2, Integer.MAX_VALUE)) {
             assertThatThrownBy(
                             () ->
-                                    new ProtobufTypeSerializerSnapshot<>()
+                                    new ProtobufGeneratedSerializerSnapshot<>()
                                             .readSnapshot(
                                                     version,
                                                     new DataInputDeserializer(new byte[0]),
@@ -526,9 +544,9 @@ class ProtobufTypeSerializerSnapshotTest {
             byte[] truncated = Arrays.copyOf(complete, length);
             assertThatThrownBy(
                             () ->
-                                    new ProtobufTypeSerializerSnapshot<>()
+                                    new ProtobufGeneratedSerializerSnapshot<>()
                                             .readSnapshot(
-                                                    2,
+                                                    1,
                                                     new DataInputDeserializer(truncated),
                                                     LOADER))
                     .as("length %s", length)
@@ -614,18 +632,18 @@ class ProtobufTypeSerializerSnapshotTest {
         serializer(DEFAULT).snapshotConfiguration().writeSnapshot(out);
         out.writeInt(0x12345678);
         DataInputDeserializer in = new DataInputDeserializer(out.getCopyOfBuffer());
-        new ProtobufTypeSerializerSnapshot<>().readSnapshot(2, in, LOADER);
+        new ProtobufGeneratedSerializerSnapshot<>().readSnapshot(1, in, LOADER);
         assertThat(in.readInt()).isEqualTo(0x12345678);
     }
 
     @Test
     void failedReadInvalidatesPreviouslyInitializedSnapshot() throws Exception {
-        ProtobufTypeSerializerSnapshot<Envelope> snapshot =
-                new ProtobufTypeSerializerSnapshot<>(Envelope.class, DEFAULT);
+        ProtobufGeneratedSerializerSnapshot<Envelope> snapshot =
+                new ProtobufGeneratedSerializerSnapshot<>(Envelope.class, DEFAULT);
         assertThatThrownBy(
                         () ->
                                 snapshot.readSnapshot(
-                                        3, new DataInputDeserializer(new byte[0]), LOADER))
+                                        2, new DataInputDeserializer(new byte[0]), LOADER))
                 .isInstanceOf(IOException.class);
         assertThatThrownBy(snapshot::restoreSerializer)
                 .isInstanceOf(IllegalStateException.class)
@@ -659,8 +677,8 @@ class ProtobufTypeSerializerSnapshotTest {
                         FileDescriptor.buildFrom(
                                 deepFile,
                                 originalFile.getDependencies().toArray(new FileDescriptor[0])));
-        ProtobufTypeSerializerSnapshot<Envelope> snapshot =
-                new ProtobufTypeSerializerSnapshot<>(Envelope.class, DEFAULT);
+        ProtobufGeneratedSerializerSnapshot<Envelope> snapshot =
+                new ProtobufGeneratedSerializerSnapshot<>(Envelope.class, DEFAULT);
         setField(snapshot, "schema", accepted);
         byte[] saved = versioned(snapshot);
         TypeSerializerSnapshot<Envelope> read = readVersioned(saved, LOADER);
@@ -671,8 +689,8 @@ class ProtobufTypeSerializerSnapshotTest {
     @Test
     void writingRejectsModifiedUtfOverflowAndOversizedDescriptorsBeforeEmittingBytes()
             throws Exception {
-        ProtobufTypeSerializerSnapshot<Envelope> snapshot =
-                new ProtobufTypeSerializerSnapshot<>(Envelope.class, DEFAULT);
+        ProtobufGeneratedSerializerSnapshot<Envelope> snapshot =
+                new ProtobufGeneratedSerializerSnapshot<>(Envelope.class, DEFAULT);
         setField(snapshot, "className", "\u0800".repeat(21846));
         DataOutputSerializer out = new DataOutputSerializer(32);
         assertThatThrownBy(() -> snapshot.writeSnapshot(out))
@@ -753,8 +771,9 @@ class ProtobufTypeSerializerSnapshotTest {
 
     private static TypeSerializerSnapshot<Envelope> read(Payload payload, ClassLoader loader)
             throws Exception {
-        ProtobufTypeSerializerSnapshot<Envelope> result = new ProtobufTypeSerializerSnapshot<>();
-        result.readSnapshot(2, new DataInputDeserializer(payload.bytes()), loader);
+        ProtobufGeneratedSerializerSnapshot<Envelope> result =
+                new ProtobufGeneratedSerializerSnapshot<>();
+        result.readSnapshot(1, new DataInputDeserializer(payload.bytes()), loader);
         return result;
     }
 

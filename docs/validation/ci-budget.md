@@ -91,21 +91,15 @@ The rule in the [development guide](../development.md#ci-compiler-reuse-and-job-
 |---|---:|---:|---:|
 | Matrix job | 501 s | 20 min | 20 min |
 | Binary compatibility job | 365 s | 15 min | 15 min |
-| Development bundle job | 345 s | 30 min | 15 min |
+| Development bundle job | 463 s | 15 min | 20 min |
 | Benchmark smoke command | 89 s | none | 5 min |
-| Retained upgrade job | 474 s | 15 min | 20 min |
 
 [Issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141) changed the binary compatibility job from one cell per Protobuf profile to one per artifact line, each building the jar with Protobuf 4 and also running it with Protobuf 3 tests.
 In pull-request run [40918680497](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/40918680497), the 2.x cell, which runs the suite four times, took 365 seconds, and the LTS cell took 242 seconds.
 That run still used a full `verify` for the Protobuf 3 build, which the final recipe replaces with a build through `process-test-classes`; twice its 2.x duration stays within the 15-minute limit.
 
-The retained upgrade job fetches one bundle and restores its state with a clean Maven build; its ten jobs in the first pull-request run, [39451689508](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39451689508), took 59 to 122 seconds.
-The job then also runs the API compatibility gate, which rebuilds the candidate cleanly, and the retained compiled consumers; with those steps its ten jobs in run [39518523442](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39518523442) took 110 to 196 seconds.
-Twice the new maximum rounds up to the same 10-minute limit.
-Those ten cells were then folded into one job per bundle that runs each Flink version and JDK in turn and the API gate once.
-In five pull-request runs from [39630362526](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39630362526) to [39639022949](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/39639022949), its LTS jobs took 132 to 159 seconds and its 2.x jobs, which cover four combinations each, took 246 to 322 seconds.
-Twice that maximum rounds up to a 15-minute limit.
-For [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23), each job also fetches and checks the v0.2.0 bundle of its name, whose format adds evolved and enum fixtures.
-In pull-request run [41087953257](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41087953257), which downloaded the v0.2.0 archives into empty cache entries, the LTS jobs took 179 and 187 seconds and the 2.x jobs 413 and 474 seconds, so twice that maximum rounds up to a 20-minute limit.
+[Issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) removed the retained upgrade job, and the development bundle job now also runs `baseline-upgrade`, the API gate, and the compiled consumers on the bundle that it captured.
+In pull-request run [41195401814](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41195401814), its LTS jobs took 291 and 301 seconds and its 2.x jobs 446 and 463 seconds, so twice that maximum rounds up to a 20-minute limit.
+
 The matrix limit keeps the cold-compiler maximum, because a key change or an evicted entry returns every job to the cold path.
 No measured job combined the slowest step of each kind, but even the sum of the per-step maxima, about 630 seconds including setup steps, stays within the 20-minute limit.

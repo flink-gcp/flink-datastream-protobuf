@@ -487,7 +487,8 @@ public final class BaselineRuntime {
             properties.setProperty("settings.deterministic", Boolean.toString(raised));
             properties.setProperty("settings.maxMessageSize", Integer.toString(size));
             properties.setProperty("settings.recursionLimit", Integer.toString(depth));
-            writeSnapshot(file, serializer, ProtobufTypeSerializerSnapshotTest.value(), properties);
+            writeSnapshot(
+                    file, serializer, ProtobufGeneratedSerializerSnapshotTest.value(), properties);
         }
         checkSnapshot(BaselineTool.load(file));
     }
@@ -502,7 +503,7 @@ public final class BaselineRuntime {
                     dynamicSerializer(),
                     DynamicMessage.parseFrom(
                             Envelope.getDescriptor(),
-                            ProtobufTypeSerializerSnapshotTest.value().toByteArray()),
+                            ProtobufGeneratedSerializerSnapshotTest.value().toByteArray()),
                     properties);
         }
         checkDynamicSnapshot(BaselineTool.load(file));
@@ -573,7 +574,7 @@ public final class BaselineRuntime {
                         .build()
                         .createSerializer(new SerializerConfigImpl());
         assertThat(restoreSnapshot(fixture, serializer))
-                .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
+                .isEqualTo(ProtobufGeneratedSerializerSnapshotTest.value());
     }
 
     /**
@@ -585,13 +586,13 @@ public final class BaselineRuntime {
      */
     static void checkDynamicSnapshot(Properties fixture) throws Exception {
         assertThat(fixture.getProperty("snapshot.class"))
-                .isEqualTo(ProtobufDynamicMessageSerializerSnapshot.class.getName());
+                .isEqualTo(ProtobufDynamicSerializerSnapshot.class.getName());
         DynamicMessage restored = restoreSnapshot(fixture, dynamicSerializer());
         assertThat(restored.getDescriptorForType().toProto())
                 .isEqualTo(Envelope.getDescriptor().toProto());
         assertThat(unknownFieldNumbers(restored)).containsExactly("100");
         assertThat(Envelope.parseFrom(restored.toByteArray()))
-                .isEqualTo(ProtobufTypeSerializerSnapshotTest.value());
+                .isEqualTo(ProtobufGeneratedSerializerSnapshotTest.value());
     }
 
     private static TypeSerializer<DynamicMessage> dynamicSerializer() {
