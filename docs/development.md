@@ -63,7 +63,7 @@ mise x -- just --list
 | `just baseline-upgrade <bundle> <version>` | Restore a verified bundle's retained state with the current library and new-schema applications; see [restoring retained state](validation/development-baselines.md#restore-retained-state-with-the-current-library) |
 | `just api-compat <bundle>` | Build the candidate for the bundle's line with Protobuf 4, compare its annotated API with the retained library, and run the negative control |
 | `just baseline-consume <bundle> <candidate-jar> <version> <output>` | Run the bundle's compiled consumers against a candidate jar without recompilation |
-| `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
+| `just examples-verify <version> <major> <external-maven-repository> [<published-version>]` | Build/install the library, or resolve a published version from Maven Central, and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just release-rehearse <version> <output> [--unsigned]` | Stage `<version>` and `<version>-1.20` from the committed HEAD into a new external directory without uploading, check the release-line guard, then inspect both bundles; see [Release artifacts](#release-artifacts) |
 | `just release-artifacts-test` | Run the bundle inspection, rehearsal, Central Portal helper, and `Release` workflow checks with synthetic inputs and a stub `just` |
@@ -153,6 +153,8 @@ The 2.x library is compiled at the floor even for a ceiling consumer; LTS uses i
 The library package step uses the normal dependency cache, then `install-file` installs its jar and POM into the isolated consumer repository.
 The package step skips its tests because the ordinary verification lane owns those; run `just verify` before pushing changes.
 Use a distinct external Maven repository for each adapter/Protobuf-major pair to avoid overwriting the shared development SNAPSHOT coordinates.
+With a fourth argument, a released `X.Y.Z` for Flink 2.x or `X.Y.Z-1.20` for Flink 1.20, the recipe builds and installs nothing: the consumer resolves that version into the given repository, which must be new or empty, and the recipe then compares the resolved jar and POM with the SHA-1 checksums on `repo1.maven.org`, so that neither a locally built jar nor a repository that Maven settings add can stand in for the published one.
+The recipe rejects a version of the other artifact line.
 The application generates its own messages, tests explicit and registered transport and scalar-keyed state updates, and launches each entrypoint from the packaged jar with Flink supplied separately.
 The recipe also executes all three documented Maven launch goals with the selected versions, so their classpaths and entrypoint configuration are exercised in CI.
 `DocumentationExamplesTest` checks that the example's default dependency versions and the quickstart's explicit version arguments match the root POM pins.
@@ -821,7 +823,8 @@ After the workflow succeeds:
 
 1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` serves.
 2. Verify consumers and capture fixtures from both published versions; ADR-0001 makes this the completion gate of the first release.
-   The commands for it are part of [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) and not yet available.
+   Run `just examples-verify <flink-version> <protobuf-major> <new-repository> <published-version>` with `X.Y.Z` at the 2.x floor and ceiling and with `X.Y.Z-1.20` at the LTS version, each with Protobuf 3 and 4, and a new repository for every run.
+   The fixture capture from the published versions is part of [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) and not yet available.
 3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
    For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](compatibility.md#development-builds-before-100) does.
 4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.
