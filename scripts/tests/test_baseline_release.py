@@ -696,7 +696,7 @@ def test_read_runs_every_claimed_combination_and_both_controls(work, tmp_path, m
 @pytest.mark.parametrize(("mode", "message"), [
     ("control-passes", "negative-unsupported-flink"),
     ("control-creates-output", "negative-unsupported-flink"),
-    ("reader-fails", "Failed reader: read-flink1-pb4-1.20.4-jdk17"),
+    ("reader-fails", "Failed reader: read-flink1-pb4-1.20.5-jdk17"),
 ], ids=["control-passes", "control-creates-output", "reader-fails"])
 def test_read_rejects_controls_that_pass_or_create_output_and_failed_readers(work, tmp_path, monkeypatch, mode,
                                                                              message):
@@ -711,7 +711,7 @@ def test_read_rejects_controls_that_pass_or_create_output_and_failed_readers(wor
                 Path(command[-1]).mkdir()
             return 0 if mode == "control-passes" else 1
         Path(command[-1]).mkdir()
-        return 1 if mode == "reader-fails" and name == "read-flink1-pb4-1.20.4-jdk17" else 0
+        return 1 if mode == "reader-fails" and name == "read-flink1-pb4-1.20.5-jdk17" else 0
 
     monkeypatch.setattr(release, "run", run)
     with pytest.raises(release.Rejected) as raised:

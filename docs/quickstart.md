@@ -150,15 +150,15 @@ The tests launch the packaged entrypoints locally with Flink dependencies; they 
 | Flink | JDK | Matching protoc and protobuf-java |
 |---|---|---|
 | 2.2.1 and 2.3.0 | 17, 21 | 4.36.2 or 3.25.9 |
-| 1.20.4 | 17 | 4.36.2 or 3.25.9 |
+| 1.20.5 | 17 | 4.36.2 or 3.25.9 |
 
 For example, use a new repository to verify Flink 1.20 with Protobuf 3:
 
 ```sh
 lts_repo="$(mktemp -d /tmp/protobuf-example-lts.XXXXXX)"
-mise x -- just examples-verify 1.20.4 3 "$lts_repo"
+mise x -- just examples-verify 1.20.5 3 "$lts_repo"
 mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
-  "-Dmaven.repo.local=$lts_repo" -Dflink.version=1.20.4 \
+  "-Dmaven.repo.local=$lts_repo" -Dflink.version=1.20.5 \
   -Dprotobuf.version=3.25.9 exec:exec@explicit
 ```
 

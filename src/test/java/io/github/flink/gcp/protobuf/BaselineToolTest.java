@@ -158,25 +158,25 @@ class BaselineToolTest {
     @Test
     void rejectsUnsupportedRuntimeCombinations() {
         assertThat(BaselineTool.runtimes("flink2")).containsExactly("2.2.1", "2.3.0");
-        assertThat(BaselineTool.runtimes("flink1")).containsExactly("1.20.4");
+        assertThat(BaselineTool.runtimes("flink1")).containsExactly("1.20.5");
         assertThatThrownBy(() -> BaselineTool.runtimes("flink3"))
                 .hasMessageContaining("Unsupported");
         BaselineTool.validateJava("flink2", 21);
         assertThatThrownBy(() -> BaselineTool.validateJava("flink2", 11))
                 .hasMessageContaining("Unsupported");
-        assertThat(BaselineTool.expectedCases("1.20.4", "1"))
+        assertThat(BaselineTool.expectedCases("1.20.5", "1"))
                 .hasSize(13)
                 .contains("legacy-entry-point");
         assertThat(BaselineTool.expectedCases("2.2.1", "1"))
                 .hasSize(12)
                 .doesNotContain("legacy-entry-point")
                 .noneMatch(name -> name.contains("/evolved/") || name.contains("/enum/"));
-        assertThat(BaselineTool.expectedCases("1.20.4", "2"))
+        assertThat(BaselineTool.expectedCases("1.20.5", "2"))
                 .hasSize(21)
                 .contains("legacy-entry-point")
                 .noneMatch(name -> name.contains("dynamic"));
         // Format 3 adds a DynamicMessage snapshot fixture and two archives per backend.
-        assertThat(BaselineTool.expectedCases("1.20.4", "3"))
+        assertThat(BaselineTool.expectedCases("1.20.5", "3"))
                 .hasSize(26)
                 .contains(
                         "snapshot-dynamic",

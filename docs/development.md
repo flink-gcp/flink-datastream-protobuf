@@ -49,7 +49,7 @@ mise x -- just --list
 | `just format` | Spotless with Flink's AOSP Java formatting and import order |
 | `just verify-protobuf 4` | Clean verification with protobuf-java and protoc 4.36.2, the default |
 | `just verify-protobuf 3` | Clean verification with protobuf-java and protoc 3.25.9 |
-| `just verify-flink 1.20.4 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
+| `just verify-flink 1.20.5 3` | Clean Flink 1.20 verification with the `flink1` adapters and Protobuf 3 |
 | `just verify-flink 2.3.0 4` | Clean Flink 2.3 verification with Protobuf 4 |
 | `just binary-compat flink2 2.3.0` | Build the 2.x jar at the POM's floor with Protobuf 4, then run it unchanged at the ceiling and with Protobuf 3 tests at the floor and ceiling |
 | `just binary-compat flink1` | Build the LTS jar with Protobuf 4, then run it unchanged with Protobuf 3 tests |
@@ -91,7 +91,7 @@ mise x -- just --list
 
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
-CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.4 with JDK 17.
+CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.5 with JDK 17.
 It also runs the binary compatibility recipe for each artifact line on JDK 17.
 Lint runs `just test-scripts` with the workflow and Markdown checks.
 These lanes run for each PR, main push, manual verification, and weekly schedule.
@@ -440,9 +440,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code. `BaselineTool` records the distinct protoc version in captured bundles |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline_release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs), the development-bundle `versions` in the same workflow, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline_release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline_release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -839,12 +839,12 @@ A parent update that changes the managed japicmp version also needs the [API com
 JUnit major upgrades follow the supported Flink floor, using the same adoption condition as [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906).
 Check the upstream Apache Flink release's root POM (`flink-parent`) for this condition; this library inherits `flink-connector-parent` separately.
 Adopt JUnit 6 when the floor's upstream POM pins JUnit 6, then verify every supported runtime, including LTS.
-The current [floor POM (2.2.1)](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L158) pins JUnit 5.11.4 and the [LTS POM (1.20.4)](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L155) pins 5.10.1; this project maintains its own tested JUnit 5 minor/patch pin.
+The current [floor POM (2.2.1)](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L158) pins JUnit 5.11.4 and the [LTS POM (1.20.5)](https://github.com/apache/flink/blob/0980485040c6dbec3a1b32da05c4b655cf01ad2b/pom.xml#L155) pins 5.10.1; this project maintains its own tested JUnit 5 minor/patch pin.
 Dependabot ignores major updates to `org.junit:junit-bom`, so recheck this condition whenever the supported Flink window changes.
 
 Keep `slf4j-simple` on the SLF4J API major used by the supported Flink runtimes.
 The current runtimes use SLF4J 1.7.36; upgrading only the binding to 2.x leaves the 1.7 API without a usable binding and disables test logging.
-The upstream pins are recorded in the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L136), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L136), and [1.20.4](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L131) release POMs.
+The upstream pins are recorded in the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L136), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L136), and [1.20.5](https://github.com/apache/flink/blob/0980485040c6dbec3a1b32da05c4b655cf01ad2b/pom.xml#L131) release POMs.
 Dependabot ignores binding major updates; revisit the rule when reviewing a change to Flink's logging dependencies.
 
 Chill remains an optional comparison dependency with individually reviewed updates.
@@ -855,7 +855,7 @@ Update `benchmark.thrift.version` together with `benchmark_thrift_version` and `
 The same property pins `libthrift` and the required compiler version; updating only the Maven runtime pin makes benchmark initialization reject the older compiler.
 
 Keep `benchmark.avro.version` on the Avro version of every supported Flink runtime, so the Avro comparison measures the dependency graph that applications run with.
-Flink sets that version as `avro.version` in its root POM (`flink-parent`): the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L151), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L151), and [1.20.4](https://github.com/apache/flink/blob/f6265b2a32fd1571cd5dcea694c923b057239ac4/pom.xml#L149) release POMs pin Avro 1.11.4, and a patch release can move it (1.20.0 pinned 1.11.3).
+Flink sets that version as `avro.version` in its root POM (`flink-parent`): the [2.2.1](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L151), [2.3.0](https://github.com/apache/flink/blob/c0f8d1a1e09f209885a88f9c19ceb9d9e9870283/pom.xml#L151), and [1.20.5](https://github.com/apache/flink/blob/0980485040c6dbec3a1b32da05c4b655cf01ad2b/pom.xml#L149) release POMs pin Avro 1.11.4, and a patch release can move it (1.20.0 pinned 1.11.3).
 Keep `benchmark.jackson.version` on the exact Jackson version of the selected Avro release; Avro 1.11.4 imports [Jackson BOM 2.14.3](https://github.com/apache/avro/blob/6f119ef077e3a50382ba13164afecdf84408fc2f/lang/java/pom.xml#L41).
 The benchmark's direct dependencies override the versions `flink-avro` brings, so the `benchmarks` profile runs a `dependencyConvergence` rule on `org.apache.avro:avro` and `com.fasterxml.jackson.core`.
 A benchmark lane fails at `validate`, naming both dependency paths, when its Flink runtime brings another Avro or Jackson version, or when only `jackson-databind` moves; that pair would otherwise fail in Avro's schema parser with a `NoClassDefFoundError` for `StreamConstraintsException`.

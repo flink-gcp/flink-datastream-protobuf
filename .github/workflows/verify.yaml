@@ -73,7 +73,7 @@ jobs:
           case "$RUNTIME" in
             floor) version=2.2.1 ;;
             ceiling) version="$FLINK_CEILING" ;;
-            lts) version=1.20.4 ;;
+            lts) version=1.20.5 ;;
             *) exit 1 ;;
           esac
           just examples-verify "$version" "$PROTOBUF" "$RUNNER_TEMP/example-maven-repository"
@@ -133,7 +133,7 @@ jobs:
           case "$RUNTIME" in
             floor) version=2.2.1 ;;
             ceiling) version="$FLINK_CEILING" ;;
-            lts) version=1.20.4 ;;
+            lts) version=1.20.5 ;;
             *) exit 1 ;;
           esac
           status=0
@@ -254,7 +254,7 @@ jobs:
         env:
           LINE: ${{ matrix.line }}
         run: |
-          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.5'; fi
           for version in $versions; do
             just baseline-read "$RUNNER_TEMP/baseline" "$version" "$RUNNER_TEMP/read-17-$version"
           done
@@ -265,7 +265,7 @@ jobs:
         env:
           LINE: ${{ matrix.line }}
         run: |
-          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.5'; fi
           for version in $versions; do
             just baseline-upgrade "$RUNNER_TEMP/baseline" "$version"
           done
@@ -279,7 +279,7 @@ jobs:
         env:
           LINE: ${{ matrix.line }}
         run: |
-          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.4'; fi
+          if [[ "$LINE" == flink2 ]]; then versions='2.2.1 2.3.0'; else versions='1.20.5'; fi
           for version in $versions; do
             just baseline-consume "$RUNNER_TEMP/baseline" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$version"
           done

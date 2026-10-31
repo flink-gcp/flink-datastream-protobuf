@@ -24,7 +24,7 @@ Published-artifact capture and consumer verification remain release requirements
 |---|---|---|---|
 | 2.2 | 2.2.1 (compile floor) | 17, 21 | `X.Y.Z` |
 | 2.3 | 2.3.0 (runtime ceiling) | 17, 21 | The same `X.Y.Z` jar |
-| 1.20 LTS | 1.20.4 | 17 | `X.Y.Z-1.20`, compiled for 1.20 |
+| 1.20 LTS | 1.20.5 | 17 | `X.Y.Z-1.20`, compiled for 1.20 |
 
 Both version lines use `io.github.flink-gcp:flink-datastream-protobuf`.
 There is no binary compatibility promise between Flink 1.x and 2.x or support for Java 11.
