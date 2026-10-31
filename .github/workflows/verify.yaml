@@ -254,9 +254,9 @@ jobs:
           done
   retained-baseline:
     # One job per bundle keeps Verify within the plan's 20 concurrent jobs; see docs/validation/ci-budget.md.
-    name: Retained v0.1.0 upgrade / ${{ matrix.bundle }}
+    name: Retained upgrade / ${{ matrix.bundle }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -282,39 +282,55 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: just
+      # Each retained milestone is a direct upgrade path to the current library.
       # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
-      - name: Fetch and check the retained bundle
-        id: fetch
+      - name: Fetch and check the retained v0.1.0 bundle
+        id: fetch-v010
         uses: ./.github/actions/baseline-fetch
         with:
           tag: v0.1.0
           bundle: ${{ matrix.bundle }}
-          output: ${{ runner.temp }}/retained-baseline
+          output: ${{ runner.temp }}/v0.1.0
+      - name: Fetch and check the retained v0.2.0 bundle
+        id: fetch-v020
+        uses: ./.github/actions/baseline-fetch
+        with:
+          tag: v0.2.0
+          bundle: ${{ matrix.bundle }}
+          output: ${{ runner.temp }}/v0.2.0
       # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
       - name: Restore the retained state with the current library on JDK 17
         env:
-          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
         run: |
           test -n "$FLINK"
-          for version in $FLINK; do
-            just baseline-upgrade "$BUNDLE" "$version"
+          for bundle in $BUNDLES; do
+            for version in $FLINK; do
+              echo "Restoring $bundle at Flink $version"
+              just baseline-upgrade "$bundle" "$version"
+            done
           done
       # See "API compatibility gate" in docs/development.md.
-      - name: Compare the annotated API with the retained library
+      - name: Compare the annotated API with the retained libraries
         env:
-          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
         run: |
-          just api-compat "$BUNDLE"
+          for bundle in $BUNDLES; do
+            just api-compat "$bundle"
+          done
           # The upgrade builds below clean target/; keep the compared candidate for every consumer run.
           cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
       - name: Run the retained compiled consumers on the candidate with JDK 17
         env:
-          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
         run: |
-          for version in $FLINK; do
-            just baseline-consume "$BUNDLE" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$version"
+          for bundle in $BUNDLES; do
+            tag=$(basename "$(dirname "$bundle")")
+            for version in $FLINK; do
+              just baseline-consume "$bundle" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$tag-$version"
+            done
           done
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         if: matrix.jdk21
@@ -324,12 +340,16 @@ jobs:
       - name: Restore the retained state and run the consumers again on JDK 21
         if: matrix.jdk21
         env:
-          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+          BUNDLES: ${{ steps.fetch-v010.outputs.bundle }} ${{ steps.fetch-v020.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
         run: |
-          for version in $FLINK; do
-            just baseline-upgrade "$BUNDLE" "$version"
-            just baseline-consume "$BUNDLE" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-21-$version"
+          for bundle in $BUNDLES; do
+            tag=$(basename "$(dirname "$bundle")")
+            for version in $FLINK; do
+              echo "Restoring $bundle at Flink $version"
+              just baseline-upgrade "$bundle" "$version"
+              just baseline-consume "$bundle" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-21-$tag-$version"
+            done
           done
       - name: Show failed consumer logs
         if: failure()

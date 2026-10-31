@@ -231,6 +231,7 @@ The added overloads leave every existing signature unchanged.
 The factory's exception for `DynamicMessage.class` changes from `IllegalArgumentException` to `InvalidTypesException`, an intentional behavior change for a class that 0.2.0 rejected as well; generated and other classes keep their behavior.
 The generated snapshot class, format, and evaluator are unchanged in 0.3.0, so 0.1.0 and 0.2.0 generated state is expected to restore through the same reader.
 No restore path is dropped in 0.3.0, so no breaking-change procedure is required for state.
+The direct paths from 0.1.0 and from 0.2.0 are offered and tested; the path from 0.1.0 through 0.2.0, which ADR-0001 leaves to each milestone, is not offered, because 1.0.0 rejects all 0.x state.
 
 The library still implements no Kryo or Chill serializer and no internal generic fallback, for either kind.
 
@@ -248,7 +249,7 @@ Issue #23 verifies on HashMap and RocksDB backends:
 
 - Restore after a supported schema change for value state, MapState values, and operator list state, including the descriptor that restored values carry before and after a second restore, and restored values left untouched until the next checkpoint.
 - Rejection of each unsupported schema change against an accepted control that differs only in that change, and of both cross-kind directions with and without the generated class.
-- The direct and sequential generated upgrade paths from the retained 0.1.0 and 0.2.0 baselines with `api-compat` and `baseline-consume`, and the upgrade-guide entry for the factory change.
+- The direct generated upgrade paths from the retained 0.1.0 and 0.2.0 baselines with `baseline-upgrade`, `api-compat`, and `baseline-consume`, and the upgrade-guide entry for the factory change.
 - The user documentation of descriptor handling, field access through the value, explicit composite type information, and the evaluator rules for dynamic restore.
 
 ### Source basis

@@ -29,9 +29,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Restores state retained by an earlier development milestone with the current library and
@@ -51,6 +54,7 @@ class RetainedBaselineUpgradeITCase {
     @TempDir Path root;
     private Path bundle;
     private Path fixtures;
+    private String format;
     private RuntimeRecoveryHarness harness;
     private SchemaEvolutionChecks checks;
     private int sequence;
@@ -70,6 +74,7 @@ class RetainedBaselineUpgradeITCase {
         assertThat(BaselineTool.runtimes(manifest.getProperty("line")))
                 .as("Select a Flink runtime that the bundle was read with")
                 .contains(version);
+        format = manifest.getProperty("format.version", "");
         fixtures = bundle.resolve("fixtures/" + version);
         assertThat(fixtures).isDirectory();
         harness = new RuntimeRecoveryHarness();
@@ -85,8 +90,12 @@ class RetainedBaselineUpgradeITCase {
 
     @Test
     void currentApplicationsKeepTheRetainedWriterAndChangedSchemas() throws Exception {
-        // The original variant is the unchanged-schema control only if it is the writer's schema.
-        for (String variant : new String[] {"original", "changed"}) {
+        // Each variant is the unchanged-schema control only if it is the writer's schema.
+        List<String> variants = new ArrayList<>(List.of("original", "changed"));
+        if (evolvedFixtures()) {
+            variants.addAll(List.of("enum-original", "enum-added"));
+        }
+        for (String variant : variants) {
             assertThat(RuntimeRecoveryHarness.apps().resolve(variant + "/schema.pb"))
                     .as("Current %s schema", variant)
                     .hasSameBinaryContentAs(bundle.resolve("apps/" + variant + "/schema.pb"));
@@ -153,6 +162,43 @@ class RetainedBaselineUpgradeITCase {
                 state,
                 "incompatible",
                 "Field 2 (count) of " + ENTRY + " changes type from INT32 to SINT32");
+    }
+
+    /**
+     * Restores state that the retained library wrote after a supported schema evolution, and state
+     * of an enum-bearing schema, from bundle format 2.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "hashmap, evolved, savepoint",
+        "hashmap, evolved, checkpoint",
+        "hashmap, enum, savepoint",
+        "hashmap, enum, checkpoint",
+        "rocksdb, evolved, savepoint",
+        "rocksdb, evolved, checkpoint",
+        "rocksdb, enum, savepoint",
+        "rocksdb, enum, checkpoint"
+    })
+    void retainedEvolvedAndEnumStateRestores(String backend, String name, String kind)
+            throws Exception {
+        assumeTrue(evolvedFixtures(), "Bundle format 1 has no evolved or enum state");
+        Path fixture = fixtures.resolve(backend + "/" + name);
+        // The readers assume the writers, inputs, and baseline limits that capture records.
+        assertThat(BaselineTool.load(fixture.resolve("state.properties")))
+                .isEqualTo(
+                        name.equals("evolved")
+                                ? BaselineRuntime.evolvedIdentity(backend)
+                                : BaselineRuntime.enumIdentity(backend));
+        String state = extract(fixture.resolve(kind + ".zip"));
+        if (name.equals("evolved")) {
+            BaselineRuntime.readEvolved(checks, backend, state, kind);
+        } else {
+            BaselineRuntime.readEnum(checks, backend, state);
+        }
+    }
+
+    private boolean evolvedFixtures() {
+        return BaselineTool.stateFixtures(format).contains("evolved");
     }
 
     /** Reads the writer's settings and requires the state identity that the checks assume. */

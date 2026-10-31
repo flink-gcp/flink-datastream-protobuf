@@ -222,6 +222,11 @@ public final class BaselineRuntime {
         deleteWriterState(work, written, evolverDirectory);
         // The archives must not depend on the restored savepoint either.
         deleteWriterState(work, saved, writerDirectory);
+        BaselineTool.save(evolvedIdentity(backend), fixture.resolve("state.properties"));
+    }
+
+    /** The state identity that capture records for an {@code evolved} fixture. */
+    static Properties evolvedIdentity(String backend) {
         Properties state = stateIdentity(backend, BASELINE);
         state.setProperty("writer.schemas", "original,changed");
         state.setProperty("expected.input.count", "12");
@@ -232,7 +237,7 @@ public final class BaselineRuntime {
         state.setProperty("expected.map.count.bucket-0", "2");
         state.setProperty("expected.map.count.bucket-1", "1");
         state.setProperty("expected.added", "empty for 0 to 7, added-<ordinal> for 8 to 11");
-        BaselineTool.save(state, fixture.resolve("state.properties"));
+        return state;
     }
 
     /** Archives inputs 0 to 7 of the enum-original schema at the baseline limits. */
@@ -251,10 +256,15 @@ public final class BaselineRuntime {
                     Path.of(URI.create(writer.checkpoint())), fixture.resolve("checkpoint.zip"));
         }
         deleteWriterState(work, saved, writerDirectory);
+        BaselineTool.save(enumIdentity(backend), fixture.resolve("state.properties"));
+    }
+
+    /** The state identity that capture records for an {@code enum} fixture. */
+    static Properties enumIdentity(String backend) {
         Properties state = stateIdentity(backend, BASELINE);
         state.setProperty("writer.schemas", "enum-original");
         state.setProperty("expected.detail.kind", "KIND_FIRST");
-        BaselineTool.save(state, fixture.resolve("state.properties"));
+        return state;
     }
 
     /** Removes a writer's state so that missing archive contents cannot pass unnoticed. */
@@ -323,8 +333,7 @@ public final class BaselineRuntime {
      * Restores evolved state with the changed schema that wrote it, and requires the original
      * schema, which removes the added field without reserving it, to be rejected.
      */
-    private static void readEvolved(
-            SchemaEvolutionChecks checks, String backend, String saved, String kind)
+    static void readEvolved(SchemaEvolutionChecks checks, String backend, String saved, String kind)
             throws Exception {
         Descriptor changed = RuntimeRecoveryHarness.descriptor("changed");
         checks.restoreTwice(
@@ -349,7 +358,7 @@ public final class BaselineRuntime {
     }
 
     /** Restores enum-original state unchanged and with the schema that adds an enum value. */
-    private static void readEnum(SchemaEvolutionChecks checks, String backend, String saved)
+    static void readEnum(SchemaEvolutionChecks checks, String backend, String saved)
             throws Exception {
         for (String reader : List.of("enum-original", "enum-added")) {
             Descriptor entry = RuntimeRecoveryHarness.descriptor(reader);

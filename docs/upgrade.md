@@ -18,27 +18,83 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Upgrade from 0.1.0 to 0.2.0
+# Upgrade guide
 
-This guide covers replacing the 0.1.0 development library with 0.2.0 in an application that keeps its Flink version, artifact line, and Protobuf generated-code/runtime pair.
-Both versions are development milestones; neither is published to Maven Central, and the 0.x policy permits breaks between them.
-The guide describes only the forward direction, from state that 0.1.0 wrote to an application built with 0.2.0, because that is the direction the tests restore.
-
-## Four separate contracts
+This guide covers replacing a development library with a later one in an application that keeps its Flink version, artifact line, and Protobuf generated-code/runtime pair.
+All 0.x versions are development milestones; none is published to Maven Central, and the 0.x policy permits breaks between them.
+The guide describes only the forward direction, from state that an earlier library wrote to an application built with a later one, because that is the direction the tests restore.
 
 An upgrade can keep one contract and break another, so the following are checked separately:
 
-| Contract | What it covers | From 0.1.0 to 0.2.0 |
-|---|---|---|
-| Application-facing API | Public and protected members of the `@Public` and `@PublicEvolving` types: `ProtobufTypeInformation`, its `Builder`, and `ProtobufTypeInfoFactory` | No member is removed or changed; 0.2.0 adds `Builder.largePayloadAliasing(boolean)` |
-| Saved state | Whether 0.2.0 restores the serializer snapshots and values that 0.1.0 wrote | Restored with an unchanged schema or a [supported schema change](compatibility.md#schema-changes) |
-| Key bytes | The hash codes and serialized bytes that Flink uses for DataStream keys and MapState user keys | Unaffected: neither version supports Protobuf messages as keys, and [scalar keys](usage.md#scalar-keys) use Flink's own serializers |
-| Generated code and runtime | Whether the application's generated classes run with its `protobuf-java` | Unaffected: the upgrade keeps the application's pair, and both versions declare `protobuf-java` as a provided dependency |
+| Contract | What it covers |
+|---|---|
+| Application-facing API | Public and protected members of the `@Public` and `@PublicEvolving` types: `ProtobufTypeInformation`, its `Builder`, and `ProtobufTypeInfoFactory` |
+| Saved state | Whether the later library restores the serializer snapshots and values that the earlier one wrote |
+| Key bytes | The hash codes and serialized bytes that Flink uses for DataStream keys and MapState user keys |
+| Generated code and runtime | Whether the application's generated classes run with its `protobuf-java` |
 
-The Protobuf binary-format and Flink managed-state questions of the [three compatibility checks](compatibility.md#three-compatibility-checks) together decide the saved-state contract here.
+The Protobuf binary-format and Flink managed-state questions of the [three compatibility checks](compatibility.md#three-compatibility-checks) together decide the saved-state contract.
 Changing the generated code or the runtime is a separate update with its own rules; see [Java runtime version updates](compatibility.md#java-runtime-version-updates).
 
-## Changes from 0.1.0
+## Upgrade to 0.3.0
+
+0.3.0 adds [DynamicMessage values](usage.md#dynamicmessage-values) and leaves the generated-message API, snapshot format, and schema-change rules of 0.2.0 unchanged.
+Two direct paths are tested, from 0.2.0 and from 0.1.0.
+The path from 0.1.0 also includes the [0.2.0 changes](#changes-from-010), and its tested results are the [0.1.0 results](#tested-restore-results) below.
+
+| Contract | From 0.2.0 |
+|---|---|
+| Application-facing API | No member is removed or changed; 0.3.0 adds `ProtobufTypeInformation.of(Descriptor)` and `newBuilder(Descriptor)` |
+| Saved state | Restored with an unchanged schema or a supported schema change, including state that 0.2.0 wrote after such a change |
+| Key bytes | Unaffected: no version supports Protobuf messages as keys |
+| Generated code and runtime | Unaffected: the upgrade keeps the application's pair, and `protobuf-java` stays a provided dependency |
+
+The [API compatibility gate](development.md#api-compatibility-gate) compares the candidate's annotated API with the retained 0.1.0 and 0.2.0 libraries, and their compiled consumers run against it without recompilation.
+
+### Changes from 0.2.0
+
+One intentional behavior change can make an application that worked with 0.2.0 behave differently:
+
+- **The registered factory and `DynamicMessage`**: `ProtobufTypeInfoFactory` now throws Flink's `InvalidTypesException` for `DynamicMessage.class`, where 0.2.0 threw `IllegalArgumentException`.
+  Both versions reject the class, because it does not name a schema.
+  With 0.2.0, an operator that returned `DynamicMessage` while the factory was registered failed graph construction even with `.returns(...)`; with 0.3.0, Flink records the type as missing, so `.returns(ProtobufTypeInformation.of(descriptor))` supplies it, and without `.returns(...)` the job fails with Flink's missing-type error whose cause names `ProtobufTypeInformation.of(Descriptor)`.
+  Code that calls `createTypeInfo` directly with `DynamicMessage.class` and catches `IllegalArgumentException` must catch `InvalidTypesException` instead; other classes that the factory rejects still raise `IllegalArgumentException`.
+
+0.3.0 writes the same version 2 of the generated serializer snapshot as 0.2.0 and still reads version 1.
+DynamicMessage state uses a [separate snapshot class](adr/0005-descriptor-bound-dynamic-messages.md#dynamic-snapshot-format-version-1), so saved generated state does not restore into a DynamicMessage type or the reverse; switching between them requires fresh state or replayed input.
+A malformed generated snapshot whose descriptors fail to build now fails with `IOException` when Flink reads it, where 0.2.0 could let a runtime exception escape.
+Each artifact line is now built with Protobuf 4.36.2, and CI runs that jar unchanged with Protobuf 4.36.2 and 3.25.9; see [Java runtime version updates](compatibility.md#java-runtime-version-updates).
+
+### Procedure and tested results
+
+Follow the [upgrade procedure](#upgrade-procedure) below with 0.3.0 in place of 0.2.0, and keep the savepoint written by the old library with its application jar.
+Its checks of what 0.2.0 newly rejects apply only to an upgrade from 0.1.0.
+
+The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores the state that the [retained 0.1.0](validation/development-baselines.md#retained-v010-baseline) and [0.2.0](validation/development-baselines.md#retained-v020-baseline) artifacts wrote with the current library, on each Flink version and JDK that read the retained bundles, with the schemas and expected results of the [0.1.0 results](#tested-restore-results) below.
+It also restores two kinds of state that only the 0.2.0 artifact retains:
+
+- **State after a supported change**: 0.2.0 restored `original` state into the `changed` schema, processed four more inputs, and wrote the archive. The `changed` schema restores it, with `added` empty for the values that `original` wrote and set for later ones, and the restore of its savepoint into the `original` schema is rejected, because that schema removes `added` without reserving its number.
+- **Enum-bearing state**: 0.2.0 wrote state with the `enum-original` schema. It restores unchanged and into the `enum-added` schema, where restored values keep `KIND_FIRST` and new values carry `KIND_SECOND`.
+
+### Upgrade through 0.2.0
+
+An upgrade from 0.1.0 to 0.2.0 followed by one to 0.3.0 is not a tested path.
+The tests restore state that 0.2.0 wrote from its own jobs, not state that 0.2.0 wrote after restoring 0.1.0 state, and success of the direct paths does not establish it.
+If an application ran 0.2.0 on restored 0.1.0 state, restore the 0.1.0 savepoint, which the 0.2.0 procedure says to keep, directly into 0.3.0, or start with fresh state or replay its input; in both cases the application is responsible for the state and output effects of discarding what 0.2.0 processed.
+Version 1.0.0 will reject all state that 0.x libraries wrote, as [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) tracks, so these 0.x paths end there.
+
+## Upgrade from 0.1.0 to 0.2.0
+
+### Contracts
+
+| Contract | From 0.1.0 to 0.2.0 |
+|---|---|
+| Application-facing API | No member is removed or changed; 0.2.0 adds `Builder.largePayloadAliasing(boolean)` |
+| Saved state | Restored with an unchanged schema or a [supported schema change](compatibility.md#schema-changes) |
+| Key bytes | Unaffected: neither version supports Protobuf messages as keys, and [scalar keys](usage.md#scalar-keys) use Flink's own serializers |
+| Generated code and runtime | Unaffected: the upgrade keeps the application's pair, and both versions declare `protobuf-java` as a provided dependency |
+
+### Changes from 0.1.0
 
 The API change is an addition.
 `ProtobufTypeInformation.Builder.largePayloadAliasing(boolean)` selects whether values decoded from a payload above 4 KiB may share the array that holds it.
@@ -61,7 +117,7 @@ An application that keeps such values for a long time, for example in heap state
 The record frame format of serialized values keeps its version.
 Other changes in 0.2.0 reduce serializer time and allocation without changing that format; their measurements are in the [buffer allocation](validation/serializer-buffer-allocation.md), [sizing allocation](validation/serializer-sizing-allocation.md), [generated size](validation/serializer-generated-size.md), and [large read](validation/serializer-large-read.md) reports.
 
-## Upgrade procedure
+### Upgrade procedure
 
 Keep the Flink version, the artifact line, the generated-code/runtime pair, the generated Java class and Protobuf message names, the operator UIDs, and the state names unchanged across the library upgrade.
 Keep the size and depth limits equal or raise them; a decreased limit fails the restore.
@@ -75,7 +131,7 @@ Before stopping the old job, check the two things that 0.2.0 newly rejects:
 Then follow the [general upgrade procedure](compatibility.md#verified-coverage-and-upgrade-procedure), and keep the 0.1.0 savepoint with the 0.1.0 application jar.
 That savepoint is the only state that a rollback to 0.1.0 can restore: 0.1.0 reads only version 1 of the serializer snapshot, so it cannot restore a checkpoint or savepoint that 0.2.0 writes.
 
-## Tested restore results
+### Tested restore results
 
 The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores state that the [retained 0.1.0 artifact](validation/development-baselines.md#retained-v010-baseline) wrote with the current library, on each Flink version and JDK that read the retained bundles.
 The application contains only the new generated classes, and each run keeps the Flink version and the generated-code/runtime pair that wrote the state.
