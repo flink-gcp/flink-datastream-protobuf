@@ -31,6 +31,9 @@ import tarfile
 import tempfile
 import zlib
 
+from lib import credential_rules
+from lib.credential_rules import CREDENTIAL_RULES
+
 MAX_MEMBERS = 10_000
 MAX_FILE = 64 * 1024 * 1024
 MAX_TOTAL = 256 * 1024 * 1024
@@ -62,18 +65,9 @@ MANIFEST_KEYS = set("benchmark.flink.version benchmark.library.jar benchmark.pro
 SUPPORT_KEYS = set("adapter.class adapter.source immutable jvm.arguments kryo.record.id kryo.references kryo.registrationRequired kryo.source lane reason record.source serializer.chain serializer.source status".split())
 SUPPORT_KEYS.update(w + "." + key for w in ("scalar", "text", "nested", "collections", "large")
                     for key in "copyReuses deserializeReuses encoded.max encoded.mean encoded.min identityCopies records".split())
-# These deliberately bounded patterns supplement human review, not arbitrary-secret detection.
-CREDENTIAL_RULES = {
-    "private-key": r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
-    "github-token": r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
-    "aws-access-key": r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
-    "google-api-key": r"\bAIza[A-Za-z0-9_-]{35}\b",
-    "google-oauth": r"\bya29\.[A-Za-z0-9_-]{20,}",
-    "slack-token": r"\bxox[baprs]-[A-Za-z0-9-]{10,}",
-    "authorization": r"(?i)\b(?:authorization\s*[:=]\s*|bearer\s+|basic\s+)[\"']?(?:bearer\s+|basic\s+)?[A-Za-z0-9+/_=.-]{8,}",
-    "credential-assignment": r"(?i)(?:[\"']?(?:\b|-D)(?:[A-Za-z0-9]{1,64}[_.-]){0,8}(?:password|passwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|private[_-]?key)\b[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]{4,}",
-}
 PATTERNS = [(name, re.compile(pattern)) for name, pattern in CREDENTIAL_RULES.items()]
+# The validator is this file and the credential rules it imports; its digest covers both, in this order.
+VALIDATOR = (Path(__file__), Path(credential_rules.__file__))
 
 
 class Rejected(Exception):
@@ -461,7 +455,7 @@ class Inventory:
 
 def report(inventory, source):
     return {"formatVersion": 1, "policyVersion": 2,
-            "validatorSha256": digest(Path(__file__).read_bytes()),
+            "validatorSha256": digest(b"".join(path.read_bytes() for path in VALIDATOR)),
             "automatedChecksPassed": True, "humanReviewRequired": True,
             "source": source, "members": sorted(inventory.members, key=lambda m: m["path"])}
 

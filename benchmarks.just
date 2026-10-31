@@ -168,17 +168,17 @@ benchmark-arguments version major:
 # Validate a directory or normalized tar.gz and retain the exact checked copy and inventory.
 [positional-arguments]
 benchmark-evidence-check input output:
-    {{ python }} scripts/benchmark_evidence.py check "$1" "$2"
+    {{ python }} scripts/benchmark-evidence.py check "$1" "$2"
 
 # Inspect retained evidence from HEAD without copying the original archives to upload paths.
 [positional-arguments]
 benchmark-evidence-repository output:
-    {{ python }} scripts/benchmark_evidence.py repository "$1"
+    {{ python }} scripts/benchmark-evidence.py repository "$1"
 
 # Inspect the exact staged evidence blobs immediately before an evidence commit.
 [positional-arguments]
 benchmark-evidence-staged output:
-    {{ python }} scripts/benchmark_evidence.py staged "$1"
+    {{ python }} scripts/benchmark-evidence.py staged "$1"
 
 # Exercise the content gate with synthetic safe and unsafe inputs only.
 benchmark-evidence-test: (test-scripts "scripts/tests/test_benchmark_evidence.py")
@@ -186,7 +186,7 @@ benchmark-evidence-test: (test-scripts "scripts/tests/test_benchmark_evidence.py
 # Operator-side temporary GCE runs; read the GCE section of docs/development.md before provisioning.
 [positional-arguments]
 gce-benchmark *args:
-    @{{ python }} scripts/gce_benchmark.py "$@"
+    @{{ python }} scripts/gce-benchmark.py "$@"
 
 # Exercise the GCE operator tooling against a recording gcloud double and the VM runner against
 # local stubs, without cloud access.

@@ -21,9 +21,11 @@ import sys
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-TOOLS = sorted(SCRIPTS.glob("*.py"))
+TOOLS = sorted([*SCRIPTS.glob("*.py"), *SCRIPTS.glob("lib/*.py")])
+# Isolated mode omits the script directory from the path, which the executables need for scripts/lib/.
 LOAD = """
 import importlib.util, sys
+sys.path.insert(0, sys.argv[2])
 spec = importlib.util.spec_from_file_location("tool", sys.argv[1])
 spec.loader.exec_module(importlib.util.module_from_spec(spec))
 """
@@ -33,8 +35,8 @@ def test_finds_the_tools():
     assert TOOLS
 
 
-@pytest.mark.parametrize("tool", TOOLS, ids=lambda tool: tool.name)
+@pytest.mark.parametrize("tool", TOOLS, ids=lambda tool: tool.relative_to(SCRIPTS).as_posix())
 def test_tools_import_only_the_standard_library(tool):
-    result = subprocess.run([sys.executable, "-I", "-S", "-c", LOAD, str(tool)],
+    result = subprocess.run([sys.executable, "-I", "-S", "-c", LOAD, str(tool), str(SCRIPTS)],
                             stdin=subprocess.DEVNULL, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

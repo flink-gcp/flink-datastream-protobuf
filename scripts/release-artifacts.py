@@ -15,7 +15,7 @@
 
 """Rehearse and inspect the Central bundles of both artifact lines (ADR-0006).
 
-Usage: release_artifacts.py <version> <new-output> [--unsigned]
+Usage: release-artifacts.py <version> <new-output> [--unsigned]
 
 Exports the committed HEAD, runs ``just release-stage`` for ``<version>`` and
 ``<version>-1.20`` with ``-DskipUpload=true``, keeps each bundle, checks that the
@@ -342,7 +342,7 @@ def rehearse(version, output, unsigned):
 def main(argv):
     if len(argv) in (2, 3) and argv[2:] in ([], ["--unsigned"]):
         return rehearse(argv[0], argv[1], unsigned=len(argv) == 3)
-    print("usage: release_artifacts.py <version> <new-output> [--unsigned]", file=sys.stderr)
+    print("usage: release-artifacts.py <version> <new-output> [--unsigned]", file=sys.stderr)
     return 2
 
 

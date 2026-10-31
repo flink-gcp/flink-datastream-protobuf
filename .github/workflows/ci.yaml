@@ -58,7 +58,8 @@ jobs:
               - scripts/api-compat.sh
             benchmarks:
               - *baseline
-              - scripts/benchmark_evidence.py
+              - scripts/benchmark-evidence.py
+              - scripts/lib/credential_rules.py
   verify:
     needs: source
     uses: ./.github/workflows/verify.yaml

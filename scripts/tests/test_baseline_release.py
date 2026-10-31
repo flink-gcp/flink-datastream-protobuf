@@ -26,9 +26,10 @@ import zipfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import baseline_fetch as fetcher
-import baseline_release as release
+from conftest import load_script
+
+fetcher = load_script("baseline-fetch.py")
+release = load_script("baseline-release.py")
 
 TAG = "v0.9.0"
 REVISION = "a" * 40
@@ -142,7 +143,7 @@ def answers(monkeypatch):
     monkeypatch.setattr(release, "tag_identity", lambda tag: (TAG_OBJECT, REVISION))
     monkeypatch.setattr(release, "github_run", lambda run_id: answers.ci)
     monkeypatch.setattr(release, "job_log", lambda run_id, job: answers.freeze_log if job == 7 else "")
-    monkeypatch.setattr(release.fetch, "baseline_check", answers.checked.append)
+    monkeypatch.setattr(release.layout, "baseline_check", answers.checked.append)
     return answers
 
 
@@ -431,13 +432,18 @@ def test_tag_identity_requires_an_annotated_tag(tmp_path):
     assert "not annotated" in str(raised.value)
 
 
+def test_root_is_the_repository():
+    assert (release.ROOT / "justfile").is_file()
+    assert release.ROOT == fetcher.ROOT
+
+
 def test_scan_searches_nested_archives_and_reports_what_it_cannot_search(work):
     flagged, findings = release.scan(work)
     assert flagged == []
     assert {(f["path"], f["kind"], f["sha256"]) for f in findings} == {
         (b + "/dependencies/flink.jar:lib/netty.jar:io/netty/OpenSsl.class", "private-key",
          digest(b"-----BEGIN PRIVATE KEY-----")) for b in release.BUNDLES}
-    assert release.CREDENTIAL_RULES.keys() == release.sibling("benchmark_evidence").CREDENTIAL_RULES.keys()
+    assert release.CREDENTIAL_RULES is load_script("benchmark-evidence.py").CREDENTIAL_RULES
     nested = b"password=hunter22"
     for _ in range(release.MAX_ARCHIVE_DEPTH + 1):
         nested = jar({"inner.jar": nested})
@@ -742,7 +748,7 @@ def test_verify_compares_every_published_asset(work, monkeypatch, change):
         elif change == "extra":
             (directory / "stray.txt").write_text("stray")
 
-    monkeypatch.setattr(release.fetch, "download", download)
+    monkeypatch.setattr(release.layout, "download", download)
     if change:
         with pytest.raises(release.Rejected):
             release.verify(TAG, work)

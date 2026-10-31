@@ -34,8 +34,9 @@ import urllib.parse
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import gce_benchmark as tool
+from conftest import load_script
+
+tool = load_script("gce-benchmark.py")
 
 RUNNER = Path(tool.__file__).with_name(tool.VM_SCRIPT)
 TOOLS = {"java": "temurin-17", "just": "1.40.0", "mise": "2025.1.0"}

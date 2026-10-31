@@ -30,7 +30,7 @@ runs:
         ACTION: ${{ github.action_path }}
       run: |
         root=$(cd "$ACTION/../../.." && pwd)
-        sha256=$(uv run --project "$root" --locked --isolated --no-dev python "$root/scripts/baseline_fetch.py" asset "$TAG" "$BUNDLE")
+        sha256=$(uv run --project "$root" --locked --isolated --no-dev python "$root/scripts/baseline-fetch.py" asset "$TAG" "$BUNDLE")
         {
           echo "root=$root"
           echo "key=development-baseline-$TAG-$BUNDLE-$sha256"
@@ -57,7 +57,7 @@ runs:
       run: |
         restored=()
         if [[ "$RESTORED" == true ]]; then restored=(--restored); fi
-        if ! uv run --project "$ROOT" --locked --isolated --no-dev python "$ROOT/scripts/baseline_fetch.py" fetch "$TAG" "$OUTPUT" "$BUNDLE" --archives "$ARCHIVES" "${restored[@]}"; then
+        if ! uv run --project "$ROOT" --locked --isolated --no-dev python "$ROOT/scripts/baseline-fetch.py" fetch "$TAG" "$OUTPUT" "$BUNDLE" --archives "$ARCHIVES" "${restored[@]}"; then
           if [[ "$RESTORED" == true ]]; then
             echo "::error::Fetching failed with a restored archive; if the cached copy is missing or does not match, delete cache entry $KEY with gh cache delete."
           fi

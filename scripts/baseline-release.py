@@ -26,7 +26,6 @@ import datetime
 import fnmatch
 import gzip
 import hashlib
-import importlib.util
 import io
 import json
 import lzma
@@ -41,22 +40,11 @@ import tempfile
 import zipfile
 import zlib
 
+from lib import baseline_bundles as layout
+from lib.baseline_bundles import BUNDLES, CHECKSUMS, DESIGNATION, INVENTORY, REPOSITORY, Rejected, require, sha256
+from lib.credential_rules import CREDENTIAL_RULES
 
-def sibling(name):
-    """Loads a sibling tool by path, which keeps the scripts runnable without making them a package."""
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(name + ".py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-# The retrieval tool defines the published layout and verifies it; this tool reuses its names.
-fetch = sibling("baseline_fetch")
-Rejected, require, sha256 = fetch.Rejected, fetch.require, fetch.sha256
-REPOSITORY, BUNDLES, CHECKSUMS = fetch.REPOSITORY, fetch.BUNDLES, fetch.CHECKSUMS
-DESIGNATION, INVENTORY = fetch.DESIGNATION, fetch.INVENTORY
-# The benchmark evidence gate's bounded credential rules, compiled here for raw bytes.
-CREDENTIAL_RULES = sibling("benchmark_evidence").CREDENTIAL_RULES
+ROOT = Path(__file__).resolve().parents[1]
 REVIEW = "PUBLICATION-REVIEW.json"
 TAG = re.compile(r"v0\.[0-9]+\.[0-9]+")
 TOOL = "io.github.flink.gcp.protobuf.BaselineTool"
@@ -104,13 +92,13 @@ def bundle_directory(work, bundle):
 
 def run(command, cwd, log):
     """Runs a retained instrument without credentials in its environment and returns its exit status."""
-    environment = {key: value for key, value in os.environ.items() if key not in fetch.CREDENTIALS}
+    environment = {key: value for key, value in os.environ.items() if key not in layout.CREDENTIALS}
     with open(log, "wb") as stream:
         return subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=stream,
                               stderr=subprocess.STDOUT, env=environment).returncode
 
 
-def output(command, cwd=fetch.ROOT):
+def output(command, cwd=ROOT):
     result = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     require(result.returncode == 0, "Command failed: " + " ".join(command) + ": " + result.stderr.strip())
     return result.stdout
@@ -367,7 +355,7 @@ def tar_directory(source, name, target):
         for path in [source] + sorted(source.rglob("*")):
             member = name if path == source else name + "/" + path.relative_to(source).as_posix()
             # Retrieval rejects members whose names it does not accept, so assembly refuses them first.
-            fetch.relative(member)
+            layout.relative(member)
             info = tar.gettarinfo(str(path), arcname=member)
             require(info.isfile() or info.isdir(), "Unsupported file type: " + str(path))
             info.uid = info.gid = 0
@@ -420,7 +408,7 @@ def checked_ci(run_id, revision):
     return ci
 
 
-def tag_identity(tag, cwd=fetch.ROOT):
+def tag_identity(tag, cwd=ROOT):
     require(output(["git", "cat-file", "-t", "refs/tags/" + tag], cwd).strip() == "tag",
             "Tag is not annotated: " + tag)
     return (output(["git", "rev-parse", "refs/tags/" + tag], cwd).strip(),
@@ -430,7 +418,7 @@ def tag_identity(tag, cwd=fetch.ROOT):
 def bundle_record(work, bundle, revision):
     """Checks a captured bundle and returns what the designation records about it."""
     directory = bundle_directory(work, bundle)
-    fetch.baseline_check(directory)
+    layout.baseline_check(directory)
     raw = properties(directory / "manifest.properties", unescape=False)
     values = properties(directory / "manifest.properties")
     require(values.get("source.revision") == revision and values.get("milestone.final") == "false"
@@ -540,7 +528,7 @@ def assemble(tag, work, run_id):
         assets = stage / "assets"
         assets.mkdir()
         for bundle, recorded in bundles.items():
-            archive = assets / fetch.archive_name(tag, bundle)
+            archive = assets / layout.archive_name(tag, bundle)
             tar_directory(recorded["directory"], bundle, archive)
             recorded["asset"] = {"file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive)}
         evidence_directory(work, stage / "verification", bundles, ci, review_record)
@@ -569,7 +557,7 @@ def assemble(tag, work, run_id):
         raise
     finally:
         shutil.rmtree(stage, ignore_errors=True)
-    print("Assembled %s; pin %s for %s in scripts/baseline_fetch.py" % (release, sha256(release / CHECKSUMS), tag))
+    print("Assembled %s; pin %s for %s in scripts/baseline-fetch.py" % (release, sha256(release / CHECKSUMS), tag))
 
 
 def verify(tag, work):
@@ -578,7 +566,7 @@ def verify(tag, work):
     local = {path.name: sha256(path) for path in release.iterdir() if path.is_file()}
     with tempfile.TemporaryDirectory() as temporary:
         # Without patterns, gh downloads every asset of the release.
-        fetch.download(tag, [], Path(temporary))
+        layout.download(tag, [], Path(temporary))
         published = {path.name: sha256(path) for path in Path(temporary).iterdir()}
     require(published == local, "Published assets differ from " + str(release))
     print("Verified %d published assets of %s against %s" % (len(published), tag, release))

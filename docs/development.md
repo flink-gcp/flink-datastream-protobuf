@@ -440,9 +440,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code. `BaselineTool` records the distinct protoc version in captured bundles |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline_release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs), the development-bundle `versions` in the same workflow, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline_release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline_release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline-release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs), the development-bundle `versions` in the same workflow, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline-release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline-release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -492,7 +492,7 @@ The CI build matrix runs the smoke after ordinary native verification and accept
 
 ### Temporary GCE execution
 
-`just gce-benchmark` runs [gce_benchmark.py](../scripts/gce_benchmark.py) on the operator's machine to plan, start, monitor, collect, and delete temporary Compute Engine VMs.
+`just gce-benchmark` runs [gce-benchmark.py](../scripts/gce-benchmark.py) on the operator's machine to plan, start, monitor, collect, and delete temporary Compute Engine VMs.
 [gce-benchmark-vm.sh](../scripts/gce-benchmark-vm.sh) runs on each VM.
 The operator tool uses Python's standard library and gcloud; the runner uses Bash; neither enters the library jar.
 By default, one VM runs one Protobuf profile, measuring its variants sequentially, so profiles can run concurrently without competing within a VM.
@@ -653,7 +653,7 @@ An empty token makes the filter use git, so the job needs no `pull-requests` per
 The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, or `scripts/api-compat.sh`.
 Capture builds and runs the current library and test sources from a clean tree, so all of those except the API gate script are its inputs; the same job runs that script on the captured bundle.
 Capture also archives every tracked file and rejects names that are not valid UTF-8 or that contain a colon, a backslash, or a control character; `just lint`, which Lint runs on every pull request, checks those names so that a skipped capture cannot hide one.
-Matrix jobs run the benchmark compiler and smoke steps for the same paths and for `scripts/benchmark_evidence.py`; the benchmark build compiles the test sources as well.
+Matrix jobs run the benchmark compiler and smoke steps for the same paths and for the evidence gate, `scripts/benchmark-evidence.py` and its `scripts/lib/credential_rules.py`; the benchmark build compiles the test sources as well.
 Pushes to main, the weekly schedule, and manual `workflow_dispatch` runs always run both, so a change that a pull request skipped is still checked after it merges; start Verify manually on the branch to run them before merging.
 When a change adds an input to either check, add its path to the filters in `ci.yaml`; `baseline` lists the inputs shared by both checks.
 
@@ -690,7 +690,7 @@ Apply the same review to CI artifact uploads and replacement archives before pub
 
 #### Automated content gate
 
-The [evidence validator](../scripts/benchmark_evidence.py) implements the content gate for the current benchmark evidence formats.
+The [evidence validator](../scripts/benchmark-evidence.py) implements the content gate for the current benchmark evidence formats.
 It uses Python's standard library and is not packaged in the production jar.
 Use a new output directory outside the input tree:
 
@@ -698,7 +698,7 @@ Use a new output directory outside the input tree:
 just benchmark-evidence-check /private/benchmark-publication/protobuf-3.tar.gz /tmp/checked-benchmark-evidence
 ```
 
-A successful check creates `evidence/` with the exact inspected bytes and `inventory.json` with the validator's SHA-256, policy version, archive checksum when applicable, and every member's relative path, format, byte count, and SHA-256.
+A successful check creates `evidence/` with the exact inspected bytes and `inventory.json` with one SHA-256 over the validator and the credential rules it imports, policy version, archive checksum when applicable, and every member's relative path, format, byte count, and SHA-256.
 It does not extract archive paths onto the filesystem, rewrite contents, or remove offending members to make a bundle pass.
 An error rejects the entire input, removes its temporary copy, and leaves no successful output directory.
 Error messages contain fixed rule identifiers and, for content-rule failures, a member ordinal rather than matched values, input paths, parser excerpts, or exception details.
@@ -905,7 +905,7 @@ Respond to each finding through the [version-update procedure](#updating-protobu
 
 - **A new Flink 2.x minor**: follow the "Supported Flink minor window" row of the version-update table. The next library release containing the moved window is a new minor version.
 - **A newer patch or Protobuf minor**: update the pin and its exact-version fixtures. This leads to a release only when the update fixes a defect that affects users.
-- **A new Flink or Protobuf major**: decide its support under [ADR-0003](adr/0003-flink-version-compatibility.md) or [ADR-0001](adr/0001-native-protobuf-type-integration.md) before moving any pin. To defer support, raise that upstream's entry in `DECIDED_MAJORS` in `scripts/upstream_versions.py` in the change that records the decision; the check then reports only later majors.
+- **A new Flink or Protobuf major**: decide its support under [ADR-0003](adr/0003-flink-version-compatibility.md) or [ADR-0001](adr/0001-native-protobuf-type-integration.md) before moving any pin. To defer support, raise that upstream's entry in `DECIDED_MAJORS` in `scripts/upstream-versions.py` in the change that records the decision; the check then reports only later majors.
 
 ## Agent tooling
 

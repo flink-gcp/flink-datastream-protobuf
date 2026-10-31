@@ -17,13 +17,12 @@
 import contextlib
 import http.client
 import io
-from pathlib import Path
-import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import upstream_versions as upstream
+from conftest import load_script
+
+upstream = load_script("upstream-versions.py")
 
 POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">

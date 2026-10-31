@@ -22,12 +22,13 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
 
-REPOSITORY = "flink-gcp/flink-datastream-protobuf"
+from lib.baseline_bundles import (BUNDLES, CHECKSUMS, DESIGNATION, INVENTORY, Rejected, archive_name, baseline_check,
+                                  download, relative, require, sha256)
+
 ROOT = Path(__file__).resolve().parents[1]
 # SHA-256 of each designated release's SHA256SUMS asset, which lists every other asset.
 # The pin ties downloads to the inventory reviewed in this repository.
@@ -36,37 +37,6 @@ RELEASES = {
     "v0.2.0": "a98baaef5a6ad5e19332c0cbb08512410d02843dee1cdd952f3a499e4a6527c7",
     "v0.3.0": "1799eeccd57033b12598c966d4026dbc557c4ab00db32bc85657fe9a33328fb1",
 }
-BUNDLES = ("flink2-pb3", "flink2-pb4", "flink1-pb3", "flink1-pb4")
-CHECKSUMS = "SHA256SUMS"
-DESIGNATION = "FINAL-BASELINE.json"
-INVENTORY = "INVENTORY.json"
-COMPONENT = re.compile(r"[A-Za-z0-9_.-]+")
-# Bundle code runs after verification, but it never needs the download credentials.
-CREDENTIALS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
-
-
-class Rejected(Exception):
-    """A verification failure; the destination is left absent."""
-
-
-def require(condition, message):
-    if not condition:
-        raise Rejected(message)
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as file:
-        for block in iter(lambda: file.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def relative(name):
-    parts = name.split("/")
-    require(all(COMPONENT.fullmatch(part) and part not in (".", "..") for part in parts),
-            "Unsafe path: " + repr(name))
-    return parts
 
 
 def outside_repository(requested, label):
@@ -78,18 +48,6 @@ def outside_repository(requested, label):
     require(not any(os.path.exists(c) and os.path.samefile(c, ROOT) for c in [resolved, parent, *parent.parents]),
             label + " must be outside the repository: " + str(resolved))
     return resolved
-
-
-def archive_name(tag, bundle):
-    return tag + "-" + bundle + ".tar.gz"
-
-
-def download(tag, names, directory):
-    command = ["gh", "release", "download", tag, "--repo", REPOSITORY, "--dir", str(directory)]
-    for name in names:
-        command += ["--pattern", name]
-    result = subprocess.run(command, stdin=subprocess.DEVNULL)
-    require(result.returncode == 0, "gh release download failed for " + tag)
 
 
 def checksums(tag, directory):
@@ -195,13 +153,6 @@ def extract(path, name, expected, stage):
     missing = sorted(set(expected) - seen)
     require(not missing, "Archive is missing inventory files: " + ", ".join(missing[:3]))
 
-
-def baseline_check(bundle):
-    environment = {key: value for key, value in os.environ.items() if key not in CREDENTIALS}
-    command = ["java", "-cp", str(bundle / "tools.jar"), "io.github.flink.gcp.protobuf.BaselineTool",
-               "check", str(bundle)]
-    result = subprocess.run(command, stdin=subprocess.DEVNULL, env=environment)
-    require(result.returncode == 0, "baseline-check failed for " + bundle.name)
 
 
 def fetch(tag, output, bundles, cache=None, restored=False):
