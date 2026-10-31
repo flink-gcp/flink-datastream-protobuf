@@ -65,6 +65,9 @@ mise x -- just --list
 | `just baseline-consume <bundle> <candidate-jar> <version> <output>` | Run the bundle's compiled consumers against a candidate jar without recompilation |
 | `just examples-verify <version> <major> <external-maven-repository>` | Build/install the library and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
+| `just release-rehearse <version> <output> [--unsigned]` | Stage `<version>` and `<version>-1.20` from the committed HEAD into a new external directory without uploading, check the release-line guard, then inspect both bundles; see [Release artifacts](#release-artifacts) |
+| `just release-artifacts-test` | Run the bundle inspection and rehearsal checks against synthetic bundles and a stub `just` |
+| `just release-stage <version>` | Re-version the current checkout and stage one line on the Central Portal; only for the release workflow and the rehearsal's exported tree |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
 | `just benchmark-tools <cache>` | Build the pinned opt-in Thrift compiler in an external cache |
 | `just benchmark-tools-check <compiler>` | Reject a compiler that is not the pinned version or cannot generate the benchmark corpus |
@@ -168,7 +171,9 @@ Generated application code and jars remain under the example's ignored `target/`
 
 `just docs-javadoc <flink1|flink2> <3|4>` calls [docs-javadoc.sh](../scripts/docs-javadoc.sh) to compile the selected production adapter and invoke Javadoc directly with Java 17 language/API targeting, full doclint, and warnings treated as errors.
 The output is `target/apidocs/`, mounted into the site at `api/java/`.
-This avoids the connector parent's incompatible Maven Javadoc export/release options; repairing the Maven release Javadoc-jar configuration remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
+The site's API reference uses this direct invocation; the release Javadoc jar uses the Maven plugin.
+The POM replaces the connector parent's Javadoc options, which disable doclint and add an export that javadoc rejects with `--release 17`, with full doclint and `failOnWarnings`, so `javadoc:javadoc` and the release `javadoc:jar` goal fail on the same warnings.
+The plugin skips generation when its previous output is current, so run it after `clean` when checking a documentation change.
 Both adapters and Protobuf profiles are checked in CI.
 
 ### Documentation site and publication
@@ -436,9 +441,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code. `BaselineTool` records the distinct protoc version in captured bundles |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -758,6 +763,39 @@ Applications must supply a runtime compatible with their own generated messages.
 This library has no Google Cloud BOM, connector dependency, or shaded dependencies.
 The optional Chill dependency is absent from ordinary builds.
 The root LICENSE and NOTICE are copied to the jar's META-INF directory; the inherited ASF resource bundle is disabled.
+
+### Release artifacts
+
+[ADR-0006](adr/0006-central-portal-releases.md) defines how both artifact lines are staged on the Central Portal and published.
+`just release-stage <version>` runs `versions:set` on the current checkout and then `clean deploy -Drelease -Dmaven.test.skip=true -Dmaven.install.skip=true`, adding `-Dflink.compat=flink1` for a `-1.20` version.
+Run it only in a disposable tree; without `-DskipUpload=true` it uploads the bundle and waits for Central validation, which requires Central credentials.
+`-Drelease` activates the parent's `release` profile, which signs at `verify` and attaches the Javadoc jar, and this project's `central-release` profile.
+That profile attaches the sources jar, signs with the Bouncy Castle signer from `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, and replaces `deploy` with `central-publishing-maven-plugin` without automatic publication; it fixes `ignorePublishedComponents=false`, because that check reads Central credentials even when the upload is skipped, and `waitForPublishCompletion=false`, because that deprecated option switches the upload to automatic publication despite `autoPublish=false`.
+Its `enforce-release-line-toolchain` rule fails the build at `validate` unless the effective model matches the version line: a bare `X.Y.Z` with `flink2` at `release.flink.floor`, or `X.Y.Z-1.20` with `flink1` at `release.flink.lts`, and Protobuf 4 for both.
+A SNAPSHOT or any other version shape also fails.
+The execution sets `skip` and `fail` explicitly, so `-Denforcer.skip`, `-Denforcer.fail=false`, and the parent's `fast` profile do not disable it.
+Arguments that replace or skip the configured rules, such as `-Drules`, or that deactivate the profile are outside its protection; the release workflow passes none, and the rehearsal's guard check below runs with the same `MAVEN_ARGS`, so an inherited argument that disables the guard fails the rehearsal.
+
+`just release-rehearse <version> <output> [--unsigned]` exports the committed HEAD into `<output>/source`, stages `<version>` and `<version>-1.20` there with `-DskipUpload=true`, and keeps both bundles in `<output>/bundles`.
+The exported tree excludes uncommitted changes, as a tag does.
+It accepts no Maven arguments, passes `-DskipUpload=true` last, and never reads Central credentials; without `--unsigned`, it requires the signing variables.
+It then stages `<version>-1.20` with `-Dflink.compat=flink2` and fails unless the release-line guard rejects that build, so a change that disables the guard fails the rehearsal.
+Each bundle is inspected against the exported sources, and the command fails on any of these defects:
+
+- An unreadable archive, a repeated entry name in the bundle or a jar, or a file other than the version's POM, jar, sources jar and Javadoc jar, their signatures, and their checksums, such as a local-repository file or the other line's version.
+- A missing artifact, a missing MD5 or SHA-1 checksum of an artifact, a checksum that does not match, or a missing signature in a signed rehearsal.
+- A main-jar entry that is neither the manifest, Maven metadata, `META-INF/LICENSE` or `META-INF/NOTICE`, nor a class whose outermost class is named by a source file in `src/main/java` or the line's `src/main/java-<adapter>` root; this rejects test classes, generated messages, probes, resources, and shaded runtimes, and requires every top-level class to have its own source file.
+- A production source without its own class file, which a nested class does not replace, or a class whose class-file version is not Java 17.
+- A class whose class names or descriptors name a Kryo, Chill, or Flink Kryo-serializer type or Flink's `GenericTypeInfo`, or that references a Flink member whose name contains `Kryo`, such as `SerializerConfig.isForceKryoEnabled` or, in Flink 1.20, `ExecutionConfig.registerKryoType`. Every UTF-8 constant is searched, including declared members' descriptors, so a string literal in internal slash form also fails; dotted names in messages and this library's own member names do not.
+- LICENSE or NOTICE bytes in the jar or sources jar that differ from the tracked files.
+- A sources jar whose `.java` entries differ from the line's production sources; this also distinguishes the two adapters.
+- A Javadoc jar without its index and package summary.
+- A POM with other coordinates, without the name, description, URL, license, developer, or SCM metadata that Central requires, or with a dependency whose scope is neither `provided` nor `test`, including profile dependencies.
+
+The published POM is the project POM with the version set; its parent, `flink-connector-parent`, declares no dependencies, so consumers resolve no transitive dependency from either line.
+The Verify workflow's `release-rehearsal` job runs an unsigned rehearsal of the POM version without `-SNAPSHOT` on every run; it uploads no bundle.
+The release build skips test compilation and the runtime-application jars as well as tests; the test `protoc` executions still run.
+Before changing the release profile, the guard, or the inspection, also run a signed rehearsal locally with a throwaway key, for example one created with `gpg --quick-gen-key` in a temporary `GNUPGHOME`, rather than the release key.
 
 ### Dependency updates
 

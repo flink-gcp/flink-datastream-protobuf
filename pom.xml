@@ -73,6 +73,15 @@ limitations under the License.
         <!-- No module-opening flags: native integration and probes must work without Kryo reflection. -->
         <flink.surefire.baseArgLine>-Xms128m -XX:+UseG1GC</flink.surefire.baseArgLine>
         <flink.XmxITCase>1024m</flink.XmxITCase>
+        <!-- Release staging (ADR-0006). The parent's properties pin maven-gpg-plugin 1.4, which cannot read a key from the environment, and maven-source-plugin 3.2.1. -->
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
+        <versions-maven-plugin.version>2.23.0</versions-maven-plugin.version>
+        <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
+        <!-- The exact toolchains each artifact line is released with (ADR-0003); move them with the 2.x floor and the flink1 profile. -->
+        <release.flink.floor>2.2.1</release.flink.floor>
+        <release.flink.lts>1.20.4</release.flink.lts>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -90,6 +99,13 @@ limitations under the License.
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>1.7.36</version><scope>test</scope></dependency>
     </dependencies>
     <build>
+        <pluginManagement>
+            <plugins>
+                <!-- `just release-stage` re-versions the POM and CI reads its version; pinned so the goals resolve reviewed versions. -->
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>versions-maven-plugin</artifactId><version>${versions-maven-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-help-plugin</artifactId><version>${maven-help-plugin.version}</version></plugin>
+            </plugins>
+        </pluginManagement>
         <resources>
             <resource><directory>src/main/resources</directory></resource>
             <resource><directory>${project.basedir}</directory><targetPath>META-INF</targetPath><includes><include>LICENSE</include><include>NOTICE</include></includes></resource>
@@ -215,6 +231,15 @@ limitations under the License.
                         <registerAsCompilationRoot>false</registerAsCompilationRoot><embedSourcesInClassOutputs>false</embedSourcesInClassOutputs>
                         <outputDescriptorFile>${project.build.directory}/runtime-app/enum-added/schema.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
                     </configuration></execution></executions>
+            </plugin>
+            <!-- The parent's java11 profile adds an export that javadoc rejects together with release 17, and its base configuration disables doclint. -->
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <additionalJOptions combine.self="override"><additionalJOption>-Xdoclint:all</additionalJOption></additionalJOptions>
+                    <failOnWarnings>true</failOnWarnings>
+                    <!-- The default footer ends at the year of Maven 3.10's reproducible 1980 output timestamp. -->
+                    <bottom>Copyright &#169; {inceptionYear} {organizationName}. Licensed under the Apache License, Version 2.0.</bottom>
+                </configuration>
             </plugin>
             <!-- Use this project's complete notices rather than an ASF resource bundle. -->
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-remote-resources-plugin</artifactId><configuration><skip>true</skip></configuration></plugin>
@@ -402,6 +427,39 @@ limitations under the License.
                         </arguments>
                     </configuration></execution>
                 </executions></plugin>
+            </plugins></build>
+        </profile>
+        <!-- Stage a release with `just release-stage` (ADR-0006). -Drelease also activates the parent's release profile, which signs and attaches the Javadoc jar. -->
+        <profile>
+            <id>central-release</id>
+            <activation><property><name>release</name></property></activation>
+            <build><plugins>
+                <!-- The parent attaches sources only in its docs-and-source profile; Central requires them. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-source-plugin</artifactId><version>${maven-source-plugin.version}</version>
+                    <executions><execution><id>attach-sources-no-fork</id><goals><goal>jar-no-fork</goal></goals></execution></executions>
+                </plugin>
+                <!-- Check the final effective model, which no argument inspection can bypass. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
+                    <executions><execution><id>enforce-release-line-toolchain</id><goals><goal>enforce</goal></goals><configuration>
+                        <!-- Explicit values, so that neither -Denforcer.skip nor -Denforcer.fail nor the parent's fast profile turns the guard off. -->
+                        <skip>false</skip><fail>true</fail><rules>
+                        <evaluateBeanshell>
+                            <message>The release version and toolchain disagree: X.Y.Z-1.20 requires flink.compat=flink1 with Flink ${release.flink.lts}, X.Y.Z requires flink2 with Flink ${release.flink.floor}, and both require a Protobuf 4 build. Resolved: version=${project.version}, flink.compat=${flink.compat}, flink.version=${flink.version}, protobuf.version=${protobuf.version}.</message>
+                            <condition>"${project.version}".matches("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-1\\.20)?") &amp;&amp; "${protobuf.version}".startsWith("4.") &amp;&amp; ("${project.version}".endsWith("-1.20") ? ("flink1".equals("${flink.compat}") &amp;&amp; "${release.flink.lts}".equals("${flink.version}")) : ("flink2".equals("${flink.compat}") &amp;&amp; "${release.flink.floor}".equals("${flink.version}")))</condition>
+                        </evaluateBeanshell>
+                    </rules></configuration></execution></executions>
+                </plugin>
+                <!-- The Bouncy Castle signer reads MAVEN_GPG_KEY and MAVEN_GPG_PASSPHRASE without a gpg binary or keyring. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-gpg-plugin</artifactId><version>${maven-gpg-plugin.version}</version>
+                    <configuration><signer>bc</signer><bestPractices>true</bestPractices></configuration>
+                </plugin>
+                <!-- Replaces deploy: uploads one bundle and waits for validation; the release workflow publishes both lines. -->
+                <plugin><groupId>org.sonatype.central</groupId><artifactId>central-publishing-maven-plugin</artifactId><version>${central-publishing-maven-plugin.version}</version><extensions>true</extensions>
+                    <configuration><publishingServerId>central</publishingServerId><autoPublish>false</autoPublish><waitUntil>validated</waitUntil>
+                        <!-- Fixed against user properties: checking published components reads Central credentials even with
+                             skipUpload, and the deprecated waitForPublishCompletion switches the upload to automatic publication. -->
+                        <ignorePublishedComponents>false</ignorePublishedComponents><waitForPublishCompletion>false</waitForPublishCompletion></configuration>
+                </plugin>
             </plugins></build>
         </profile>
         <profile><id>flink1</id><activation><property><name>flink.compat</name><value>flink1</value></property></activation>

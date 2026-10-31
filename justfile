@@ -111,6 +111,21 @@ baseline-consume bundle candidate version output:
 api-compat bundle:
     bash scripts/api-compat.sh "$1"
 
+# Re-version this checkout and stage one artifact line on the Central Portal; run it only in a disposable tree.
+[positional-arguments]
+release-stage version *args:
+    [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-1\.20)?$ ]] || { echo "Expected X.Y.Z or X.Y.Z-1.20" >&2; exit 1; }
+    {{ mvn }} versions:set -DnewVersion="$1" -DgenerateBackupPoms=false
+    {{ mvn }} clean deploy -Drelease -Dmaven.test.skip=true -Dmaven.install.skip=true {{ if version =~ '-1\.20$' { '-Dflink.compat=flink1' } else { '' } }} "${@:2}"
+
+# Stage and inspect both lines' Central bundles from the committed HEAD without uploading them.
+[positional-arguments]
+release-rehearse version output *args:
+    {{ python }} scripts/release_artifacts.py "$@"
+
+# Run the release-artifact checks against synthetic bundles.
+release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py")
+
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups=retained-baseline verify
@@ -148,7 +163,7 @@ pin-actions:
 examples-verify version major repository:
     bash scripts/verify-examples.sh "$1" "$2" "$3"
 
-# Check public API documentation without the parent's incompatible Maven Javadoc options.
+# Check the site's public API documentation by invoking javadoc directly.
 [positional-arguments]
 docs-javadoc compat="flink2" major="4":
     bash scripts/docs-javadoc.sh "$1" "$2"

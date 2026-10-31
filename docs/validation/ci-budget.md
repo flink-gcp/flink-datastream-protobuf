@@ -93,6 +93,7 @@ The rule in the [development guide](../development.md#ci-compiler-reuse-and-job-
 | Binary compatibility job | 365 s | 15 min | 15 min |
 | Development bundle job | 463 s | 15 min | 20 min |
 | Benchmark smoke command | 89 s | none | 5 min |
+| Release rehearsal job | 106 s | none | 5 min |
 
 [Issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141) changed the binary compatibility job from one cell per Protobuf profile to one per artifact line, each building the jar with Protobuf 4 and also running it with Protobuf 3 tests.
 In pull-request run [40918680497](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/40918680497), the 2.x cell, which runs the suite four times, took 365 seconds, and the LTS cell took 242 seconds.
@@ -100,6 +101,9 @@ That run still used a full `verify` for the Protobuf 3 build, which the final re
 
 [Issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) removed the retained upgrade job, and the development bundle job now also runs `baseline-upgrade`, the API gate, and the compiled consumers on the bundle that it captured.
 In pull-request run [41195401814](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41195401814), its LTS jobs took 291 and 301 seconds and its 2.x jobs 446 and 463 seconds, so twice that maximum rounds up to a 20-minute limit.
+
+The release rehearsal job from [issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) builds both artifact lines without tests, plus a third build that the release-line guard stops at `validate`; it resolves the release plugins, which the shared Maven entry does not hold, on every run.
+In pull-request runs [41192241047](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41192241047), [41194651888](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41194651888), and [41195572314](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41195572314), it took 93, 106, and 87 seconds, so twice that maximum rounds up to a 5-minute limit.
 
 The matrix limit keeps the cold-compiler maximum, because a key change or an evicted entry returns every job to the cold path.
 No measured job combined the slowest step of each kind, but even the sum of the per-step maxima, about 630 seconds including setup steps, stays within the 20-minute limit.

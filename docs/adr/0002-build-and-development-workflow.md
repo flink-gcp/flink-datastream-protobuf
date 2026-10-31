@@ -124,7 +124,7 @@ The existing runtime/JDK/Protobuf CI matrix verifies the examples.
 Hugo `example` shortcodes render the named marker region directly from that version's application source or YAML.
 Markdown stores only the source reference, with no copied excerpt or synchronization step.
 GitHub readers follow the adjacent links to the executable sources; Hugo validates the marker references during site generation.
-Public API documentation is checked by direct Javadoc generation; Maven release Javadoc packaging remains in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
+Public API documentation is checked by direct Javadoc generation; [ADR-0006](0006-central-portal-releases.md) configures the Maven release Javadoc jar with the same doclint strictness.
 The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design, with existing Markdown mounted as canonical content.
 The consumer owns URLs, source links, version selection, Javadoc and publication; no Java runtime dependency on the connector or shared tooling is introduced.
 The bootstrap-only deferral of Hugo is complete.
