@@ -31,7 +31,7 @@ limitations under the License.
 - DynamicMessage design: 2026-10-29, extended by [ADR-0005](0005-descriptor-bound-dynamic-messages.md)
 - 1.0.0 persisted-format restart amended: 2026-10-29, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
 - Protobuf 4 build baseline amended: 2026-10-30, [issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141)
-- Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes, both from state written by the same development build and from state retained by the 0.1.0 artifact ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16))
+- Implementation: Serializer, type integration, and descriptor snapshots implemented; the 0.2.0 descriptor evaluator is implemented, tested with descriptor pairs, and used by snapshot restore; MiniCluster tests verify runtime recovery with unchanged schemas and supported schema changes from state written by the same development build ([issue #16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16)); the 1.0.0 format restart is implemented, and the library does not read state written by 0.x milestones ([issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140))
 - Evidence: [Spike 0](../validation/spike-0.md)
 - Runtime scope superseded: 2026-09-10, [ADR-0003](0003-flink-version-compatibility.md)
 
@@ -63,7 +63,7 @@ These are development acceptance requirements; the serializer, application-facin
 
 ### Type integration and public entry points
 
-Implement `ProtobufTypeInformation`, `ProtobufTypeInfoFactory`, `ProtobufTypeSerializer`, and `ProtobufTypeSerializerSnapshot` under `io.github.flink.gcp.protobuf`.
+Implement `ProtobufTypeInformation`, `ProtobufTypeInfoFactory`, `ProtobufTypeSerializer`, and `ProtobufGeneratedSerializerSnapshot` under `io.github.flink.gcp.protobuf`.
 The application-facing construction API for 0.1.0 is:
 
 ```java
@@ -248,13 +248,14 @@ Use deterministic serialization to write the normalized FileDescriptorSet and SH
 The fingerprint permits integrity checks and comparison optimizations; a digest match alone never establishes compatibility, and a difference between stored fingerprints alone never establishes incompatibility across descriptor readers.
 In particular, file iteration order and SourceCodeInfo changes normalize away, while reordered declarations, option changes, or changes to an imported built-in descriptor do not.
 
-### Snapshot format version 2
+### Generated snapshot format version 1
 
-The 0.1.0 snapshot class is `io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot`, with a public no-argument constructor.
+The generated-message snapshot class is `io.github.flink.gcp.protobuf.ProtobufGeneratedSerializerSnapshot`, with a public no-argument constructor.
 Later releases that support reading this snapshot must retain a loadable reader under that class name.
-Published format identifiers must never be reused for a different layout: changing the payload requires a new format version or snapshot class, even during 0.x development.
-Flink writes its snapshot-class envelope and the integer returned by `getCurrentVersion()`; return `2`, and do not duplicate that envelope inside `writeSnapshot`.
-The version-2 payload has this fixed order:
+Published format identifiers must never be reused for a different layout: changing the payload requires a new format version or snapshot class.
+The retired 0.x identifiers `io.github.flink.gcp.protobuf.ProtobufTypeSerializerSnapshot`, which wrote versions 1 and 2, and `io.github.flink.gcp.protobuf.ProtobufDynamicMessageSerializerSnapshot`, which wrote version 1, are not read and are never reused.
+Flink writes its snapshot-class envelope and the integer returned by `getCurrentVersion()`; return `1`, and do not duplicate that envelope inside `writeSnapshot`.
+The version-1 payload has this fixed order:
 
 | Field | Encoding |
 |---|---|
@@ -270,7 +271,6 @@ The version-2 payload has this fixed order:
 | Normalized FileDescriptorSet | Exactly the declared number of bytes |
 | Descriptor fingerprint | Exactly 32 SHA-256 bytes, without a length prefix |
 
-Version 1, which development builds wrote before the aliasing setting existed, has the same order without the aliasing byte; read it with aliasing enabled, the default.
 The names must be nonempty and fit `writeUTF`'s 65535-byte modified-UTF encoding limit.
 The descriptor block has a fixed 64 MiB maximum independent of `maxMessageSize`; validate its length before allocation on read and its size before writing a snapshot.
 Reject unsupported snapshot, framing, or normalization versions, invalid flag bytes/settings, invalid or incomplete descriptor graphs, missing named root messages, digest mismatches, and truncated data explicitly.
@@ -319,8 +319,8 @@ Reject message or Java class renames, detected field-number reuse, incompatible 
 Treat numeric type changes classed as conditionally safe by Protobuf conservatively as incompatible; parsing alone does not establish preservation of values.
 Descriptor pairs cannot prove that a reused number with an indistinguishable declaration still has the same business meaning, so reserving removed numbers remains an application schema obligation.
 Reject changes outside the evaluator's explicitly supported rules and apply the directional setting rules above; message keys remain unsupported.
-The 0.2.0 path retains the 0.1.0 snapshot reader, normalization definition, framing, and defaults, adding the evaluator without rewriting saved state or requiring an old class.
-An intentional departure from that path requires the documented 0.x breaking-change process below; it must not be reported as compatible restore.
+The 0.2.0 path retained the 0.1.0 snapshot reader, normalization definition, framing, and defaults, adding the evaluator without rewriting saved state or requiring an old class; the 1.0.0 format restart below supersedes that development path.
+An intentional departure from that path required the documented 0.x breaking-change process below; it was not to be reported as compatible restore.
 The evaluator must consume the complete retained descriptors, including unknown fields and metadata, rather than a reduced 0.1.0 schema summary.
 Any wrapper compatibility does not validate the opaque schema of its payload.
 
@@ -384,7 +384,8 @@ A known API difference may be accepted only through an explicit, narrowly scoped
 For each claimed state restore or migration path, assert restored values and continued processing using attributable fixtures from the fixed earlier development artifacts.
 For a declared unsupported path, test explicit rejection without falling back to generic serialization, guessing at unknown formats, or reporting successful restore while dropping state.
 
-Track direct and sequential upgrade outcomes rather than assuming transitive compatibility:
+Track direct and sequential upgrade outcomes rather than assuming transitive compatibility.
+The following table records the 0.x development paths; the 1.0.0 format restart below supersedes them, and no 0.x path leads to 1.0.0:
 
 | Candidate development upgrade path | Required decision and evidence |
 |---|---|
@@ -404,18 +405,20 @@ The current capability roadmap ends at 0.3.0; the 1.0.0 milestone tracks stabili
 After 0.3.0, assess remaining design issues, missing implementation and validation gaps.
 If further development is needed, define 0.4.0 or later 0.x milestones from that assessment; otherwise, refine the compatibility contract and prepare 1.0.0.
 Version 1.0.0 is the stabilization point for the application-facing API, configuration defaults, persisted formats and supported forward-restore contract.
-Before publishing it, implement and validate the generated/dynamic construction and restoration design of ADR-0005, define the supported runtime and upgrade matrix, and verify those guarantees against retained development and candidate fixtures.
+Before publishing it, implement and validate the generated/dynamic construction and restoration design of ADR-0005, define the supported runtime and upgrade matrix, and verify those guarantees against candidate fixtures.
 Consumer verification and fixture capture from the actual published 1.0.0 artifacts complete the publication gate; no earlier published artifact exists.
 Within 1.x, preserve the declared public API and supported state-reading paths; any future incompatible contract change requires a new major version and migration documentation.
-The 0.x-to-1.0.0 transition must have its own explicit upgrade guidance and evidence; 1.0.0 does not retroactively guarantee development APIs.
+Version 1.0.0 does not retroactively guarantee development APIs.
 Version 1.0.0 starts its persisted formats at version 1: every snapshot class it writes returns `1` from `getCurrentVersion()`, and the framing and normalization versions in its payloads are `1`.
-Because 0.x artifacts already wrote the existing snapshot classes, the generated one with versions 1 and 2 of other layouts, and a retained identifier is never reinterpreted, 1.0.0 writes every snapshot under a class name that no 0.x artifact wrote, for generated and dynamic messages alike.
-State written by 0.x development artifacts is then rejected explicitly, not restored; the 0.x-to-1.0.0 upgrade guidance must state that applications start with fresh state or replay input, and tests must verify the rejection with the retained development fixtures.
-[Issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) tracks this restart; until it lands, 0.x milestones keep the version lines that this record and ADR-0005 define.
+Because 0.x artifacts already wrote the earlier snapshot classes, the generated one with versions 1 and 2 of other layouts, and a retained identifier is never reinterpreted, 1.0.0 writes its snapshots under class names that no 0.x artifact wrote: `ProtobufGeneratedSerializerSnapshot` for generated messages and `ProtobufDynamicSerializerSnapshot` for dynamic messages.
+Their payloads keep the layouts that the 0.x development line settled on.
+The 0.x snapshot classes are removed, so 1.0.0 does not read state written by 0.x artifacts; Flink fails such a restore because the saved snapshot class is absent.
+The 0.x milestones were unpublished development milestones without users, so the restart ([issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)) provides no 0.x-to-1.0.0 upgrade guide, migration, or rejection test, and removes the 0.x fixtures and their restore checks.
+The forward-restore contract, its retained-bundle evidence, and the upgrade, API, and compiled-consumer checks start with 1.0.0; they apply from 1.0.0 to 1.1.0 and later releases as they did between 0.x milestones.
 
 ### Development fixtures and publication evidence
 
-For milestone-to-milestone checks, retain attributable snapshot and message-byte fixtures, complete savepoints, and expected restored values from fixed development artifacts, including the 0.1.0 baseline.
+For release-to-release checks, retain attributable snapshot and message-byte fixtures, complete savepoints, and expected restored values from fixed artifacts.
 Record the exact source revision and packaged artifact checksum; a newer working-tree build cannot stand in for that writer.
 For first-publication acceptance, capture and consumer-verify fixtures written by both published 1.0.0 artifact lines.
 Development fixtures do not satisfy this published-artifact gate.
@@ -425,7 +428,7 @@ Test the current setting contract: unchanged settings, each monotonic limit incr
 Do not regenerate or overwrite released fixtures using a newer writer and call them evidence from the original release.
 Issues [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10), [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11), and [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) own format fixtures, development runtime savepoints and capture/restore tooling, and published-artifact provenance respectively.
 Actual capture and consumer verification using both published 1.0.0 artifact lines are completion gates of #13 and the 1.0.0 milestone; they are not required to close the development runtime work in #11.
-Retain the original 0.1.0 fixtures and add independently attributable 0.2.0 and later fixture sets, including fixtures for formats that a later release explicitly stops supporting.
+Fixtures written before the 1.0.0 format restart are removed with their restore checks; retained fixtures start with the published 1.0.0 artifacts, and later releases add independently attributable fixture sets, including fixtures for formats that a later release explicitly stops supporting.
 Supported generated-message restore tests use the new application with old generated classes absent.
 Current aggregate CI, successful tests of every claimed supported path, explicit rejection of unsupported paths, and complete breaking-change documentation are release gates.
 The first release is not complete until publication, consumer verification, and preservation of that release's fixtures.

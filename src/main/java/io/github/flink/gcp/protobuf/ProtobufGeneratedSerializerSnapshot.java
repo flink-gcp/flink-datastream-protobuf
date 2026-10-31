@@ -32,22 +32,20 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * Version-2 metadata for restoring generated Protobuf value serializers, which also reads version
- * 1.
+ * Version-1 metadata for restoring generated Protobuf value serializers.
  *
  * <p>The persisted class name and payload layout are state-format identities. Reading metadata does
  * not load a generated class. Restoration uses Flink's supplied user-code classloader. Both
  * compatibility resolution and restoration delegate to the directional schema evaluator, which
  * accepts unchanged descriptors and the supported schema changes and permits only nondecreasing
- * reader limits; deterministic writing and large-payload aliasing may change in either direction. A
- * version-1 snapshot, which predates the aliasing setting, restores with aliasing enabled.
+ * reader limits; deterministic writing and large-payload aliasing may change in either direction.
  *
  * @param <T> concrete generated message type
  */
 @Internal
-public final class ProtobufTypeSerializerSnapshot<T extends Message>
+public final class ProtobufGeneratedSerializerSnapshot<T extends Message>
         implements TypeSerializerSnapshot<T> {
-    private static final int VERSION = 2;
+    private static final int VERSION = 1;
 
     private String className;
     private String fullName;
@@ -56,10 +54,10 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
     private ClassLoader userCodeClassLoader;
 
     /** Creates an empty snapshot for Flink's versioned metadata reader. */
-    public ProtobufTypeSerializerSnapshot() {}
+    public ProtobufGeneratedSerializerSnapshot() {}
 
     /** Captures immutable metadata without retaining the generated class or parser. */
-    ProtobufTypeSerializerSnapshot(Class<T> type, ProtobufSerializerSettings settings) {
+    ProtobufGeneratedSerializerSnapshot(Class<T> type, ProtobufSerializerSettings settings) {
         ProtobufMessageType metadata = ProtobufMessageType.resolve(type);
         this.className = type.getName();
         this.fullName = metadata.fullName;
@@ -77,7 +75,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
     }
 
     /**
-     * Writes the fixed version-2 payload with deterministic descriptor bytes and their SHA-256.
+     * Writes the fixed version-1 payload with deterministic descriptor bytes and their SHA-256.
      *
      * @param out destination immediately after Flink's snapshot version
      * @throws IOException if metadata is uninitialized, exceeds format limits, or cannot be written
@@ -116,7 +114,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
         schema = null;
         this.userCodeClassLoader = null;
         try {
-            if (readVersion != 1 && readVersion != VERSION) {
+            if (readVersion != VERSION) {
                 throw new IOException("Unsupported Protobuf snapshot version: " + readVersion);
             }
             requireVersion(in.readInt(), ProtobufTypeSerializer.FRAMING_VERSION, "framing");
@@ -128,8 +126,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
             boolean deterministic = readFlag(in, "deterministic serialization");
             int maxMessageSize = in.readInt();
             int recursionLimit = in.readInt();
-            // Version 1 predates the setting; restore it with the default, aliasing enabled.
-            boolean aliasing = readVersion == 1 || readFlag(in, "large-payload aliasing");
+            boolean aliasing = readFlag(in, "large-payload aliasing");
             ProtobufSerializerSettings savedSettings =
                     new ProtobufSerializerSettings(
                             deterministic, maxMessageSize, recursionLimit, aliasing);
@@ -204,7 +201,7 @@ public final class ProtobufTypeSerializerSnapshot<T extends Message>
     public TypeSerializerSchemaCompatibility<T> resolveSchemaCompatibility(
             TypeSerializerSnapshot<T> oldSerializerSnapshot) {
         requireInitialized();
-        if (!(oldSerializerSnapshot instanceof ProtobufTypeSerializerSnapshot<?> old)) {
+        if (!(oldSerializerSnapshot instanceof ProtobufGeneratedSerializerSnapshot<?> old)) {
             return TypeSerializerSchemaCompatibility.incompatible();
         }
         old.requireInitialized();

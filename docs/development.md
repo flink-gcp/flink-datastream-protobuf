@@ -154,9 +154,9 @@ Registration tests use separate JVMs and every native path disables generic type
 These checks run in every existing source-build CI matrix cell.
 
 The library's formatting and Checkstyle checks also cover the handwritten application sources.
-The quickstart, usage guide, and upgrade guide reference source excerpts through the Hugo `example` shortcode.
+The quickstart and usage guide reference source excerpts through the Hugo `example` shortcode.
 Its only argument identifies a file and region: `ExplicitExample#explicit-source` selects that named region in `ExplicitExample.java`, `config.yaml#configuration` selects the marked YAML, and `changed/runtime.proto#entry` selects the marked message in that [runtime application schema](#test-resources-and-version-updates).
-Use the shortcode calls in `docs/quickstart.md`, `docs/usage.md`, and `docs/upgrade.md` as authoring examples.
+Use the shortcode calls in `docs/quickstart.md` and `docs/usage.md` as authoring examples.
 Hugo reads the selected version's Example and runtime schema sources between matching `docs:start` and `docs:end` markers.
 Markdown stores no copy of these excerpts, so changing an Example requires no snippet synchronization.
 Missing, repeated, reversed or empty marker regions fail the site build.
@@ -272,7 +272,9 @@ The [generated-size report](validation/serializer-generated-size.md) measures th
 The [large-read report](validation/serializer-large-read.md) measures the aliased large-frame read against the streamed one.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
-`snapshotConfiguration()` returns an internal version-2 `ProtobufTypeSerializerSnapshot`, which also reads version 1.
+`snapshotConfiguration()` returns an internal version-1 `ProtobufGeneratedSerializerSnapshot` for generated messages and a version-1 `ProtobufDynamicSerializerSnapshot` for DynamicMessage values.
+The generated snapshot is described here; [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md#dynamic-snapshot-format-version-1) defines the dynamic one.
+Neither reads the snapshot classes that 0.x milestones wrote.
 It stores both names, framing/normalization versions, all four settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
 The snapshot class/version envelope is written by Flink; the payload follows ADR-0001 exactly, including the independent 64 MiB descriptor limit.
 Reading validates metadata without resolving the saved generated class.
@@ -285,9 +287,8 @@ No migration or reconfigured serializer result is provided.
 Flink's compatibility result carries no reason, so restoration reports the evaluator's first incompatibility in its exception.
 Unsupported formats, corrupt data, and invalid descriptors fail during reading; missing or unsupported generated classes, and classes that cannot read the saved schema, fail explicitly during restoration.
 
-The [format fixtures](../src/test/resources/snapshots/v1/README.md) retain fixed development snapshot/message bytes and writer provenance.
-Tests verify the Flink envelope, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
-The separate runtime suite verifies job recovery and retains [development savepoints](../src/test/resources/savepoints/v1/README.md).
+Tests verify the Flink envelope, the fixed payload layout, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
+The separate runtime suite verifies job recovery with state that the same build writes.
 Issue #13 and the 1.0.0 milestone own published-artifact fixture capture, consumer verification, and first-release completion; #6 tracks development acceptance only.
 
 ## Test resources and version updates
@@ -298,7 +299,7 @@ The procedures below describe how to maintain and verify the test resources.
 
 ### Resource inventory
 
-The repository keeps editable test inputs separate from generated build outputs and fixed compatibility fixtures.
+The repository keeps editable test inputs separate from generated build outputs and fixed evidence.
 Paths below are relative to the repository root.
 
 | Resource | Purpose | How it is produced or consumed |
@@ -307,8 +308,6 @@ Paths below are relative to the repository root.
 | `src/test/runtime-app/java/` and `src/test/runtime-app/proto/<variant>/` | Controllable Flink jobs and six runtime schemas with the same generated class/message names: `original`, `changed`, `reserved`, `incompatible`, `enum-original`, and `enum-added` ([schema changes](validation/runtime-recovery.md#schema-changes)) | Maven builds each variant separately under `target/runtime-app/<variant>/`; `RuntimeJob` uses isolated runtime gencode and reaches fields that only some variants declare through descriptors, `DynamicRuntimeJob` builds DynamicMessage values from a variant's `schema.pb` and is packaged with only the controlled source in `application-dynamic.jar`, while `CommonTypesRuntimeJob` uses WKT and ordinary test messages from the parent classpath |
 | `target/runtime-app/application-<variant>.jar`, `application-dynamic.jar` | Application jars submitted to MiniCluster jobs by `RuntimeRecoveryHarness` | Built before tests; disposable build outputs, never published or committed |
 | `target/baseline/tools.jar` | Retained test instruments, messages, and resources | Built during `process-test-classes`; never attached as a Maven publication artifact |
-| `src/test/resources/snapshots/v1/*.properties` | Four fixed serializer snapshot/message fixtures, including checksums and writer provenance | `ProtobufSnapshotFixtureTest` reads all four in each Protobuf profile and checks restoration and current writer bytes; generation is a separate [format-fixture procedure](../src/test/resources/snapshots/v1/README.md) |
-| `src/test/resources/savepoints/v1/` | Complete canonical savepoints, original schema, descriptor set, and manifest | `ProtobufSavepointFixtureITCase` selects the exact runtime version directory and restores it; generation is an explicit [savepoint capture procedure](../src/test/resources/savepoints/v1/README.md#capture) |
 | `src/benchmark/{java,test,proto,avro,thrift}/` | Opt-in harness, negative tests, and equivalent corpus schemas | The `benchmarks` profile compiles these as test inputs and generates sources under `target`; none enter the production jar |
 | `docs/validation/data/serializer-benchmarks-v0.1.0/` | Fixed measurement and diagnostic evidence with source provenance | The [data inventory](validation/data/serializer-benchmarks-v0.1.0/README.md) records checksums and supported contents; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-buffer-allocation-v0.2.0/` | Paired native/Chill measurements of the #42 buffer variants with GCE run records | The [data inventory](validation/data/serializer-buffer-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
@@ -319,7 +318,7 @@ Paths below are relative to the repository root.
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
 Its `ControlledSource`, `RuntimeJob`, and `CommonTypesRuntimeJob` run inside the MiniCluster jobs started by the integration tests.
-The fixture copies of `runtime.proto` and `schema.pb` record writer inputs; Maven generates the current application from `src/test/runtime-app/proto`, not from those copies.
+The bundle copies of `runtime.proto` and `schema.pb` record writer inputs; Maven generates the current application from `src/test/runtime-app/proto`, not from those copies.
 
 ### What verification executes
 
@@ -331,7 +330,7 @@ The relevant build and test sequence is:
 2. During `test-compile`, Maven compiles the ordinary tests and separately compiles the shared runtime application Java with each generated variant.
    The runtime outputs are `target/runtime-app/<variant>/classes`.
 3. During `process-test-classes`, the Ant jar tasks package the application jars and the development bundle companion jar.
-4. During `test`, Surefire runs `*Test`, including `ProtobufSnapshotFixtureTest`.
+4. During `test`, Surefire runs `*Test`, including the snapshot layout tests.
 5. During `integration-test`, the parent POM's Surefire execution runs `*ITCase`, including the runtime recovery suites below.
    The `verify` lifecycle includes this phase; no separate runtime-test command is needed.
 
@@ -339,16 +338,15 @@ The relevant build and test sequence is:
 |---|---|---|
 | `ProtobufRecoveryITCase` | Checkpoints and savepoints created during the current run | Checkpoint restart and replay; separate-job savepoint restore; settings transitions and rejection of decreased limits for HashMap/RocksDB |
 | `ProtobufSchemaEvolutionITCase` | Savepoints created during the current run | Restored values, continued processing, and a second restore across supported schema changes; rejection with the first incompatibility for unsupported changes; HashMap/RocksDB |
-| `ProtobufSavepointFixtureITCase` | Committed savepoint archives during ordinary verification | Archive hashes, recorded settings, restoration through a fresh application loader, expected state values, and continued processing for HashMap/RocksDB |
 | `CommonTypesRecoveryITCase` | Checkpoints and savepoints created during the current run | WKT/OTel values, changing Struct keys and AnyValue variants, and continued processing for HashMap/RocksDB |
 | `ProtobufDynamicMessageRecoveryITCase` | Checkpoints and savepoints created during the current run | The checkpoint and schema-change cases with DynamicMessage values from `application-dynamic.jar`, the descriptors that restored values carry, and rejection of cross-kind restores for HashMap/RocksDB |
 
 These suites use `RuntimeRecoveryHarness` to start jobs from the attached application jars.
 The original variant serves the unchanged-schema restores; `ProtobufSchemaEvolutionITCase` pairs the other variants with it or with each other.
 The common-types job uses the original jar's entry point and source, with WKT classes from protobuf-java and OTel/envelope classes from the ordinary test classpath.
-Its [coverage](common-types.md#verification-boundaries) complements the isolated generated-class tests without modifying the existing savepoint fixtures.
+Its [coverage](common-types.md#verification-boundaries) complements the isolated generated-class tests.
 The [runtime evidence](validation/runtime-recovery.md) describes the state assertions and compatibility boundaries.
-Ordinary verification creates temporary state for its jobs but does not rewrite either committed fixture family.
+Ordinary verification creates temporary state for its jobs; the repository commits no state fixtures.
 `just verify-protobuf` and `just verify-flink` clean first, then run this same lifecycle with the selected versions.
 
 ### Fixed development bundles
@@ -360,18 +358,19 @@ The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521
 The final v0.2.0 bundles, captured from source revision `e697ee957000f3258ba4b6fd5940458514fada5c` and assembled with `baseline-release`, are the assets of the `v0.2.0` pre-release; see the [retained v0.2.0 baseline](validation/development-baselines.md#retained-v020-baseline).
 The final v0.3.0 bundles, captured from source revision `142862b9d86f449e3e4894715602a991a018fd63`, are the assets of the `v0.3.0` pre-release; see the [retained v0.3.0 baseline](validation/development-baselines.md#retained-v030-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
-`baseline-upgrade` then restores their state with the current library and applications, resolving this build's dependencies instead of the retained ones.
+`baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
+The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and CI meanwhile runs them on its own [development bundle](validation/development-baselines.md#inspect-and-restore).
 
 ### API compatibility gate
 
-Issue [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) checks the application-facing API of each candidate against the retained development library with two complementary checks.
+Issue [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) added two complementary checks of a candidate's application-facing API against a retained library.
 The first compares class files with japicmp; the second runs the retained compiled consumers against the candidate jar.
 Both are separate from saved-state restoration and from application gencode/runtime compatibility.
 
 ```sh
-mise x -- just baseline-fetch v0.1.0 /tmp/baseline-v0.1.0
-mise x -- just api-compat /tmp/baseline-v0.1.0/flink2-pb3
-mise x -- just baseline-consume /tmp/baseline-v0.1.0/flink2-pb3 target/flink-datastream-protobuf-0.3.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x -- just baseline-fetch <tag> /tmp/baseline-<tag>
+mise x -- just api-compat /tmp/baseline-<tag>/flink2-pb3
+mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-0.3.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
@@ -386,12 +385,12 @@ japicmp lists the members that these class files declare; the LTS `createSeriali
 japicmp decides compatibility and fails the build on the binary- and source-incompatible changes that its build break covers, naming the member and the change type, for example `ProtobufTypeInformation$Builder.recursionLimit(int):METHOD_REMOVED`.
 The break does not cover every change that the report marks source-incompatible: with japicmp 0.18.5, changing only the generic type of a parameter, such as `newBuilder(Class<T>)` to `newBuilder(Class<? extends T>)`, is reported as `METHOD_PARAMETER_GENERICS_CHANGED` and passes.
 The erased signatures stay binary compatible, so review generic signature changes in public types by hand.
-An intentional 0.x break is accepted only by adding that member to the plugin-level japicmp `<excludes>` in the profile, such as `io.github.flink.gcp.protobuf.ProtobufTypeInformation$Builder#recursionLimit(int)`, with a comment linking the upgrade documentation section that explains the break and its replacement.
+An intentional break is accepted only by adding that member to the plugin-level japicmp `<excludes>` in the profile, such as `io.github.flink.gcp.protobuf.ProtobufTypeInformation$Builder#recursionLimit(int)`, with a comment linking the release documentation that explains the break and its replacement.
 Exclude the affected member, never its whole class or package; an excluded member is no longer compared at all, so remove the entry when the baseline moves past the break.
 Do not add excludes inside an execution: Maven merges an execution's `<excludes>` with the plugin-level list element by element, so the first entry would replace the `@Internal` exclude for that comparison.
 Review these entries, and the build-break settings beside them, as part of the gate; nothing else checks them.
-The profile currently excludes no member, because the current API keeps every member of the four retained 0.1.0 and four retained 0.2.0 libraries.
-Do not exclude a member to work around an unexplained difference; ADR-0001's 0.x policy allows only documented intentional breaks.
+The profile currently excludes no member.
+Do not exclude a member to work around an unexplained difference; only documented intentional breaks are accepted.
 
 The same Maven run checks a negative control built from the candidate, with japicmp's build break disabled for that comparison only.
 Its old jar holds the candidate's main classes plus the compiled test classes and generated test messages; its new jar drops `ProtobufTypeInfoFactory` and every test class.
@@ -401,7 +400,7 @@ This shows that the configured scope detects an accidental removal and ignores u
 
 `baseline-consume <bundle> <candidate-jar> <flink-version> <new-output>` runs the bundle's `tools.jar` instruments on the candidate without recompiling them.
 These are the compiled explicit-construction, builder, and factory consumer, the registered transport check, and on Flink 1.20 the legacy entry-point check.
-Only the first is limited to the annotated API: the transport check names `ProtobufTypeSerializer` and `ProtobufTypeSerializerSnapshot`, and the legacy check calls the package-private serializer constructor and settings record.
+Only the first is limited to the annotated API: the transport check names `ProtobufTypeSerializer` and the generated snapshot class, and the legacy check calls the package-private serializer constructor and settings record.
 A change to those `@Internal` members can therefore fail `consume` while the public API is unchanged; such a failure needs a reviewed decision, because a japicmp exclude does not apply to it.
 The bundle's `dependencies/` tree was resolved on the capture host, so the command resolves the current tree's test-scope dependencies for the bundle's line, Protobuf profile, and the selected Flink version into the output directory.
 It pins protobuf-java to the bundle's version, because the retained instruments require their own runtime.
@@ -411,53 +410,9 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-The Verify workflow runs one retained-baseline job for each bundle name, covering the v0.1.0 and v0.2.0 bundles of that name at every Flink version and JDK that they were read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-On JDK 17 the job runs `baseline-upgrade` for each bundle and Flink version, then `api-compat` once for each bundle, then `baseline-consume` for each bundle and Flink version; the 2.x jobs then switch to JDK 21 and repeat `baseline-upgrade` and `baseline-consume` with the same candidate jar.
+Until a published release is retained, CI runs both checks only on its own [development bundle](validation/development-baselines.md#inspect-and-restore).
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
-
-### Selecting and capturing savepoint fixtures
-
-Savepoint lookup uses this exact path, including patch versions:
-
-```text
-src/test/resources/savepoints/v1/
-  flink-<flink.version>/protobuf-<protobuf.version>/<hashmap|rocksdb>/<baseline|raised>/
-    savepoint.zip
-    manifest.properties
-    runtime.proto
-    schema.pb
-```
-
-Changing a version in `pom.xml` does not modify an existing ZIP.
-Verification selects the new version's directory and fails with a capture instruction if its manifest is missing.
-It does not fall back to a previous version or automatically capture a replacement.
-The current matrix selects 24 fixtures: three Flink versions × two Protobuf profiles × two backends × two settings.
-Updating one Protobuf profile across that matrix requires 12 fixtures for the new version; adding one Flink version requires eight across both Protobuf profiles.
-JDK 17 captures also serve the matching JDK 21 verification lanes.
-
-Use the [capture commands](../src/test/resources/savepoints/v1/README.md#capture) from the repository root for each affected Flink/Protobuf pair.
-First run a clean package build with `-DskipTests`, which compiles the test applications without attempting to restore the not-yet-existing fixtures.
-Then invoke `surefire:test@integration-tests` with `-Dtest=ProtobufSavepointFixtureITCase`, the same profile/version selections, and these properties:
-
-| Property | Value |
-|---|---|
-| `test.production.classes` | Absolute path to the packaged library jar from that build; adjust the README example if the project version or final jar name changes |
-| `protobuf.fixture.capture` | Output root outside the repository; every destination fixture directory must be absent |
-| `protobuf.fixture.revision` | Writer checkout's base revision, as supplied by the README command |
-
-One invocation captures both backends and both settings.
-After closing each writer, it archives the complete savepoint, removes the original savepoint and writer checkpoint storage, and restores the relocated archive before checking continued processing.
-Review all four files in each resulting fixture, including the manifest's jar/source hashes, runtime and protoc versions, settings, state identity, and expected values.
-Copy the reviewed version directories into `src/test/resources/savepoints/v1/` explicitly, then run normal verification with capture disabled.
-An interrupted capture can leave a partial destination; retry with a fresh output root.
-
-Add new version directories without relabeling the old writer's provenance.
-Remove superseded development savepoints in the same reviewed update once no supported test selects them; their previous contents remain available in Git history.
-Keep snapshot-format fixtures while they serve as fixed compatibility baselines, even when their writer runtime is no longer a current profile.
-Any replacement or removal of development fixtures must be an explicit reviewed change.
-Regenerated ZIP bytes are not a reproducibility or compatibility verdict; recovery assertions establish the behavior being tested.
-Published-release baselines must be retained without rewriting them with later writers; their capture and consumer validation remain in #13 for the first 1.0.0 publication.
 
 ### Updating Protobuf, schemas, or Flink
 
@@ -467,27 +422,21 @@ Use this sequence for a dependency update, including patch updates proposed by D
    Record whether the change affects a runtime version, generated code, test schema, or supported Flink window.
 2. Update the matching configuration entries below.
    Keep protobuf-java and application gencode paired, and clean whenever changing profiles.
-3. Capture new development savepoints for every newly selected Flink/Protobuf pair using the preceding procedure.
-   Capture uses JDK 17 and the packaged library jar, before normal verification can select those new fixtures.
-   Remove superseded development savepoint directories after checking that no supported test selects them.
-4. Run the existing snapshot-format fixtures unchanged and investigate any incompatibility or byte mismatch.
-   Do not regenerate them merely to make an update pass: unlike savepoints, all four are loaded on every run and are not selected by exact runtime version.
-   Use their separate generation procedure only for an intentional reviewed baseline change.
-5. Run the full matrix below, including the unchanged-jar checks for dependency/build changes.
-   Update version references and measured scope in this guide, the root README, fixture documentation, and runtime evidence.
-   Review configuration, fixture additions, and documentation together before pushing; wait for the current PR CI result.
+3. Run the full matrix below, including the unchanged-jar checks for dependency/build changes.
+   Update version references and measured scope in this guide, the root README, and runtime evidence.
+   Review configuration and documentation together before pushing; wait for the current PR CI result.
 
-| Change | Configuration and fixture impact |
+| Change | Configuration impact |
 |---|---|
 | Protobuf 4 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, the capture check in `BaselineTool`, and the versions in `docs/quickstart.md`; the `protobuf4` profile uses the root default |
 | Protobuf 3 runtime | Change `protobuf.version` in the `protobuf3` profile, the capture check in `BaselineTool`, and the explicit runtime override in `docs/quickstart.md` |
 | Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
-| protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code but not the savepoint lookup path. Preserve the distinct recorded protoc version and review any fixture replacement explicitly |
-| Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the upgrade guide renders. Changing `original` or `changed` also changes their relationship to the retained v0.1.0 schemas and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
-| Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the fixed snapshot-format contract together; these schemas do not generate the runtime application |
+| protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code. `BaselineTool` records the distinct protoc version in captured bundles |
+| Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
+| Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
 | Flink 2.x floor | Change the default `flink.version` in `pom.xml`, the example and benchmark `floor` versions in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, not on PRs) and the accepted version in `benchmarks.just`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on both capture commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile, the example and benchmark `lts` versions in `.github/workflows/verify.yaml`, `docs/quickstart.md`, and the accepted version in `benchmarks.just`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -515,7 +464,7 @@ From the repository root, run these checks with the updated pins; substitute the
 
 The subshell stops on the first failure and preserves that command's exit status without changing the calling shell's options.
 The binary check preserves the floor's library jar, compiled tests, application jars/classes, and descriptors when executing at the ceiling, and the Protobuf 4 jar when executing with Protobuf 3.
-That check and the per-version savepoint fixtures do not establish saved-state migration between Flink versions or Protobuf profiles.
+That check does not establish saved-state migration between Flink versions or Protobuf profiles.
 Adding such a guarantee requires an explicit old-writer/new-reader recovery scenario and a documented compatibility decision.
 
 ## Serializer benchmarks
@@ -671,7 +620,7 @@ The entry therefore holds what that job resolved when its key was new; a version
 Pull requests, Docs, and Dependency submission only restore, so pull requests create no entry that only their own ref can read.
 The other lanes fetch their runtime-specific dependencies, which the entry does not hold, from the mirror on each run, and the standalone examples resolve into their own disposable repository.
 
-Retained bundles are captured locally, as described in [development artifact bundles](validation/development-baselines.md#capture), and do not use these settings.
+Retained bundles are captured locally, as described in [development artifact bundles](validation/development-baselines.md#inspect-and-restore), and do not use these settings.
 CI captures are disposable rehearsals whose command records omit `MAVEN_ARGS`.
 A bundle records the resolved dependency tree and jars, not the repository that served them.
 
@@ -695,8 +644,8 @@ A job time limit cancels the job instead, and the gate does not run after cancel
 The organization's GitHub Free plan runs at most 20 jobs at a time, and a pull-request run of Verify, Lint, and Docs starts more, so the longest matrix jobs can wait for a runner.
 To shorten pull-request runs, CI's first job, `Freeze source revision`, uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to compare a pull request with its base branch and passes the result to Verify as the `benchmarks` and `baseline` inputs.
 An empty token makes the filter use git, so the job needs no `pull-requests` permission, and the selection adds no job that the matrix jobs would wait for.
-The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, or the CI and Verify workflows.
-Capture builds and runs the current library and test sources from a clean tree, so all of those are its inputs.
+The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, or `scripts/api-compat.sh`.
+Capture builds and runs the current library and test sources from a clean tree, so all of those except the API gate script are its inputs; the same job runs that script on the captured bundle.
 Capture also archives every tracked file and rejects names that are not valid UTF-8 or that contain a colon, a backslash, or a control character; `just lint`, which Lint runs on every pull request, checks those names so that a skipped capture cannot hide one.
 Matrix jobs run the benchmark compiler and smoke steps for the same paths and for `scripts/benchmark_evidence.py`; the benchmark build compiles the test sources as well.
 Pushes to main, the weekly schedule, and manual `workflow_dispatch` runs always run both, so a change that a pull request skipped is still checked after it merges; start Verify manually on the branch to run them before merging.
@@ -815,7 +764,7 @@ Update the Python minor by hand: change `python` in `mise.toml` and `requires-py
 During dependency maintenance, also check the `protobuf3` and `flink1` profile pins and `FLINK_CEILING` through the version-update table above; the absence of a Dependabot PR does not establish that these pins are current.
 Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.
 Review Flink major/minor changes as a coordinated supported-window update under ADR-0003; patch updates remain eligible.
-Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including new exact-version fixtures and matrix checks.
+Follow the [version-update procedure](#updating-protobuf-schemas-or-flink) for Flink patches as well as Protobuf updates, including the matrix checks.
 Keep each Protobuf runtime and protoc pair together.
 The existing `org.apache.flink:*` exclusion also covers `flink-connector-parent` major/minor upgrades; check its releases during dependency maintenance and review relevant build-tool changes separately from runtime-window changes.
 A parent update that changes the managed japicmp version also needs the [API compatibility gate](#api-compatibility-gate) review of its build break and report format.
@@ -907,9 +856,10 @@ The development sequence and current implementation status are:
    Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
 4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
-6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) adds the [upgrade guide from 0.1.0](upgrade.md) and the [API compatibility gate](#api-compatibility-gate), which checks each candidate against the retained 0.1.0 libraries; [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63) then retains the 0.2.0 baseline and publishes the `v0.2.0` pre-release, which the next documentation deployment lists as the 0.2 milestone.
+6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) adds the upgrade guide from 0.1.0 and the [API compatibility gate](#api-compatibility-gate), which checks each candidate against the retained 0.1.0 libraries; [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63) then retains the 0.2.0 baseline and publishes the `v0.2.0` pre-release, which the next documentation deployment lists as the 0.2 milestone.
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) designs explicit-descriptor DynamicMessage support in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md), [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) implements its type information, serializer, and snapshot, and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) verifies state recovery and completes the usage documentation. Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
-8. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
+8. [#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) restarts the persisted formats at version 1 for 1.0.0 under new snapshot class names; the library no longer reads 0.x state, and the 0.x fixtures, upgrade guide, and CI checks against the 0.x bundles are removed.
+9. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
 After 0.3.0, assess remaining issues, missing implementation and validation gaps before adding another milestone.
 Define further 0.x work when needed; prepare 1.0.0 only when the design and compatibility contract are ready to stabilize.

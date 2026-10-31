@@ -328,7 +328,7 @@ public final class DynamicRuntimeJob {
                             .getClass()
                             .getName()
                             .equals(
-                                    "io.github.flink.gcp.protobuf.ProtobufDynamicMessageSerializerSnapshot")) {
+                                    "io.github.flink.gcp.protobuf.ProtobufDynamicSerializerSnapshot")) {
                 throw new IllegalStateException(
                         "Production serializer and dynamic snapshot were not selected");
             }

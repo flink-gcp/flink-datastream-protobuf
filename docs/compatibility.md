@@ -24,27 +24,16 @@ Adding a field can preserve Protobuf binary compatibility, and the current devel
 It accepts unchanged schemas and the [supported schema changes](#schema-changes), and it rejects other changes to the declarations that saved values reach when the job restores its state.
 No library release has been published yet.
 The 0.x versions denote development milestones; 1.0.0 is the planned first Maven Central release.
-Milestone upgrade checks use fixed development artifacts and fixtures with exact source/checksum provenance.
 
 ## Development builds before 1.0.0
 
 The current source version is `0.3.0-SNAPSHOT`, a development build that restores supported schema changes.
-The 0.1.0 milestone accepted unchanged schemas only.
-It also accepted payload types whose graphs reach proto2 messages, which current builds reject.
-Restore compares the messages reached through fields that both schemas keep, starting at the root, together with their enclosing messages and declaring files.
-State that 0.1.0 wrote for such a type is therefore restored only when the new schema has a proto3 root and no such retained path still reaches a message that the saved schema declares in a proto2 file; removing a field and reserving its number cuts the paths through it, and the removed values remain unknown fields.
-Moving a message on a retained path, or a proto2 root, to proto3 changes its declaring file's syntax, which restore rejects, so an application that keeps such a path must start with fresh state or replay its input.
-The [retained 0.1.0](validation/development-baselines.md#retained-v010-baseline) and [0.2.0](validation/development-baselines.md#retained-v020-baseline) baselines use proto3 types only.
-Compatibility between arbitrary development builds is not implied.
-Compatibility with the retained 0.1.0 and 0.2.0 baselines is established only by their state-restore tests and API checks; the [upgrade guide](upgrade.md) lists their results together with the API changes and intentional breaks of each milestone, and [verified coverage](#verified-coverage-and-upgrade-procedure) describes the state that the current tests restore.
-The 0.x policy permits changes to APIs, defaults, runtime requirements, and saved-state compatibility.
-Each development milestone must document its actual breaks, supported upgrade paths, and migration or fresh-state/replay requirements before completion.
+The 0.x versions are development milestones, not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
-The [development bundle tooling](validation/development-baselines.md) retains attributable inputs for these checks.
-Historical serializer-format fixtures do not establish arbitrary full-job upgrade compatibility.
 
-[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned stable API and forward-restore boundary, without implying compatibility with every earlier development artifact.
-Its preparation must disclose unsupported development-to-release upgrade paths and follow the [quickstart's Maven Central transition](quickstart.md#switch-to-maven-central-at-100).
+[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned first release and the start of the stable API and forward-restore contract.
+Its preparation follows the [quickstart's Maven Central transition](quickstart.md#switch-to-maven-central-at-100).
+Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling](validation/development-baselines.md).
 
 ## Three compatibility checks
 
@@ -131,23 +120,18 @@ Updating only `protobuf-java` and updating protoc plus regenerating application 
 
 ## Verified coverage and upgrade procedure
 
-The [serializer-format fixtures](../src/test/resources/snapshots/v1/README.md) written with Protobuf 3.25.8 and 4.33.6 are read in both profiles for the same test schema.
 The [runtime suite](validation/runtime-recovery.md) restores complete savepoints within each pinned Flink/Protobuf combination.
 It does not yet verify a complete savepoint written by one Protobuf version and restored by another, including patch and minor updates.
-Separate fixture directories record each tested environment; they do not indicate that cross-version restore was attempted and failed.
 
 The schema-evolution tests write and restore state with the same development build.
 They check the restored values, continued processing, and a second restore from a savepoint that the new application wrote.
 A field removed with a reservation remains in restored values as an unknown field, and the new application's savepoints keep it; the test reads the value back with the original schema.
-The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores savepoints and checkpoints written by the retained 0.1.0 and 0.2.0 artifacts with the current library, unchanged and with the field addition and the reserved field removal, and requires the type change to be rejected.
-It runs for each retained bundle at the Flink and Protobuf versions that wrote and read it, on HashMap and RocksDB.
-It also restores state that the 0.2.0 artifact wrote after the field addition, and state of an enum-bearing schema unchanged and with an added enum value; the retained 0.1.0 runtime schema declares no enum.
-DynamicMessage state follows the same schema-change rules; the [DynamicMessage recovery tests](validation/runtime-recovery.md#dynamicmessage) verify them with state that the same development build writes, and no earlier milestone wrote DynamicMessage state.
+DynamicMessage state follows the same schema-change rules; the [DynamicMessage recovery tests](validation/runtime-recovery.md#dynamicmessage) verify them with state that the same development build writes.
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 
 1. Write a savepoint with the old application and retain its exact application/library jars, schemas, settings, operator UIDs, state names, and runtime versions.
-2. Compare the documented API, default, runtime, and state changes before replacing a development build or dependency.
+2. Compare the documented API, default, runtime, and state changes before replacing the library or a dependency.
 3. Restore the savepoint with the updated application and check saved values, input positions, and continued processing.
 4. Write another savepoint after processing with the updated application and verify restoration from that state too.
 
@@ -156,7 +140,7 @@ See [Flink's savepoint operations](https://nightlies.apache.org/flink/flink-docs
 An intermediate run without restoring state does not convert old state or make an incompatible schema compatible.
 If restoration is rejected, retain the old deployment or explicitly choose a documented migration or fresh-state/replay procedure.
 Starting fresh requires an explicit decision about rebuilding state and replaying input; the library has no state-migration step and provides no migration path for rejected schema changes.
-The [development guide](development.md#test-resources-and-version-updates) contains the capture commands and dependency-update checks.
+The [development guide](development.md#test-resources-and-version-updates) contains the dependency-update checks.
 
 ## Preparing schema changes
 

@@ -460,10 +460,10 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     public TypeSerializerSnapshot<T> snapshotConfiguration() {
         if (messageType.dynamic()) {
             return (TypeSerializerSnapshot<T>)
-                    new ProtobufDynamicMessageSerializerSnapshot(
+                    new ProtobufDynamicSerializerSnapshot(
                             messageType.fullName, settings, messageType.schema);
         }
-        return new ProtobufTypeSerializerSnapshot<>(messageClass, settings);
+        return new ProtobufGeneratedSerializerSnapshot<>(messageClass, settings);
     }
 
     /** Returns the number of uncached DynamicMessage descriptor pairs evaluated, for tests. */

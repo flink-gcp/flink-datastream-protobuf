@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 
 import static io.github.flink.gcp.protobuf.DynamicDescriptors.field;
@@ -56,7 +57,7 @@ class ProtobufDynamicMessageSnapshotTest {
         Descriptor root = rebuild(Envelope.getDescriptor());
         DataInputDeserializer in = new DataInputDeserializer(versioned(serializer(root, DEFAULT)));
         assertThat(in.readUTF())
-                .isEqualTo("io.github.flink.gcp.protobuf.ProtobufDynamicMessageSerializerSnapshot");
+                .isEqualTo("io.github.flink.gcp.protobuf.ProtobufDynamicSerializerSnapshot");
         assertThat(in.readInt()).isOne();
         assertThat(in.readInt()).as("framing").isOne();
         assertThat(in.readInt()).as("normalization").isOne();
@@ -76,6 +77,14 @@ class ProtobufDynamicMessageSnapshotTest {
         assertThat(schema.getFileList())
                 .extracting(FileDescriptorProto::getName)
                 .containsExactly("snapshot_dependency.proto", "snapshot.proto");
+    }
+
+    /** Pins the frozen snapshot bytes, which both Protobuf profiles must write identically. */
+    @Test
+    void snapshotBytesAreFrozen() throws Exception {
+        byte[] snapshot = versioned(serializer(rebuild(Envelope.getDescriptor()), DEFAULT));
+        assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(snapshot)))
+                .isEqualTo("b59bb144783c5d7b5dd731f893f291b0db987dcf6238bc2ccedc1547db0bb215");
     }
 
     @Test
@@ -173,8 +182,7 @@ class ProtobufDynamicMessageSnapshotTest {
         corrupted[corrupted.length - 1] ^= 1;
         assertReadFails(1, corrupted, "Descriptor SHA-256 fingerprint mismatch");
         // A failed read leaves the snapshot uninitialized.
-        ProtobufDynamicMessageSerializerSnapshot snapshot =
-                new ProtobufDynamicMessageSerializerSnapshot();
+        ProtobufDynamicSerializerSnapshot snapshot = new ProtobufDynamicSerializerSnapshot();
         snapshot.readSnapshot(1, new DataInputDeserializer(payload), loader());
         assertThatThrownBy(
                         () ->
@@ -186,7 +194,7 @@ class ProtobufDynamicMessageSnapshotTest {
                 .hasMessageContaining("has not been initialized");
         assertThatThrownBy(
                         () ->
-                                new ProtobufDynamicMessageSerializerSnapshot()
+                                new ProtobufDynamicSerializerSnapshot()
                                         .writeSnapshot(new DataOutputSerializer(8)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("has not been initialized");
@@ -231,7 +239,7 @@ class ProtobufDynamicMessageSnapshotTest {
                         .build();
         assertThatThrownBy(
                         () ->
-                                new ProtobufDynamicMessageSerializerSnapshot()
+                                new ProtobufDynamicSerializerSnapshot()
                                         .readSnapshot(
                                                 1,
                                                 new DataInputDeserializer(payload(untyped)),
@@ -239,8 +247,7 @@ class ProtobufDynamicMessageSnapshotTest {
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("Invalid descriptor graph");
         for (FileDescriptorSet schema : List.of(large, proto2)) {
-            ProtobufDynamicMessageSerializerSnapshot snapshot =
-                    new ProtobufDynamicMessageSerializerSnapshot();
+            ProtobufDynamicSerializerSnapshot snapshot = new ProtobufDynamicSerializerSnapshot();
             snapshot.readSnapshot(1, new DataInputDeserializer(payload(schema)), loader());
             assertThatThrownBy(snapshot::restoreSerializer)
                     .isInstanceOf(IllegalStateException.class)
@@ -276,7 +283,7 @@ class ProtobufDynamicMessageSnapshotTest {
     private static void assertReadFails(int version, byte[] payload, String reason) {
         assertThatThrownBy(
                         () ->
-                                new ProtobufDynamicMessageSerializerSnapshot()
+                                new ProtobufDynamicSerializerSnapshot()
                                         .readSnapshot(
                                                 version,
                                                 new DataInputDeserializer(payload),
@@ -316,8 +323,7 @@ class ProtobufDynamicMessageSnapshotTest {
 
     /** Writes a payload for saved descriptors without the construction rules. */
     private static byte[] payload(FileDescriptorSet schema) throws Exception {
-        ProtobufDynamicMessageSerializerSnapshot snapshot =
-                new ProtobufDynamicMessageSerializerSnapshot();
+        ProtobufDynamicSerializerSnapshot snapshot = new ProtobufDynamicSerializerSnapshot();
         for (Object[] value :
                 new Object[][] {
                     {"fullName", "flink.protobuf.dynamic.Saved"},

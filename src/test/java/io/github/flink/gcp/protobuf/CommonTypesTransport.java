@@ -61,7 +61,7 @@ final class CommonTypesTransport {
                 assertThat(info.createSerializer(serializerConfig))
                         .isInstanceOf(ProtobufTypeSerializer.class);
                 assertThat(info.createSerializer(serializerConfig).snapshotConfiguration())
-                        .isInstanceOf(ProtobufTypeSerializerSnapshot.class);
+                        .isInstanceOf(ProtobufGeneratedSerializerSnapshot.class);
             }
             var info = information(CommonTypesEnvelope.class, registered);
             var value = CommonTypeValues.envelope(4);

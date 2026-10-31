@@ -24,6 +24,8 @@ Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) pr
 The final v0.1.0, v0.2.0, and v0.3.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline), the [`v0.2.0` pre-release](#retained-v020-baseline), and the [`v0.3.0` pre-release](#retained-v030-baseline).
 The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
+The 1.0.0 format restart ([#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)) removed the 0.x snapshot classes, so the current library does not restore the state in these bundles; they remain retained development records.
+The capture, check, read, restore, API, and consumer commands apply to bundles retained from published releases, starting with 1.0.0; `baseline-release` still assembles only development milestone tags, so retaining the published 1.0.0 bundles with it requires a change under [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
 
 ## Capture
 
@@ -48,7 +50,7 @@ The v0.1.0 application jars contain the original and changed schemas; capture fr
 No application is on the parent classpath of the isolated recovery jobs.
 
 The source archive includes the schemas/imports and the reader and consumer sources.
-The companion `tools.jar` contains compiled test instruments, test messages, and test resources including the existing fixed fixtures; it is never attached as a Maven publication artifact.
+The companion `tools.jar` contains compiled test instruments and test messages; it is never attached as a Maven publication artifact.
 It retains the compiled explicit type construction, builder, factory, registered transport, and LTS legacy-entry-point checks for subsequent API investigations.
 The explicit consumer, registration transport check, and LTS legacy check run in separate JVMs from the state writer and reader.
 LTS results include an additional `legacy-entry-point` case, giving 26 cases on LTS and 25 on 2.x; the format 2 bundles of v0.2.0, which lack the DynamicMessage fixtures below, have 21 and 20, and the format 1 bundles of v0.1.0, which also lack the evolved and enum fixtures, have 13 and 12.
@@ -93,6 +95,8 @@ Each reader check restores the archive, processes four more inputs, and restores
 Format 2 bundles also require the `enum-original` and `enum-added` applications and schemas, and format 3 bundles also `apps/application-dynamic.jar`; `check` still accepts the format 1 layout of the v0.1.0 bundles and the format 2 layout of the v0.2.0 bundles.
 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.
+Until a published release is retained, it then runs [`baseline-upgrade`](#restore-retained-state-with-the-current-library), the [API compatibility gate](../development.md#api-compatibility-gate), and `baseline-consume` on that bundle on JDK 17, at each Flink version of its line for the restore and the consumers.
+The bundle comes from the same build, so these runs keep the checks working rather than compare releases.
 Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.4 runs on JDK 17.
 Each saved-state read uses its exact Flink version and Protobuf profile.
 These fixtures use aligned checkpoints and local filesystem storage without entropy injection.
@@ -163,7 +167,6 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.2.0
 `FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #63 select these exact bundles as the milestone baseline.
 Do not rename, re-tag, or replace these assets.
 Obtain them with `mise x -- just baseline-fetch v0.2.0 <new-output>`; the release `README.md` lists equivalent manual commands.
-CI restores and checks them with the current library as it does the v0.1.0 bundles; see [retained bundles in CI](#retained-bundles-in-ci).
 
 ## Retained v0.3.0 baseline
 
@@ -177,7 +180,6 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.3.0
 `FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #146 select these exact bundles as the milestone baseline.
 Do not rename, re-tag, or replace these assets.
 Obtain them with `mise x -- just baseline-fetch v0.3.0 <new-output>`; the release `README.md` lists equivalent manual commands.
-No current CI job restores them, because the current library is the one that wrote them.
 
 ## Retrieve the retained baseline
 
@@ -228,7 +230,7 @@ The composite action `.github/actions/baseline-fetch` fetches one bundle per inv
 ```yaml
 - uses: ./.github/actions/baseline-fetch
   with:
-    tag: v0.1.0
+    tag: <tag>
     bundle: flink2-pb3
     output: ${{ runner.temp }}/retained-baseline
 ```
@@ -241,18 +243,17 @@ After a hit the action also passes `--restored`, so an entry without the expecte
 On a miss it downloads and verifies the archive, then saves it after the bundle passes; a failed run saves nothing.
 A restored archive that is missing or fails verification fails the job without replacing the entry; delete it with `gh cache delete <key>`, using the key in the error annotation.
 The job does not fall back to a fresh download, so a corrupt or replaced entry stays visible instead of being bypassed.
-The eight entries, four for each retained milestone, total about 1.6 GB of the repository's Actions cache quota.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-The Verify workflow runs one retained-baseline job per bundle name, which runs this action for the v0.1.0 and the v0.2.0 bundle of that name, then [`baseline-upgrade`](#restore-retained-state-with-the-current-library) for each of them at each Flink version and JDK that the bundle was read with: 2.2.1 and 2.3.0 on JDK 17 and 21 for the 2.x bundles, and 1.20.4 on JDK 17 for the LTS bundles.
-The same job runs the [API compatibility gate](../development.md#api-compatibility-gate) once for each bundle and the retained compiled consumers of both against the candidate at each of those Flink versions and JDKs.
+No Verify job currently uses this action, because the current library does not read the state of the retained 0.x bundles.
+The release that retains the first published bundles adds a job that fetches them and runs the restore, API, and consumer checks against the candidate.
 
 ## Restore retained state with the current library
 
 `baseline-upgrade` restores a verified bundle's retained state and snapshot fixtures with the current library and the current tree's runtime applications, which contain only the current generated classes:
 
 ```sh
-mise x -- just baseline-upgrade /tmp/baseline-v0.1.0/flink2-pb3 2.3.0
+mise x -- just baseline-upgrade /tmp/baseline/flink2-pb3 2.3.0
 ```
 
 The recipe runs the bundle's `baseline-check`, then runs `RetainedBaselineUpgradeITCase` in a clean Maven build that uses the bundle's Protobuf profile, its exact Protobuf runtime and protoc version, its artifact line, and the given Flink version.
@@ -272,20 +273,16 @@ For each backend, setting budget, and archive kind (the canonical savepoint and 
 The restore checks are those of the [schema-evolution test](runtime-recovery.md#schema-changes), including the operator ListState values and the ValueState and MapState values that later inputs replace.
 Each retained archive holds all three state kinds, so the rejection shows only that whichever state the backend restores first fails; the schema-evolution test rejects each state kind from a savepoint that holds only that kind.
 The current library must restore each snapshot fixture's framed value at its recorded settings; when it writes the fixture's snapshot version, it must also write byte-identical snapshot metadata, which shows that the snapshot format and test schema are unchanged.
-The current library writes snapshot version 2, so the version-1 fixtures retained from v0.1.0 check only the restore.
 From format 3, the DynamicMessage snapshot fixture restores without the application's descriptor, at default settings; its restored root must have the test schema's content, and its value must keep every field.
-The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here.
 
 From format 2, the test also restores each backend's `evolved` and `enum` fixtures, and from format 3 its `dynamic` fixture, both archive kinds, with the [reader checks](#inspect-and-restore) of the bundle's own reader: `evolved` restores into `changed`, and its savepoint is rejected by `original`; `enum` restores into `enum-original` and `enum-added`; and `dynamic` restores into the DynamicMessage application with `original` and `changed`, with the descriptors that restored values carry as in the [DynamicMessage recovery test](runtime-recovery.md#dynamicmessage), and its savepoint is rejected with `incompatible`.
 It requires their recorded state identity to equal what capture writes; bundles of an earlier format skip the cases that their format lacks.
-On 2026-10-21 all ten combinations of the v0.1.0 bundles passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
 
 ## Retention
 
 A failed capture leaves an incomplete destination without a successful checksum inventory; retry in a new directory.
 Never repair historical provenance or replace files inside a completed bundle.
-Ordinary verification continues to read the existing checked-in snapshot/savepoint fixtures and does not regenerate them.
-The new bundles are separate inputs and do not supersede those earlier format baselines.
+The repository commits no snapshot or savepoint fixtures; the 1.0.0 format restart removed the 0.x ones.
 
 Keep unreviewed bundles in an access-controlled external directory, backed up outside temporary build and worktree cleanup locations when retaining them for future work.
 Do not use an expiring CI artifact or `/tmp` as the sole long-term copy.
@@ -296,6 +293,6 @@ Before copying any bundle to shared storage, inspect the exact inventory, archiv
 The checksum checker is not the benchmark content gate in #41 and does not prove the absence of arbitrary secrets.
 Retain original bytes privately if a separately sanitized derivative is needed, and identify that derivative with its own inventory.
 
-[`baseline-upgrade`](#restore-retained-state-with-the-current-library) implements the #16 check: it consumes the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with separately built new-schema applications.
+[`baseline-upgrade`](#restore-retained-state-with-the-current-library) implements the check from #16: it consumes the retained schema descriptors, snapshot bytes, state archives, expected-value manifests, and application identities with separately built new-schema applications.
 For #17, `api-compat` compares the retained `library.jar` with a candidate built for the same line with Protobuf 4, and `baseline-consume` runs the retained `tools.jar` with the candidate on an explicit classpath of the current tree's dependencies, without recompiling the old consumer.
 Neither follow-up should rebuild a newer working tree and label it the old writer.

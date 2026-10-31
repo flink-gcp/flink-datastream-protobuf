@@ -34,6 +34,7 @@ limitations under the License.
 - Development milestone documentation amended: 2026-10-19, [issue #62](https://github.com/flink-gcp/flink-datastream-protobuf/issues/62)
 - Required `CI passed` ruleset amended: 2026-10-19
 - CI Maven mirror and shared repository cache amended: 2026-10-30, [issue #135](https://github.com/flink-gcp/flink-datastream-protobuf/issues/135)
+- Retained 0.x checks ended by the 1.0.0 format restart: 2026-10-31, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -154,10 +155,12 @@ CI exercises these as disposable rehearsals: on every push to main, the weekly s
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are stored with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release, as described in the [retained baseline](../validation/development-baselines.md#retained-v010-baseline).
 Milestone checks obtain them through a verified retrieval that checks a `SHA256SUMS` digest pinned in the repository and every extracted file, without rebuilding the old tree; CI caches each archive by its checksum and verifies it again on every run.
 Milestone-to-milestone API checks are added for 0.2.0 against the fixed 0.1.0 development baseline in [issue #17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17), separately from saved-state and application gencode/runtime checks.
-An opt-in Maven profile compares the `@Public` and `@PublicEvolving` API of a candidate with each retained library using the parent-managed japicmp plugin, and japicmp's build break rejects incompatible changes except members excluded in that profile with a link to their upgrade documentation; a JDK-only check requires a deliberately broken fixture to be reported in the same run.
+An opt-in Maven profile compares the `@Public` and `@PublicEvolving` API of a candidate with each retained library using the parent-managed japicmp plugin, and japicmp's build break rejects incompatible changes except members excluded in that profile with a link to their release documentation; a JDK-only check requires a deliberately broken fixture to be reported in the same run.
 The parent's defaults compare `org.apache.flink` coordinates and cover `@Public` only, which would leave this library's `@PublicEvolving` API unchecked.
 The retained compiled consumers also run against the candidate without recompilation, on dependencies resolved by the current tree because the retained dependency jars are host-specific.
-Retain those checks in 0.3.0 and extend them to the fixed 0.2.0 development baseline and direct/sequential upgrade outcomes under ADR-0001's 0.x policy.
+0.3.0 retained those checks and extended them to the fixed 0.2.0 development baseline under ADR-0001's 0.x policy.
+The [1.0.0 format restart](0001-native-protobuf-type-integration.md#compatibility-policy-before-100) ends the 0.x checks: CI no longer runs them against the 0.x bundles, and the same restore, API, and consumer checks apply to bundles retained from published releases, starting with 1.0.0.
+Until a release is retained, CI runs these checks on the development bundle that the same build captures, so that they keep working.
 Intentional API or state breaks require explicit release notes, upgrade guidance and a reviewed compatibility record; tests must prove supported paths and rejection of unsupported state.
 Undocumented regressions and failures of claimed supported paths block milestone completion and eventual publication.
 The public API and supported forward-restore contract stabilize at 1.0.0; [ADR-0005](0005-descriptor-bound-dynamic-messages.md) selects the DynamicMessage implementation structure.

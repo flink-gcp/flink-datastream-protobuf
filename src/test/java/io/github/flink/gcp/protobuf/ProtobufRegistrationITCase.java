@@ -151,7 +151,7 @@ class ProtobufRegistrationITCase {
                 bytes, type.createSerializer(config).snapshotConfiguration());
         assertThat(new String(bytes.getCopyOfBuffer(), StandardCharsets.ISO_8859_1))
                 .as("Native message snapshot nested in %s", type)
-                .contains(ProtobufTypeSerializerSnapshot.class.getName());
+                .contains(ProtobufGeneratedSerializerSnapshot.class.getName());
     }
 
     public static class Envelope {
