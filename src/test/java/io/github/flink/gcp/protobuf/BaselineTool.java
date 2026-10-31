@@ -26,6 +26,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -33,6 +35,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
@@ -57,11 +60,24 @@ public final class BaselineTool {
      */
     static final String FORMAT = "3";
 
+    /** Status of a bundle that a development build wrote. */
+    static final String DEVELOPMENT = "development-tooling-baseline";
+
+    /** Status of a bundle whose library is a version published on Maven Central. */
+    static final String PUBLISHED = "published-release-baseline";
+
+    /** Maven Central, from which a published capture downloads the release jar. */
+    static final String CENTRAL = "https://repo1.maven.org/maven2";
+
+    private static final int DOWNLOAD_TIMEOUT_MILLIS = 60_000;
+
+    private static final String COORDINATES = "io.github.flink-gcp:flink-datastream-protobuf:";
+
     private BaselineTool() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length == 4 && args[0].equals("capture")) {
-            capture(args[1], args[2], Path.of(args[3]));
+        if ((args.length == 4 || args.length == 5) && args[0].equals("capture")) {
+            capture(args[1], args[2], Path.of(args[3]), args.length == 5 ? args[4] : null);
         } else if (args.length == 2 && args[0].equals("check")) {
             check(Path.of(args[1]).toRealPath());
         } else if (args.length == 4 && args[0].equals("read")) {
@@ -86,7 +102,7 @@ public final class BaselineTool {
                     Path.of(args[4]));
         } else {
             throw new IllegalArgumentException(
-                    "Expected capture <flink2|flink1> <3|4> <new-output>, check <bundle>, read <bundle> <flink-version> <new-results>, or consume <bundle> <candidate-jar> <flink-version> <new-results>");
+                    "Expected capture <flink2|flink1> <3|4> <new-output> [<published-version>], check <bundle>, read <bundle> <flink-version> <new-results>, or consume <bundle> <candidate-jar> <flink-version> <new-results>");
         }
     }
 
@@ -104,7 +120,81 @@ public final class BaselineTool {
                 "Unsupported JDK for artifact line");
     }
 
-    private static void capture(String line, String major, Path destination) throws Exception {
+    /**
+     * Returns the release tag of a published version, which must belong to the artifact line:
+     * {@code X.Y.Z} to flink2 and {@code X.Y.Z-1.20} to flink1.
+     */
+    static String releaseTag(String line, String version) {
+        require(
+                version.matches("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-1\\.20)?"),
+                "Expected a released X.Y.Z or X.Y.Z-1.20 version");
+        require(
+                version.endsWith("-1.20") == line.equals("flink1"),
+                "The published version belongs to the other artifact line");
+        return "v" + version.substring(0, version.length() - (line.equals("flink1") ? 5 : 0));
+    }
+
+    /** Returns the URL of a published version's jar in a Maven repository. */
+    static String publishedUrl(String repository, String version) {
+        return repository
+                + "/io/github/flink-gcp/flink-datastream-protobuf/"
+                + version
+                + "/flink-datastream-protobuf-"
+                + version
+                + ".jar";
+    }
+
+    /**
+     * Writes the published jar as the bundle's library and its signature beside it, after checking
+     * the jar against the SHA-1 checksum that the repository publishes; a failed download or check
+     * leaves neither file. Returns the jar's URL.
+     */
+    static String fetchPublished(String repository, String version, Path bundle) throws Exception {
+        String url = publishedUrl(repository, version);
+        Path jar = Files.createTempFile(bundle, ".library", ".jar");
+        Path signature = Files.createTempFile(bundle, ".library", ".asc");
+        Path checksum = Files.createTempFile(bundle, ".library", ".sha1");
+        try {
+            download(url, jar);
+            download(url + ".asc", signature);
+            download(url + ".sha1", checksum);
+            String[] expected =
+                    Files.readString(checksum, StandardCharsets.US_ASCII).strip().split("\\s+");
+            require(
+                    hash(jar, "SHA-1").equals(expected[0]),
+                    "The downloaded library does not match its published SHA-1 checksum");
+            Files.move(jar, bundle.resolve("library.jar"));
+            Files.move(signature, bundle.resolve("library.jar.asc"));
+        } finally {
+            Files.deleteIfExists(jar);
+            Files.deleteIfExists(signature);
+            Files.delete(checksum);
+        }
+        return url;
+    }
+
+    private static void download(String url, Path target) throws Exception {
+        URLConnection connection = URI.create(url).toURL().openConnection();
+        connection.setConnectTimeout(DOWNLOAD_TIMEOUT_MILLIS);
+        connection.setReadTimeout(DOWNLOAD_TIMEOUT_MILLIS);
+        try (InputStream input = connection.getInputStream()) {
+            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** Requires the annotated release tag to name the checked-out commit of the repository. */
+    static void requireReleaseCommit(Path repository, String tag) throws Exception {
+        require(
+                git(repository, "cat-file", "-t", "refs/tags/" + tag).equals("tag"),
+                "A published capture needs the annotated release tag " + tag);
+        require(
+                git(repository, "rev-parse", "refs/tags/" + tag + "^{commit}")
+                        .equals(git(repository, "rev-parse", "HEAD")),
+                "A published capture must run on the commit of " + tag);
+    }
+
+    private static void capture(String line, String major, Path destination, String published)
+            throws Exception {
         List<String> versions = runtimes(line);
         require(major.equals("3") || major.equals("4"), "Unsupported Protobuf profile");
         require(Runtime.version().feature() == 17, "Capture requires JDK 17");
@@ -120,11 +210,21 @@ public final class BaselineTool {
                         .isEmpty(),
                 "Ignored source inputs are not attributable to the committed revision");
         String revision = git("rev-parse", "HEAD");
+        String tag = published == null ? null : releaseTag(line, published);
+        if (tag != null) {
+            requireReleaseCommit(repository, tag);
+        }
         Path bundle = newDirectory(destination, repository);
         Properties manifest = new Properties();
         manifest.setProperty("format.version", FORMAT);
-        manifest.setProperty("status", "development-tooling-baseline");
-        manifest.setProperty("milestone.final", "false");
+        manifest.setProperty("status", tag == null ? DEVELOPMENT : PUBLISHED);
+        if (tag == null) {
+            manifest.setProperty("milestone.final", "false");
+        } else {
+            // Before the build, so that a version that Central does not serve yet fails first.
+            manifest.setProperty("release.tag", tag);
+            manifest.setProperty("library.url", fetchPublished(CENTRAL, published, bundle));
+        }
         manifest.setProperty("source.revision", revision);
         manifest.setProperty("line", line);
         manifest.setProperty("protobuf.major", major);
@@ -163,14 +263,17 @@ public final class BaselineTool {
                 "Unexpected compile floor");
         require(property(model, "flink.compat").equals(line), "Unexpected Flink adapter");
         manifest.setProperty(
-                "writer.artifact",
-                "io.github.flink-gcp:flink-datastream-protobuf:" + artifactVersion);
+                "writer.artifact", COORDINATES + (tag == null ? artifactVersion : published));
         manifest.setProperty("protobuf.version", protobuf);
         manifest.setProperty("protoc.version", protobuf);
         manifest.setProperty("compile.flink", versions.get(0));
-        copy(
-                Path.of("target/flink-datastream-protobuf-" + artifactVersion + ".jar"),
-                bundle.resolve("library.jar"));
+        if (tag == null) {
+            copy(
+                    Path.of("target/flink-datastream-protobuf-" + artifactVersion + ".jar"),
+                    bundle.resolve("library.jar"));
+        }
+        // A published jar writes the fixtures; the tagged build supplies the applications and
+        // tools.
         copy(Path.of("target/baseline/tools.jar"), bundle.resolve("tools.jar"));
         copy(
                 Path.of("target/runtime-app/application-dynamic.jar"),
@@ -247,7 +350,11 @@ public final class BaselineTool {
                 "Writer or consumer changed during capture");
         seal(bundle);
         check(bundle);
-        System.out.println("Captured development tooling bundle: " + bundle);
+        System.out.println(
+                (tag == null
+                                ? "Captured development tooling bundle: "
+                                : "Captured published release bundle: ")
+                        + bundle);
     }
 
     private static List<String> maven(String line, String major, String version, String... goals) {
@@ -518,9 +625,21 @@ public final class BaselineTool {
         Properties manifest = load(bundle.resolve("manifest.properties"));
         String format = manifest.getProperty("format.version", "");
         require(List.of("1", "2", FORMAT).contains(format), "Unsupported bundle format");
+        String status = manifest.getProperty("status", "");
         require(
-                manifest.getProperty("status", "").equals("development-tooling-baseline"),
+                status.equals(DEVELOPMENT) || status.equals(PUBLISHED),
                 "Unsupported bundle status");
+        if (status.equals(PUBLISHED)) {
+            String artifact = manifest.getProperty("writer.artifact", "");
+            require(artifact.startsWith(COORDINATES), "Published bundle does not name its release");
+            String version = artifact.substring(COORDINATES.length());
+            require(
+                    manifest.getProperty("release.tag", "")
+                                    .equals(releaseTag(manifest.getProperty("line", ""), version))
+                            && manifest.getProperty("library.url", "")
+                                    .equals(publishedUrl(CENTRAL, version)),
+                    "Published bundle does not name its release");
+        }
         require(
                 manifest.getProperty("source.revision", "").matches("[0-9a-f]{40}"),
                 "Missing source revision");
@@ -544,6 +663,9 @@ public final class BaselineTool {
         }
         if (stateFixtures(format).contains("dynamic")) {
             required.add("apps/application-dynamic.jar");
+        }
+        if (status.equals(PUBLISHED)) {
+            required.add("library.jar.asc");
         }
         for (String input : required) {
             require(expected.containsKey(input), "Missing required bundle input: " + input);
@@ -620,7 +742,11 @@ public final class BaselineTool {
     }
 
     static String hash(Path file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return hash(file, "SHA-256");
+    }
+
+    static String hash(Path file, String algorithm) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance(algorithm);
         try (InputStream input = Files.newInputStream(file)) {
             byte[] buffer = new byte[65536];
             for (int count; (count = input.read(buffer)) != -1; ) {
@@ -748,7 +874,7 @@ public final class BaselineTool {
 
     static void save(Properties properties, Path path) throws IOException {
         try (OutputStream output = Files.newOutputStream(path, StandardOpenOption.CREATE_NEW)) {
-            properties.store(output, "Development tooling evidence; not a published artifact");
+            properties.store(output, "Baseline tooling evidence");
         }
     }
 
@@ -779,7 +905,11 @@ public final class BaselineTool {
     }
 
     private static String git(String... args) throws Exception {
-        List<String> command = new ArrayList<>(List.of("git"));
+        return git(Path.of("."), args);
+    }
+
+    private static String git(Path directory, String... args) throws Exception {
+        List<String> command = new ArrayList<>(List.of("git", "-C", directory.toString()));
         command.addAll(List.of(args));
         Process process =
                 new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start();

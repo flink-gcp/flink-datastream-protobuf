@@ -53,10 +53,10 @@ verify-flink version major="4":
 binary-compat line ceiling="":
     {{ python }} scripts/binary-compat.py "$1" "$2"
 
-# Capture an unpublished development bundle from a clean committed checkout on JDK 17.
+# Capture a development bundle, or with a published version the bundle that the published artifact writes, from a clean committed checkout on JDK 17.
 [positional-arguments]
-baseline-capture line major output:
-    java src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java capture "$1" "$2" "$3"
+baseline-capture line major output published="":
+    java src/test/java/io/github/flink/gcp/protobuf/BaselineTool.java capture "$1" "$2" "$3" ${4:+"$4"}
 
 # Check a retained bundle without Maven, recompilation, or network access.
 [positional-arguments]
@@ -72,8 +72,8 @@ baseline-fetch tag output *args:
 # Exercise baseline retrieval with synthetic releases only.
 baseline-fetch-test: (test-scripts "scripts/tests/test_baseline_fetch.py")
 
-# Read, review, assemble, or verify a milestone's retained bundles in an external work directory.
-# See "Publish a milestone baseline" in docs/validation/development-baselines.md.
+# Read, review, assemble, or verify the retained bundles of a milestone or a published release in an external work directory.
+# See "Publish a milestone baseline" and "Retain a published release" in docs/validation/development-baselines.md.
 [positional-arguments]
 baseline-release +args:
     {{ python }} scripts/baseline-release.py "$@"

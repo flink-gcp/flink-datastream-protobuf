@@ -22,10 +22,10 @@ limitations under the License.
 
 Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) prepared fixed development inputs for the state and API checks in #16 and #17.
 The final v0.1.0, v0.2.0, and v0.3.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline), the [`v0.2.0` pre-release](#retained-v020-baseline), and the [`v0.3.0` pre-release](#retained-v030-baseline).
-The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
+The tooling labels a development capture `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
 The 1.0.0 format restart ([#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)) removed the 0.x snapshot classes, so the current library does not restore the state in these bundles; they remain retained development records.
-The capture, check, read, restore, API, and consumer commands apply to bundles retained from published releases, starting with 1.0.0; `baseline-release` still assembles only development milestone tags, so retaining the published 1.0.0 bundles with it requires a change under [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
+The capture, check, read, restore, API, and consumer commands also apply to bundles that published releases write, starting with 1.0.0; [retain a published release](#retain-a-published-release) describes their capture and retention.
 
 ## Capture
 
@@ -43,8 +43,8 @@ mise x -- just baseline-capture flink1 4 /tmp/baseline-flink1-pb4
 
 The two artifact lines and two paired Protobuf profiles produce four independent bundles.
 The 2.x jar is compiled at 2.2.1 and also used unchanged at 2.3.0; the LTS jar is compiled at 1.20.5.
-Both retain the development POM version of the captured source, such as `0.1.0-SNAPSHOT` in the v0.1.0 baseline, with the adapter line identified separately in the manifest.
-They are not renamed to imply published release coordinates.
+A development capture retains the development POM version of the captured source, such as `0.1.0-SNAPSHOT` in the v0.1.0 baseline, with the adapter line identified separately in the manifest; it is not renamed to imply published release coordinates.
+Only a [published capture](#retain-a-published-release), whose library is the jar on Maven Central, records the published version.
 Capture keeps the source archive and revision, effective Maven model, exact command arguments, resolved dependency tree and jars, JDK identity, and protoc version and executable checksum.
 The v0.1.0 application jars contain the original and changed schemas; capture from the current source also retains the reserved, incompatible, and enum-pair schemas described in [runtime state recovery](runtime-recovery.md#schema-changes).
 No application is on the parent classpath of the isolated recovery jobs.
@@ -133,6 +133,29 @@ It works in one external work directory that holds `bundles/<bundle>/` and the m
 
 Keep the work directory as described in [retention](#retention) until the published assets are verified; the release assets then become the durable shared copy.
 `just baseline-release-test` runs the assembly checks on synthetic bundles and requires `baseline-fetch` to accept the assembled release.
+
+## Retain a published release
+
+From 1.0.0, the bundles that each published release retains are written by the artifacts on Maven Central, not by a local build.
+Follow the [milestone procedure](#publish-a-milestone-baseline) with these differences:
+
+1. Wait until both versions are on `repo1.maven.org`, then add a detached worktree at the release tag `vX.Y.Z`, which the `Release` workflow published from.
+2. Capture each bundle with the published version of its line as the fourth argument, `X.Y.Z` for `flink2` and `X.Y.Z-1.20` for `flink1`:
+
+   ```sh
+   mise x -- just baseline-capture flink2 3 <work>/bundles/flink2-pb3 X.Y.Z
+   mise x -- just baseline-capture flink1 4 <work>/bundles/flink1-pb4 X.Y.Z-1.20
+   ```
+
+   The capture requires the worktree's HEAD to be the commit of the annotated tag `vX.Y.Z`, and rejects a version of the other line.
+   Before building, it downloads the published jar from `repo1.maven.org`, compares it with the published SHA-1 checksum, and keeps it as `library.jar` with its signature as `library.jar.asc`; a version that Central does not serve yet fails here, and a failed download or comparison leaves neither file.
+   It then builds the tag's applications and compiled consumers, as a development capture does, and the published jar writes every fixture.
+   The manifest records `status=published-release-baseline`, `release.tag`, the published `writer.artifact`, and `library.url`; `baseline-check` requires the tag and the Central URL to match the line's published version in `writer.artifact`, and requires the signature file.
+   The SHA-1 comparison detects a damaged download from the same origin, not a forged one; the post-publication `gpg --verify` in the [release procedure](../development.md#publishing-a-release) checks the signature itself.
+3. Read, review, and assemble as for a milestone, with the release tag: `mise x -- just baseline-release assemble vX.Y.Z <work> <ci-run-id>`.
+   For a tag that is not `v0.*`, `assemble` requires every bundle to be a published capture of that tag, and writes a format 2 `FINAL-BASELINE.json` with `tag`, `final`, and `maven_central_publication: true` in place of format 1's `milestone`, `milestone_final`, and `embedded_artifact_version`.
+4. Attach the assets to the existing GitHub Release with `gh release upload vX.Y.Z <work>/release/*`, then run `baseline-release verify` and pin the digest, as for a milestone.
+   The documentation deployment already ran for the release, and the release keeps no pre-release.
 
 ## Retained v0.1.0 baseline
 

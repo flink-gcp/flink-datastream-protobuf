@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Names, download, and checks shared by the tools that read retained development bundles from their GitHub pre-release."""
+"""Names, download, and checks shared by the tools that read retained bundles from a GitHub pre-release or release."""
 
 import hashlib
 import os

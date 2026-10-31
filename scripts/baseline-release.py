@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Read, review, assemble, and verify a milestone's retained development bundles for its pre-release.
+"""Read, review, assemble, and verify the retained bundles of a milestone or a published release.
 
+A 0.x development milestone's bundles become the assets of its pre-release; the bundles that a
+published release's artifacts wrote, captured with its published version, become assets of its release.
 The work directory holds bundles/<bundle>/ from baseline-capture and README.md from the maintainer.
 `read` writes verification/, `review` writes PUBLICATION-REVIEW.json for the reviewer to complete,
 `assemble` writes release/, and `verify` compares the published assets with release/.
@@ -46,7 +48,7 @@ from lib.credential_rules import CREDENTIAL_RULES
 
 ROOT = Path(__file__).resolve().parents[1]
 REVIEW = "PUBLICATION-REVIEW.json"
-TAG = re.compile(r"v0\.[0-9]+\.[0-9]+")
+TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 TOOL = "io.github.flink.gcp.protobuf.BaselineTool"
 # The Flink versions and JDKs that each artifact line is read with, as BaselineTool accepts them.
 READERS = {"flink2": (("2.2.1", "2.3.0"), (17, 21)), "flink1": (("1.20.5",), (17,))}
@@ -415,15 +417,26 @@ def tag_identity(tag, cwd=ROOT):
             output(["git", "rev-parse", "refs/tags/" + tag + "^{commit}"], cwd).strip())
 
 
-def bundle_record(work, bundle, revision):
+def published(tag):
+    """Whether a tag names a Maven Central release rather than a 0.x development milestone."""
+    return not tag.startswith("v0.")
+
+
+def bundle_record(work, bundle, revision, tag):
     """Checks a captured bundle and returns what the designation records about it."""
     directory = bundle_directory(work, bundle)
     layout.baseline_check(directory)
     raw = properties(directory / "manifest.properties", unescape=False)
     values = properties(directory / "manifest.properties")
-    require(values.get("source.revision") == revision and values.get("milestone.final") == "false"
-            and values.get("status") == "development-tooling-baseline",
-            "Bundle was not captured as a development baseline of " + revision + ": " + bundle)
+    if published(tag):
+        # The bundle's own check ties release.tag to its line's published writer.artifact and Central URL.
+        require(values.get("source.revision") == revision and values.get("status") == "published-release-baseline"
+                and values.get("release.tag") == tag,
+                "Bundle was not captured from the published artifact of " + tag + " at " + revision + ": " + bundle)
+    else:
+        require(values.get("source.revision") == revision and values.get("milestone.final") == "false"
+                and values.get("status") == "development-tooling-baseline",
+                "Bundle was not captured as a development baseline of " + revision + ": " + bundle)
     require(bundle == "%s-pb%s" % (values.get("line"), values.get("protobuf.major")),
             "Bundle name does not match its artifact line and Protobuf profile: " + bundle)
     return {"directory": directory, "name": bundle, "manifest": raw, "values": values,
@@ -459,20 +472,24 @@ def checked_readers(work, bundles, revision):
 
 
 def designation(tag, revision, tag_object, source, bundles, readers, ci, verification):
-    return {
-        "format_version": 1,
-        "milestone": tag,
-        "milestone_final": True,
+    if published(tag):
+        # Format 2 designates a published release; format 1, a 0.x development milestone.
+        head = {"format_version": 2, "tag": tag, "final": True, "maven_central_publication": True,
+                "designation": "This external manifest selects the exact bundles whose fixtures the published"
+                               " release artifacts wrote as the retained release baseline."}
+    else:
+        head = {"format_version": 1, "milestone": tag, "milestone_final": True, "maven_central_publication": False,
+                "embedded_artifact_version":
+                    bundles[BUNDLES[0]]["values"]["writer.artifact"].rsplit(":", 1)[-1],
+                "designation": "This external manifest selects the exact retained tooling bundles as the final"
+                               " milestone baseline. Embedded milestone.final=false fields remain unchanged."}
+    return head | {
         "source_revision": revision,
         "annotated_tag_object": tag_object,
         "source_archive_sha256": source,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "retention_url": "https://github.com/%s/releases/tag/%s" % (REPOSITORY, tag),
-        "maven_central_publication": False,
-        "embedded_artifact_version": bundles[BUNDLES[0]]["values"]["writer.artifact"].rsplit(":", 1)[-1],
         "original_bundle_manifests_unchanged": True,
-        "designation": "This external manifest selects the exact retained tooling bundles as the final"
-                       " milestone baseline. Embedded milestone.final=false fields remain unchanged.",
         "ci_url": ci["url"],
         "build_outputs_absent_during_readers": True,
         "bundles": [{key: recorded[key] for key in ("name", "asset", "manifest", "inventory_sha256")}
@@ -506,7 +523,7 @@ def evidence_directory(work, target, bundles, ci, review_record):
 
 
 def assemble(tag, work, run_id):
-    require(TAG.fullmatch(tag), "Expected a development milestone tag such as v0.2.0: " + tag)
+    require(TAG.fullmatch(tag), "Expected a release tag such as v1.0.0 or a milestone tag such as v0.2.0: " + tag)
     release = work / "release"
     require(not os.path.lexists(release), "Release output already exists: " + str(release))
     require(not (work / "README.md").is_symlink() and not (work / REVIEW).is_symlink(),
@@ -516,7 +533,7 @@ def assemble(tag, work, run_id):
     require(tag in readme and revision in readme and tag_object in readme,
             "README.md must name the tag, its commit, and its tag object")
     review_record = checked_review(work, readme)
-    bundles = {bundle: bundle_record(work, bundle, revision) for bundle in BUNDLES}
+    bundles = {bundle: bundle_record(work, bundle, revision, tag) for bundle in BUNDLES}
     sources = {sha256(recorded["directory"] / "source.zip") for recorded in bundles.values()}
     require(len(sources) == 1, "Bundles retain different source archives")
     readers = checked_readers(work, bundles, revision)
@@ -558,6 +575,8 @@ def assemble(tag, work, run_id):
     finally:
         shutil.rmtree(stage, ignore_errors=True)
     print("Assembled %s; pin %s for %s in scripts/baseline-fetch.py" % (release, sha256(release / CHECKSUMS), tag))
+    if published(tag):
+        print("Attach the assets to the existing release with: gh release upload %s %s/*" % (tag, release))
 
 
 def verify(tag, work):
