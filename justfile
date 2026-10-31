@@ -123,8 +123,13 @@ release-stage version *args:
 release-rehearse version output *args:
     {{ python }} scripts/release_artifacts.py "$@"
 
-# Run the release-artifact checks against synthetic bundles.
-release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py")
+# Capture a staging deployment ID, or inspect, publish, or drop Central Portal deployments (ADR-0006).
+[positional-arguments]
+central-portal +args:
+    {{ python }} scripts/central_portal.py "$@"
+
+# Run the release-artifact, Portal helper, and Release workflow checks without Maven or Central.
+release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py" "scripts/tests/test_central_portal.py" "scripts/tests/test_release_workflow.py")
 
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:

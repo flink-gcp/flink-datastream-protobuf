@@ -92,7 +92,7 @@ The remaining release work in #13 must publish and verify both version lines, re
 Before publication, guard the effective Maven model: bare versions must use the exact recorded 2.x floor and `flink2`; `-1.20` versions must use the pinned 1.20 toolchain and `flink1`.
 Checking only command-line substrings is insufficient because Maven properties can be overridden.
 Both staged artifacts must validate before either is published; publish both before announcing the GitHub release.
-The two publications are not transactional, so the future release workflow must record partial failures and recovery instructions.
+The two publications are not transactional, so the release workflow must record partial failures and recovery instructions; [ADR-0006](0006-central-portal-releases.md) records how it does.
 These are requirements for #13, not implemented publication automation.
 
 Source and binary compatibility do not imply saved-state compatibility across Flink versions.

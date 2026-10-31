@@ -20,8 +20,8 @@ limitations under the License.
 - Date: 2026-10-31
 - Issue: [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13)
 - Implements: The publication requirements of [ADR-0003](0003-flink-version-compatibility.md#state-and-release-acceptance)
-- Implementation: The release build, bundle inspection, and unsigned CI rehearsal are implemented; the `Release` workflow and the Central Portal helper are not yet implemented
-- Current instructions: [Release artifacts](../development.md#release-artifacts)
+- Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; the first publication remains in #13
+- Current instructions: [Release artifacts](../development.md#release-artifacts) and [Publishing a release](../development.md#publishing-a-release)
 
 ## Context
 
@@ -90,13 +90,14 @@ A signed rehearsal requires the signing variables; contributors use a throwaway 
 
 ### Publication
 
-The `Release` workflow is not implemented yet; this section records its required behavior.
-A `vX.Y.Z` tag on a commit contained in `main` starts the `Release` workflow.
-The workflow stages `X.Y.Z` and `X.Y.Z-1.20` as two Portal deployments, records each deployment ID before the plugin waits for validation, and publishes both only after both have validated.
+A `vX.Y.Z` tag on a commit contained in `main` starts the `Release` workflow; a `validate` dispatch also requires a commit in `main`, so that no unreviewed build configuration uploads with the release credentials.
+The workflow first runs the signed rehearsal of both lines from the tagged commit, so that the inspection and the guard check precede any upload.
+It then stages `X.Y.Z` and `X.Y.Z-1.20` as two Portal deployments with `just release-stage`, records each deployment ID before the plugin waits for validation, and publishes both only after both have validated.
 After both are published, it creates the stable `vX.Y.Z` GitHub Release that the documentation hook in ADR-0002 deploys.
-A manual dispatch rehearses both lines without uploading by default, or uploads both, waits for validation, and drops them.
+A manual dispatch rehearses both lines without uploading by default, or, with `mode: validate`, also uploads both, waits for validation, and drops them.
 A dispatch never publishes or creates a GitHub Release.
 The two Publish requests are not a transaction; recovery publishes or drops the recorded deployments instead of staging another pair under the same version.
+The Portal helper is ported from flink-connector-gcp with its tests.
 
 This repository ports ADR-0147's shape without the parts that serve a multi-module reactor: there are no uber-jars to attach to the GitHub Release, and a single module needs no module-local publication exclusions.
 
@@ -109,8 +110,9 @@ This repository ports ADR-0147's shape without the parts that serve a multi-modu
   Here a maintainer cuts the tag on a commit that has passed CI, and `versions:set` changes the version only in the release checkout.
 - **A separate signing key for this repository.**
   Both repositories publish to one namespace and Portal organization with the same maintainers; a second key adds rotation and keyserver work without separating any authority.
-- **Inspecting the bundle inside the tag run before upload.**
-  The plugin builds and uploads in one goal, so the tag run could inspect only after uploading; the rehearsal inspects the same bundle before the tag, and Central validates the uploaded one.
+- **Splitting the build from the upload, to inspect the bundle that is uploaded.**
+  The plugin builds and uploads in one goal, so uploading an inspected bundle would require building it separately and uploading it through the Portal API, replacing the plugin's upload path.
+  The tag run instead inspects a separate signed build of the same commit before staging, and Central validates the uploaded bundle.
 - **Flattening the published POM.**
   A flattened POM would name the 1.20 runtime for the LTS line, but it changes no resolution result while every dependency is `provided` or `test`, and it adds a plugin to the release build.
 - **Scanning bytecode with `jdeps` or `javap`.**
@@ -118,7 +120,7 @@ This repository ports ADR-0147's shape without the parts that serve a multi-modu
 
 ## Consequences
 
-- Each Verify run adds one job that builds both lines without tests.
+- Each Verify run adds one job that builds both lines without tests, and each `Release` run builds both lines twice, once to rehearse and once to stage, plus the rehearsal's guard check, which stops at `validate`.
 - The inspection allow-lists classes by their source files, so a resource, a production source root, or a second top-level class in one source file requires changing the inspection with it.
 - A local rehearsal writes its exported tree and bundles to a new external directory and leaves the checkout unchanged.
 - The release key and token are shared with flink-connector-gcp; rotating either requires updating both repositories' secrets.

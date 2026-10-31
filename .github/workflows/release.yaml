@@ -1,0 +1,159 @@
+name: Release
+# A bare vX.Y.Z tag on main rehearses both artifact lines, stages them as two Central Portal
+# deployments, publishes both only after both validate, and then creates the GitHub Release
+# (ADR-0006). A manual dispatch rehearses by default; mode validate also uploads both lines,
+# waits for validation, and drops them. A dispatch never publishes, even when it targets a tag.
+on:
+  push:
+    tags:
+      # Exactly vX.Y.Z: a release is both lines from one bare tag, and -1.20 tags are not triggers.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bare version for the dry run (X.Y.Z, without a v prefix or -1.20 suffix).
+        required: true
+        type: string
+      mode:
+        description: >-
+          rehearse builds, signs, and inspects both bundles without uploading. validate also uploads
+          both lines, waits for validation, and drops them; a dropped deployment may count toward the
+          namespace's monthly Central usage.
+        required: true
+        type: choice
+        options:
+          - rehearse
+          - validate
+        default: rehearse
+# One release at a time, so that Portal deployments of different runs cannot interleave. GitHub keeps
+# at most one pending run per group: a newer queued run cancels a pending one with a grey status, so
+# re-run a cancelled tag run from the Actions page; nothing was uploaded and the tag still exists.
+concurrency:
+  group: release
+  cancel-in-progress: false
+permissions: {}
+# An explicit bash shell adds pipefail to GitHub's default -e.
+defaults:
+  run:
+    shell: bash
+jobs:
+  release:
+    # Forks must not reach for this repository's secrets; the ID survives a rename or transfer.
+    if: github.repository_id == '1358906035'
+    name: Rehearse, stage, and publish both lines
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Two validations and the publication wait take up to 30 minutes each.
+    timeout-minutes: 120
+    steps:
+      # fetch-depth 0 serves the ancestry check. No Maven cache: a release resolves its build fresh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          install_args: python uv
+      # The generated settings name the central server and read the token pair from the staging steps' environment.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: central
+          server-username-env-var: CENTRAL_TOKEN_USERNAME
+          server-password-env-var: CENTRAL_TOKEN_PASSWORD
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: just
+      - name: Resolve the release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="$INPUT_VERSION"
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release: expected bare X.Y.Z, without a v prefix or -1.20 suffix" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # The release skips tests because the commit already passed CI on main. Every run that uploads, a tag push
+      # or a validate dispatch, needs a merged commit, so that unreviewed build configuration never stages.
+      - name: Assert the commit is on main
+        if: inputs.mode != 'rehearse'
+        run: |
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "The commit is not contained in main; tag or dispatch a merged commit" >&2
+            exit 1
+          }
+      # Every run first builds, signs, and inspects both bundles of the same commit without uploading.
+      - name: Rehearse both lines without uploading
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: just release-rehearse "$VERSION" "$RUNNER_TEMP/rehearsal"
+      # The capture saves the deployment ID before the plugin waits for validation, also on failure.
+      - name: Stage the Flink 2.x line
+        if: inputs.mode != 'rehearse'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          name="flink-datastream-protobuf $VERSION (run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT)"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            name="$name dry run"
+          fi
+          just central-portal capture "$RUNNER_TEMP/central-2x.id" \
+            just release-stage "$VERSION" "-DdeploymentName=$name"
+      - name: Stage the Flink 1.20 LTS line
+        if: inputs.mode != 'rehearse'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          name="flink-datastream-protobuf $VERSION-1.20 (run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT)"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            name="$name dry run"
+          fi
+          just central-portal capture "$RUNNER_TEMP/central-1x.id" \
+            just release-stage "$VERSION-1.20" "-DdeploymentName=$name"
+      # Both IDs are checked before the first Publish request; a failed earlier step skips this.
+      - name: Publish both Central deployments
+        if: github.event_name == 'push'
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: just central-portal publish "$(cat "$RUNNER_TEMP/central-2x.id")" "$(cat "$RUNNER_TEMP/central-1x.id")"
+      # Created only after both lines are PUBLISHED; the CI workflow_run hook then deploys the documentation.
+      - name: Publish the GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+      # Also cleans up the first deployment when the second staging step fails.
+      - name: Drop dry-run deployments
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.mode != 'rehearse'
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          ids=()
+          for file in "$RUNNER_TEMP/central-2x.id" "$RUNNER_TEMP/central-1x.id"; do
+            if [[ -f "$file" ]]; then
+              while IFS= read -r id; do ids+=("$id"); done < "$file"
+            fi
+          done
+          if (( ${#ids[@]} > 0 )); then
+            just central-portal drop "${ids[@]}"
+          fi
