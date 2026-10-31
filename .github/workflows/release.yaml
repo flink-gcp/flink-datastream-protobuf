@@ -48,6 +48,10 @@ jobs:
       contents: write
     # Two validations and the publication wait take up to 30 minutes each.
     timeout-minutes: 120
+    # Read Google's mirror of Central first, as CI does. Global settings keep the user settings that
+    # setup-java writes for the central server; the job restores and saves no Maven cache.
+    env:
+      MAVEN_ARGS: --global-settings ${{ github.workspace }}/.github/maven/settings.xml
     steps:
       # fetch-depth 0 serves the ancestry check. No Maven cache: a release resolves its build fresh.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
