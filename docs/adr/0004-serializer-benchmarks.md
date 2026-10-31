@@ -27,6 +27,7 @@ limitations under the License.
 - Paired native/Chill mode added: 2026-10-11, [issue #42](https://github.com/flink-gcp/flink-datastream-protobuf/issues/42)
 - Variant placement calibrated: 2026-10-21, [issue #109](https://github.com/flink-gcp/flink-datastream-protobuf/issues/109)
 - Pairwise comparison placement added: 2026-10-22, [issue #115](https://github.com/flink-gcp/flink-datastream-protobuf/issues/115)
+- DynamicMessage lanes added: 2026-10-31, [issue #45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -61,6 +62,14 @@ This is a one-sided practical non-regression target, not symmetric statistical e
 Do not infer parity from overlapping individual score intervals or average away workload-specific regressions.
 The five-block model assumes approximately normal independent log ratios; the report must retain raw data and discuss drift, scheduling, and limited replication.
 There is no simultaneous confidence claim across all workload/operation cells.
+
+Measure DynamicMessage values with descriptor-bound native type information over the generated lane's schema and corpus.
+One lane writes values that carry the serializer's own descriptors, taken from a value it decoded.
+The other writes values that carry an equal-content descriptor from another instance, which the serializer accepts through its cache of accepted descriptor pairs.
+Chill's Protobuf adapter parses through a static `parseFrom(byte[])` method of the value's class, which DynamicMessage does not declare, so no Chill DynamicMessage lane exists.
+Each block measures the foreign-descriptor, own-descriptor, generated native, and Chill lanes back to back, in reverse order in alternate blocks.
+The report gives dynamic/generated and foreign/own time ratios with the same five-block interval as descriptive results; no tolerance or verdict applies to them.
+Only the write operations take the acceptance path; reading, copying, and stream copy run the same code for both descriptor lanes, so their foreign/own ratios are a same-code control.
 
 Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf matrix in CI: on every push to main, the weekly schedule, and manual runs, and on pull requests that change sources, the evidence gate, or build inputs.
 Do not impose timing thresholds on shared runners.

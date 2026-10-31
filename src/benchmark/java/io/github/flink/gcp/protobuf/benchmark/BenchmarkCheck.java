@@ -21,12 +21,17 @@ import org.apache.flink.api.java.typeutils.runtime.kryo.KryoSerializer;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.DynamicMessage;
+
+import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.InaccessibleObjectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.IdentityHashMap;
 import java.util.Properties;
+import java.util.function.Function;
 
 /** Separate-JVM correctness gate and observable support inventory for one lane. */
 public final class BenchmarkCheck {
@@ -75,6 +80,10 @@ public final class BenchmarkCheck {
 
     static void check(Lane lane, Properties report) throws Exception {
         TypeSerializer<Object> serializer = lane.serializer(false);
+        Function<Corpus.Value, Object> encode = lane.encoder(serializer);
+        if (lane.dynamic()) {
+            checkDescriptors(lane, serializer, encode);
+        }
         report.setProperty(
                 "serializer.chain",
                 Lane.inspect(serializer, new IdentityHashMap<>(), !lane.generic()));
@@ -82,7 +91,7 @@ public final class BenchmarkCheck {
         report.setProperty("serializer.source", source(serializer.getClass()));
         if (serializer instanceof KryoSerializer<?> k) {
             report.setProperty("kryo.source", source(k.getKryo().getClass()));
-            Class<?> record = lane.encode(Corpus.value("scalar", 0)).getClass();
+            Class<?> record = encode.apply(Corpus.value("scalar", 0)).getClass();
             report.setProperty(
                     "adapter.class", k.getKryo().getSerializer(record).getClass().getName());
             report.setProperty(
@@ -96,7 +105,7 @@ public final class BenchmarkCheck {
                     Integer.toString(k.getKryo().getRegistration(record).getId()));
         }
         report.setProperty(
-                "record.source", source(lane.encode(Corpus.value("scalar", 0)).getClass()));
+                "record.source", source(encode.apply(Corpus.value("scalar", 0)).getClass()));
         for (String workload : Corpus.WORKLOADS) {
             long bytes = 0;
             int min = Integer.MAX_VALUE;
@@ -106,14 +115,14 @@ public final class BenchmarkCheck {
             int copyReuses = 0;
             for (int i = 0; i < Corpus.RECORDS; i++) {
                 Corpus.Value expected = Corpus.value(workload, i);
-                Object value = lane.encode(expected);
+                Object value = encode.apply(expected);
                 DataOutputSerializer output = new DataOutputSerializer(131072);
                 serializer.serialize(value, output);
                 int size = output.length();
                 bytes += size;
                 min = Math.min(min, size);
                 max = Math.max(max, size);
-                Object other = lane.encode(Corpus.value(workload, (i + 1) % Corpus.RECORDS));
+                Object other = encode.apply(Corpus.value(workload, (i + 1) % Corpus.RECORDS));
                 serializer.serialize(other, output);
                 DataInputDeserializer input = new DataInputDeserializer(output.getCopyOfBuffer());
                 Object restored = serializer.deserialize(input);
@@ -124,7 +133,7 @@ public final class BenchmarkCheck {
                 equal(lane, serializer.deserialize(input), lane.decode(other));
                 Lane.require(input.available() == 0, "Trailing input");
                 input.setBuffer(output.getCopyOfBuffer());
-                Object candidate = lane.encode(Corpus.value(workload, (i + 2) % Corpus.RECORDS));
+                Object candidate = encode.apply(Corpus.value(workload, (i + 2) % Corpus.RECORDS));
                 Object reused = serializer.deserialize(candidate, input);
                 equal(lane, reused, expected);
                 if (reused == candidate) {
@@ -139,7 +148,7 @@ public final class BenchmarkCheck {
                     identityCopies++;
                 }
                 Object copyCandidate =
-                        lane.encode(Corpus.value(workload, (i + 3) % Corpus.RECORDS));
+                        encode.apply(Corpus.value(workload, (i + 3) % Corpus.RECORDS));
                 Object copiedReuse = serializer.copy(value, copyCandidate);
                 equal(lane, copiedReuse, expected);
                 if (copiedReuse == copyCandidate) {
@@ -189,6 +198,23 @@ public final class BenchmarkCheck {
                     deterministic.deserialize(new DataInputDeserializer(out.getCopyOfBuffer())),
                     v);
         }
+    }
+
+    /** Requires the own or equal-content foreign descriptor instance that the lane declares. */
+    static void checkDescriptors(
+            Lane lane, TypeSerializer<Object> serializer, Function<Corpus.Value, Object> encode)
+            throws IOException {
+        Descriptor written =
+                ((DynamicMessage) encode.apply(Corpus.value("nested", 0))).getDescriptorForType();
+        Descriptor own =
+                Lane.decodedDescriptor(serializer, encode.apply(Corpus.value("nested", 1)));
+        Lane.require(
+                (written == own) == (lane == Lane.PROTOBUF_DYNAMIC),
+                "Unexpected descriptor instance for " + lane);
+        Lane.require(
+                written.toProto().equals(own.toProto())
+                        && written.getFile().toProto().equals(own.getFile().toProto()),
+                "Descriptor content differs for " + lane);
     }
 
     static void checkIndependentCopy(Lane lane, Object source, Object copy, Corpus.Value expected) {

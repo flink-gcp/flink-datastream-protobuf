@@ -45,7 +45,7 @@ ENV_KEYS = ("CLOUDSDK_CONFIG", "GOOGLE_CLOUD_PROJECT", "GCE_BENCHMARK_ZONE",
             "GCE_BENCHMARK_MACHINE_TYPE")
 # Planning estimates per variant, including two five-minute load gates; not a price quote.
 # Modes without an estimate, such as one added by a later source commit, use the longest.
-VARIANT_MINUTES = {"check": 20, "smoke": 25, "pair": 95, "run": 300}
+VARIANT_MINUTES = {"check": 20, "smoke": 25, "pair": 95, "run": 370}
 SUITE = "src/benchmark/java/io/github/flink/gcp/protobuf/benchmark/BenchmarkSuite.java"
 SETUP_MINUTES = 25
 DEFAULTS = {

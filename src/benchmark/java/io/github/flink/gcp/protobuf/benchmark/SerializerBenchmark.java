@@ -32,6 +32,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /** One logical record per invocation; initialization and validation are outside timed regions. */
 @BenchmarkMode(Mode.AverageTime)
@@ -48,6 +49,7 @@ public class SerializerBenchmark {
         public boolean deterministic;
 
         public TypeSerializer<Object> serializer;
+        public Function<Corpus.Value, Object> encoder;
         public Corpus.Value[] logical;
         public Object[] records;
         public byte[][] encoded;
@@ -60,6 +62,10 @@ public class SerializerBenchmark {
         public void setup() throws Exception {
             BenchmarkSuite.requirePackagedLibrary();
             serializer = lane.serializer(deterministic);
+            encoder = lane.encoder(serializer);
+            if (lane.dynamic()) {
+                BenchmarkCheck.checkDescriptors(lane, serializer, encoder);
+            }
             logical = new Corpus.Value[Corpus.RECORDS];
             records = new Object[Corpus.RECORDS];
             encoded = new byte[Corpus.RECORDS][];
@@ -67,7 +73,7 @@ public class SerializerBenchmark {
             input = new DataInputDeserializer();
             for (int i = 0; i < records.length; i++) {
                 logical[i] = Corpus.value(workload, i);
-                records[i] = lane.encode(logical[i]);
+                records[i] = encoder.apply(logical[i]);
                 output.clear();
                 serializer.serialize(records[i], output);
                 encoded[i] = output.getCopyOfBuffer();
@@ -109,7 +115,7 @@ public class SerializerBenchmark {
 
     @Benchmark
     public void buildAndSerialize(Records s, Blackhole bh) throws Exception {
-        Object fresh = s.lane.encode(s.logical[s.next()]);
+        Object fresh = s.encoder.apply(s.logical[s.next()]);
         s.output.clear();
         s.serializer.serialize(fresh, s.output);
         bh.consume(s.output.getSharedBuffer());

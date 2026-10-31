@@ -42,7 +42,8 @@ import java.util.regex.Pattern;
  * Opt-in entry point: correctness gates, bounded smoke, or reproducible independent forks.
  *
  * <p>The {@code pair} mode measures only the native/Chill Protobuf pair with the long-run block
- * contract, for controlled comparisons of native serializer changes.
+ * contract, for controlled comparisons of native serializer changes. The other modes also measure
+ * the DynamicMessage lanes.
  */
 public final class BenchmarkSuite {
     static final List<String> OPERATIONS =
@@ -55,6 +56,14 @@ public final class BenchmarkSuite {
                     "objectCopyReuse",
                     "serializeSameInstance",
                     "buildAndSerialize");
+
+    /** Protobuf lanes measured back to back, in even-block order; odd blocks reverse it. */
+    private static final List<Lane> PROTOBUF_CHAIN =
+            List.of(
+                    Lane.PROTOBUF_DYNAMIC_FOREIGN,
+                    Lane.PROTOBUF_DYNAMIC,
+                    Lane.PROTOBUF_NATIVE,
+                    Lane.PROTOBUF_CHILL);
 
     private BenchmarkSuite() {}
 
@@ -91,7 +100,9 @@ public final class BenchmarkSuite {
                                 Lane.TUPLE,
                                 Lane.AVRO_SPECIFIC,
                                 Lane.AVRO_GENERIC,
-                                Lane.PROTOBUF_NATIVE)),
+                                Lane.PROTOBUF_NATIVE,
+                                Lane.PROTOBUF_DYNAMIC,
+                                Lane.PROTOBUF_DYNAMIC_FOREIGN)),
                 "Missing required native lane");
         if (args[0].equals("check")) {
             return;
@@ -107,23 +118,24 @@ public final class BenchmarkSuite {
         for (int fork = 0; fork < forks; fork++) {
             for (String workload : workloads) {
                 for (String operation : OPERATIONS) {
-                    // Alternate all representations by block; keep the Protobuf pair adjacent.
+                    // Alternate all representations by block. Keep each compared Protobuf pair
+                    // adjacent: foreign/own dynamic, dynamic/generated, and native/Chill.
                     List<List<Lane>> groups = new ArrayList<>();
                     for (Lane lane : supported) {
-                        if (!pairOnly
-                                && lane != Lane.PROTOBUF_NATIVE
-                                && lane != Lane.PROTOBUF_CHILL) {
+                        if (!pairOnly && !PROTOBUF_CHAIN.contains(lane)) {
                             groups.add(List.of(lane));
                         }
                     }
-                    List<Lane> pair = new ArrayList<>(List.of(Lane.PROTOBUF_NATIVE));
-                    if (supported.contains(Lane.PROTOBUF_CHILL)) {
-                        pair.add(Lane.PROTOBUF_CHILL);
+                    List<Lane> chain = new ArrayList<>();
+                    for (Lane lane : PROTOBUF_CHAIN) {
+                        if (supported.contains(lane) && !(pairOnly && lane.dynamic())) {
+                            chain.add(lane);
+                        }
                     }
                     if (fork % 2 == 1) {
-                        Collections.reverse(pair);
+                        Collections.reverse(chain);
                     }
-                    groups.add(pair);
+                    groups.add(chain);
                     Collections.shuffle(
                             groups,
                             new Random(

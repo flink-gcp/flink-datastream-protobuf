@@ -104,6 +104,60 @@ class BenchmarkContractTest {
     }
 
     @Test
+    void dynamicLanesRequireTheirDeclaredDescriptorInstances() throws Exception {
+        var own = Lane.PROTOBUF_DYNAMIC;
+        var foreign = Lane.PROTOBUF_DYNAMIC_FOREIGN;
+        var serializer = own.serializer(false);
+        BenchmarkCheck.checkDescriptors(own, serializer, own.encoder(serializer));
+        BenchmarkCheck.checkDescriptors(foreign, serializer, foreign.encoder(serializer));
+        assertThatThrownBy(
+                        () ->
+                                BenchmarkCheck.checkDescriptors(
+                                        own, serializer, foreign.encoder(serializer)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unexpected descriptor instance for PROTOBUF_DYNAMIC");
+        assertThatThrownBy(
+                        () ->
+                                BenchmarkCheck.checkDescriptors(
+                                        foreign, serializer, own.encoder(serializer)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(
+                        "Unexpected descriptor instance for PROTOBUF_DYNAMIC_FOREIGN");
+    }
+
+    @Test
+    void reportRatiosDivideNumeratorByDenominatorTime(@TempDir Path directory) throws Exception {
+        for (int block = 0; block < 5; block++) {
+            String suffix = "-text-serialize-" + block + ".json";
+            java.nio.file.Files.writeString(
+                    directory.resolve("PROTOBUF_DYNAMIC_FOREIGN" + suffix),
+                    "[{\"primaryMetric\":{\"score\":30.0}}]");
+            java.nio.file.Files.writeString(
+                    directory.resolve("PROTOBUF_DYNAMIC" + suffix),
+                    "[{\"primaryMetric\":{\"score\":20.0}}]");
+        }
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(
+                        BenchmarkReport.ratio(
+                                directory,
+                                mapper,
+                                "text",
+                                "serialize",
+                                Lane.PROTOBUF_DYNAMIC_FOREIGN,
+                                Lane.PROTOBUF_DYNAMIC))
+                .containsExactly(1.5, 1.5, 1.5);
+        assertThat(
+                        BenchmarkReport.ratio(
+                                directory,
+                                mapper,
+                                "text",
+                                "serialize",
+                                Lane.PROTOBUF_DYNAMIC,
+                                Lane.PROTOBUF_NATIVE))
+                .isNull();
+    }
+
+    @Test
     void forkIntervalsRetainUncertainty() {
         assertThat(BenchmarkReport.interval(new double[] {0, 0, 0, 0, 0})).containsExactly(1, 1, 1);
         double[] r = BenchmarkReport.interval(new double[] {-.2, .2, -.1, .1, 0});
