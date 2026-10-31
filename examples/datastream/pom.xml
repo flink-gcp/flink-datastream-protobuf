@@ -52,7 +52,10 @@ limitations under the License.
                 <executions><execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution></executions>
             </plugin>
             <plugin><groupId>io.github.ascopes</groupId><artifactId>protobuf-maven-plugin</artifactId><version>5.1.11</version>
-                <configuration><protoc>${protobuf.version}</protoc></configuration>
+                <!-- The descriptor set is the DynamicMessage example's schema input. -->
+                <configuration><protoc>${protobuf.version}</protoc>
+                    <outputDescriptorFile>${project.build.outputDirectory}/event.pb</outputDescriptorFile><outputDescriptorIncludeImports>true</outputDescriptorIncludeImports>
+                </configuration>
                 <executions><execution><goals><goal>generate</goal></goals></execution></executions>
             </plugin>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.1</version>
@@ -81,6 +84,10 @@ limitations under the License.
                     <execution><id>stateful</id><configuration><arguments>
                         <argument>-classpath</argument><classpath/>
                         <argument>io.github.flink.gcp.protobuf.examples.StatefulExample</argument>
+                    </arguments></configuration></execution>
+                    <execution><id>dynamic</id><configuration><arguments>
+                        <argument>-classpath</argument><classpath/>
+                        <argument>io.github.flink.gcp.protobuf.examples.DynamicExample</argument>
                     </arguments></configuration></execution>
                 </executions>
             </plugin>

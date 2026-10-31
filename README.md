@@ -37,9 +37,10 @@ Use `ProtobufTypeInformation.of(MyMessage.class)` or its builder for explicit so
 The message and every message type it reaches must be declared with `syntax = "proto3"`; a reached message in a proto2 or editions file is rejected.
 Alternatively, register `ProtobufTypeInfoFactory` against `com.google.protobuf.AbstractMessage` before type extraction.
 Always disable generic types, and use stable scalar keys.
+For DynamicMessage values, use `ProtobufTypeInformation.of(descriptor)` with `.returns(...)` and state descriptors; see [DynamicMessage values](https://flink-gcp.github.io/flink-datastream-protobuf/docs/dynamic-messages/).
 
 The [usage and configuration guide](https://flink-gcp.github.io/flink-datastream-protobuf/docs/usage/) covers settings, registration timing, nested values, state, and unsupported paths.
-The [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) runs the explicit, registered, and scalar-keyed state examples against a locally installed development jar.
+The [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) runs the explicit, registered, scalar-keyed state, and DynamicMessage examples against a locally installed development jar.
 Browse the [API reference](https://flink-gcp.github.io/flink-datastream-protobuf/api/java/), or generate it locally with `mise x -- just docs-javadoc` and open `target/apidocs/index.html`.
 The [documentation site](https://flink-gcp.github.io/flink-datastream-protobuf/) includes version selection and search.
 See [documentation versions](https://flink-gcp.github.io/flink-datastream-protobuf/docs/versions/) for the development milestones hosted before 1.0.0 and the release retention policy from 1.0.0.

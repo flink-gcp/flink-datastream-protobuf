@@ -24,7 +24,7 @@ limitations under the License.
 - Date: 2026-10-29
 - Issue: [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21)
 - Extends: The generated-message contracts in [ADR-0001](0001-native-protobuf-type-integration.md), which apply here except where this record states otherwise
-- Implementation: Implemented by [issue #22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22); [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) validates state recovery and documents usage
+- Implementation: Implemented by [issue #22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22); [issue #23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) validated state recovery and the upgrade paths and documented usage
 
 ## Context
 
