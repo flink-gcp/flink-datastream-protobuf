@@ -42,7 +42,7 @@ mise x -- just baseline-capture flink1 4 /tmp/baseline-flink1-pb4
 ```
 
 The two artifact lines and two paired Protobuf profiles produce four independent bundles.
-The 2.x jar is compiled at 2.2.1 and also used unchanged at 2.3.0; the LTS jar is compiled at 1.20.4.
+The 2.x jar is compiled at 2.2.1 and also used unchanged at 2.3.0; the LTS jar is compiled at 1.20.5.
 Both retain the development POM version of the captured source, such as `0.1.0-SNAPSHOT` in the v0.1.0 baseline, with the adapter line identified separately in the manifest.
 They are not renamed to imply published release coordinates.
 Capture keeps the source archive and revision, effective Maven model, exact command arguments, resolved dependency tree and jars, JDK identity, and protoc version and executable checksum.
@@ -97,7 +97,7 @@ Format 2 bundles also require the `enum-original` and `enum-added` applications 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.
 Until a published release is retained, it then runs [`baseline-upgrade`](#restore-retained-state-with-the-current-library), the [API compatibility gate](../development.md#api-compatibility-gate), and `baseline-consume` on that bundle on JDK 17, at each Flink version of its line for the restore and the consumers.
 The bundle comes from the same build, so these runs keep the checks working rather than compare releases.
-Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.4 runs on JDK 17.
+Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.5 runs on JDK 17.
 Each saved-state read uses its exact Flink version and Protobuf profile.
 These fixtures use aligned checkpoints and local filesystem storage without entropy injection.
 Cross-Flink state upgrades, cross-Protobuf restore, backend migration, rescaling, unaligned or incremental checkpoint portability, and universal development-version compatibility are outside this evidence.

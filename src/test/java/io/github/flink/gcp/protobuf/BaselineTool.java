@@ -93,7 +93,7 @@ public final class BaselineTool {
     static List<String> runtimes(String line) {
         return switch (line) {
             case "flink2" -> List.of("2.2.1", "2.3.0");
-            case "flink1" -> List.of("1.20.4");
+            case "flink1" -> List.of("1.20.5");
             default -> throw new IllegalArgumentException("Unsupported artifact line");
         };
     }

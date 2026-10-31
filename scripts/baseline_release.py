@@ -61,12 +61,12 @@ REVIEW = "PUBLICATION-REVIEW.json"
 TAG = re.compile(r"v0\.[0-9]+\.[0-9]+")
 TOOL = "io.github.flink.gcp.protobuf.BaselineTool"
 # The Flink versions and JDKs that each artifact line is read with, as BaselineTool accepts them.
-READERS = {"flink2": (("2.2.1", "2.3.0"), (17, 21)), "flink1": (("1.20.4",), (17,))}
+READERS = {"flink2": (("2.2.1", "2.3.0"), (17, 21)), "flink1": (("1.20.5",), (17,))}
 # Each control must fail with its BaselineTool message before creating output.
 NEGATIVE_CONTROLS = (
-    ("negative-unsupported-flink", "flink2-pb3", "1.20.4", 17, "Unsupported Flink runtime",
+    ("negative-unsupported-flink", "flink2-pb3", "1.20.5", 17, "Unsupported Flink runtime",
      "Unsupported Flink runtime rejected before creating reader output"),
-    ("negative-lts-jdk21", "flink1-pb3", "1.20.4", 21, "Unsupported JDK for artifact line",
+    ("negative-lts-jdk21", "flink1-pb3", "1.20.5", 21, "Unsupported JDK for artifact line",
      "JDK 21 rejected for the Flink 1.20 artifact line before creating reader output"),
 )
 # JVM diagnostics, credential files, and compressed files that the scan cannot open, none of which a

@@ -158,7 +158,7 @@ benchmark-arguments version major:
         exit 1
     fi
     case "$version" in
-        1.20.4) adapter=flink1 ;;
+        1.20.5) adapter=flink1 ;;
         2.2.1|2.3.0) adapter=flink2 ;;
         *) printf 'Unsupported benchmark Flink version: %s\n' "$version" >&2; exit 1 ;;
     esac
