@@ -27,7 +27,7 @@ limitations under the License.
 | [ADR-0003](0003-flink-version-compatibility.md) | Current/previous Flink 2.x minors and a separate 1.20 LTS build | Accepted; replaces ADR-0001's runtime scope |
 | [ADR-0004](0004-serializer-benchmarks.md) | Opt-in serializer benchmarks and practical comparison contract | Accepted |
 | [ADR-0005](0005-descriptor-bound-dynamic-messages.md) | Descriptor-bound DynamicMessage type and snapshot contracts | Accepted; extends ADR-0001; implemented and validated |
-| [ADR-0006](0006-central-portal-releases.md) | Both artifact lines are staged on the Central Portal and published after both validate | Accepted; release build and rehearsal implemented, `Release` workflow pending |
+| [ADR-0006](0006-central-portal-releases.md) | Both artifact lines are staged on the Central Portal and published after both validate | Accepted; implemented, first publication pending |
 
 These records distinguish accepted design from implemented behavior.
 The native serializer, application-facing type integration, and versioned descriptor snapshots are implemented.
