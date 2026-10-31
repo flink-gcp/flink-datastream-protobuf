@@ -21,7 +21,7 @@ limitations under the License.
 # Development artifact bundles
 
 Issue [#40](https://github.com/flink-gcp/flink-datastream-protobuf/issues/40) prepared fixed development inputs for the state and API checks in #16 and #17.
-The final v0.1.0 and v0.2.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline) and the [`v0.2.0` pre-release](#retained-v020-baseline).
+The final v0.1.0, v0.2.0, and v0.3.0 bundles are retained as assets of the [`v0.1.0` pre-release](#retained-v010-baseline), the [`v0.2.0` pre-release](#retained-v020-baseline), and the [`v0.3.0` pre-release](#retained-v030-baseline).
 The tooling always labels its output `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
 
@@ -164,6 +164,20 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.2.0
 Do not rename, re-tag, or replace these assets.
 Obtain them with `mise x -- just baseline-fetch v0.2.0 <new-output>`; the release `README.md` lists equivalent manual commands.
 CI restores and checks them with the current library as it does the v0.1.0 bundles; see [retained bundles in CI](#retained-bundles-in-ci).
+
+## Retained v0.3.0 baseline
+
+The [`v0.3.0` pre-release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v0.3.0) is the durable shared copy of the final v0.3.0 development baseline, assembled with [`baseline-release`](#publish-a-milestone-baseline) for [#146](https://github.com/flink-gcp/flink-datastream-protobuf/issues/146).
+Its source is annotated tag `v0.3.0`, commit `142862b9d86f449e3e4894715602a991a018fd63`, and its `SHA256SUMS` digest is pinned in `scripts/baseline_fetch.py`.
+The assets have the same names and roles as the v0.1.0 assets above, with the `v0.3.0-` prefix.
+The bundles use bundle format 3: besides the format 2 fixtures, each backend retains the `dynamic` fixture and each Flink version the DynamicMessage snapshot fixture described under [inspect and restore](#inspect-and-restore), and the runtime results have 25 cases on 2.x and 26 on LTS.
+The verification archive also holds the publication review; its findings are public dependency literals and defaults, workflow keys, and synthetic test values, and its reviewed files are the tracked CI Maven settings, `.github/maven/settings.xml`, in each source archive, each with its disposition.
+
+The embedded manifests keep `milestone.final=false` and the Maven version `0.3.0-SNAPSHOT`.
+`FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #146 select these exact bundles as the milestone baseline.
+Do not rename, re-tag, or replace these assets.
+Obtain them with `mise x -- just baseline-fetch v0.3.0 <new-output>`; the release `README.md` lists equivalent manual commands.
+No current CI job restores them, because the current library is the one that wrote them.
 
 ## Retrieve the retained baseline
 

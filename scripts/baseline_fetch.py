@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASES = {
     "v0.1.0": "8d328241cd4d75d54eb87b94dcc3abb50e9424bac7a023dc03eada74375ccfac",
     "v0.2.0": "a98baaef5a6ad5e19332c0cbb08512410d02843dee1cdd952f3a499e4a6527c7",
+    "v0.3.0": "1799eeccd57033b12598c966d4026dbc557c4ab00db32bc85657fe9a33328fb1",
 }
 BUNDLES = ("flink2-pb3", "flink2-pb4", "flink1-pb3", "flink1-pb4")
 CHECKSUMS = "SHA256SUMS"
