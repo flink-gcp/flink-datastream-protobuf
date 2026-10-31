@@ -1,0 +1,26 @@
+name: Upstream versions
+# Dependabot misses Flink minors and profile pins; see "Upstream release check" in docs/development.md.
+# This workflow stays outside CI, so a new upstream release never fails a pull request.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  check:
+    name: Compare Flink and Protobuf pins with Maven Central
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          install_args: python uv
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: just
+      - name: Name the pins that newer upstream releases overtake
+        run: just upstream-versions

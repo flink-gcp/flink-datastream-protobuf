@@ -37,6 +37,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just benchmark-evidence-repository <new-output>`: inspect committed benchmark archives and retain member inventories without re-uploading the archives.
 - `just benchmark-evidence-test`: run synthetic content-gate tests without Maven or Thrift.
 - `just gce-benchmark plan|execute|status|collect|cleanup ...`: run benchmarks on temporary credential-free GCE VMs; `execute` requires `--approve` after the cost and ownership checks in `docs/development.md`, and `just gce-benchmark-test` runs its offline tests.
+- `just upstream-versions`: name the Flink and Protobuf pins that newer Maven Central releases overtake; the weekly `Upstream versions` workflow runs it outside PR checks, and `just upstream-versions-test` runs its offline tests.
 - `just test-scripts [test-file...]`: run the `scripts/tests` suite through the locked pytest; the per-tool test recipes delegate to it.
 - `just lint`: workflow, project shell script, and Markdown checks.
 - `just pin-actions`: pin Actions references when adding or updating workflows.

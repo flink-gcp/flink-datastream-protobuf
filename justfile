@@ -115,6 +115,13 @@ api-compat bundle:
 probe-chill:
     {{ mvn }} clean -Pchill -Dtest.excluded.groups=retained-baseline verify
 
+# Compare the Flink and Protobuf pins with Maven Central; fail when a newer release overtakes one.
+upstream-versions:
+    {{ python }} scripts/upstream_versions.py
+
+# Exercise the upstream version check with synthetic pins and metadata only.
+upstream-versions-test: (test-scripts "scripts/tests/test_upstream_versions.py")
+
 # Run the scripts/tests suite, or only the given test files, through the locked pytest.
 [positional-arguments]
 test-scripts *tests:
