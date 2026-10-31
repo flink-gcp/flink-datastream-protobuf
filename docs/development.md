@@ -804,13 +804,26 @@ Pull requests and Verify never read the secrets.
 Register a replacement value with `gh secret set <name> --env release`; the repository holds no release secret of its own.
 The workflow's `actions/setup-java` step writes Maven settings whose `central` server reads the token pair from the environment, which only the staging steps set.
 
-1. Optionally, on the `main` commit to release, after its `CI passed` succeeds, run `gh workflow run release.yaml --ref main -f version=X.Y.Z`.
+1. Merge a pull request that prepares the release.
+   Set `project.version` in `pom.xml`, `protobuf.integration.version` in `examples/datastream/pom.xml`, and every page that names the development version (`git grep -n <current-version>`) to `X.Y.Z-SNAPSHOT` if they differ, so that Verify's rehearsal on the commit to tag stages exactly `X.Y.Z`; the workflow takes the version from the tag and does not compare it with the POM.
+   Switch the README, the quickstart, and the compatibility guide to the `X.Y.Z` and `X.Y.Z-1.20` coordinates in the same pull request, because the release's documentation version is built from the tagged source, and revise `DocumentationExamplesTest`, which requires those pages and the usage guide to name the POM's development version.
+   The release's acceptance evidence, such as the 1.0.0 benchmark rerun on Google Compute Engine ([#45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)), names the commit of this pull request's merge.
+2. Optionally, on that commit, after its `CI passed` succeeds, run `gh workflow run release.yaml --ref main -f version=X.Y.Z`.
    The default `rehearse` mode builds, signs, and inspects both lines and checks the guard without uploading; the tag run repeats it before any upload, so this only gives earlier feedback.
-2. Optionally run it again with `-f mode=validate` to upload both lines, wait for Central validation, and drop both deployments; like a tag run, it refuses a commit that `main` does not contain.
+3. Optionally run it again with `-f mode=validate` to upload both lines, wait for Central validation, and drop both deployments; like a tag run, it refuses a commit that `main` does not contain.
    Its final step drops every captured deployment that is `VALIDATED` or `FAILED`, including the first when the second staging step failed; a dropped deployment may still count toward the namespace's monthly Central usage.
-3. Create a signed tag `vX.Y.Z` on that commit and push it.
+4. Create a signed tag `vX.Y.Z` on that commit and push it.
    The workflow refuses a commit that `main` does not contain and any tag other than a bare `vX.Y.Z`; it repeats the signed rehearsal, stages `X.Y.Z` and `X.Y.Z-1.20`, publishes both after both validate, and then creates the GitHub Release with generated notes.
    The CI `workflow_run` hook then adds the release to the documentation site.
+
+After the workflow succeeds:
+
+1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` serves.
+2. Verify consumers and capture fixtures from both published versions; ADR-0001 makes this the completion gate of the first release.
+   The commands for it are part of [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) and not yet available.
+3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
+   For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](compatibility.md#development-builds-before-100) does.
+4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.
 
 The workflow runs one release at a time; GitHub cancels a pending run when a newer one queues in the same group, so re-run a cancelled tag run from the Actions page, because it uploaded nothing and the tag still exists.
 

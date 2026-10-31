@@ -31,9 +31,72 @@ The current source version is `0.3.0-SNAPSHOT`, a development build that restore
 The 0.x versions are development milestones, not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 
-[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned first release and the start of the stable API and forward-restore contract.
+[Version 1.0.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) is the planned first release and the start of the [stable API and forward-restore contract](#compatibility-from-100).
 Its preparation follows the [quickstart's Maven Central transition](quickstart.md#switch-to-maven-central-at-100).
 Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling](validation/development-baselines.md).
+
+Version 1.0.0 restarts the persisted formats at version 1 under snapshot classes that the 0.1.0, 0.2.0, and 0.3.0 milestones never wrote, and it removes their snapshot classes.
+It therefore does not read state written by those milestones: Flink fails the restore because the saved snapshot class is absent.
+There is no migration or upgrade guide from a 0.x milestone or a development SNAPSHOT build to 1.0.0.
+An application that ran one starts 1.0.0 with fresh state or replays its input, and decides how the rebuilt state and any repeated output affect its data.
+Development APIs carry no guarantee either; compile the application against 1.0.0 and follow its [usage guide](usage.md).
+
+## Compatibility from 1.0.0
+
+From 1.0.0, each release keeps these contracts within its major version:
+
+- The application-facing API annotated `@Public` or `@PublicEvolving` remains source and binary compatible; the [API compatibility gate](development.md#api-compatibility-gate) compares each candidate with the earlier release.
+- Configuration defaults keep their meaning.
+- A later release restores state that an earlier release of the same major version wrote, for unchanged schemas and the [supported schema changes](#schema-changes), with the same artifact line, Flink minor, and Protobuf runtime and generated code; each release checks this against state retained from the earlier published release.
+
+Downgrades, restores across Flink minors or artifact lines, and restores across changed built-in descriptors are not part of the contract.
+A change that breaks one of these contracts requires a new major version with migration documentation.
+
+## Artifact lines and version order
+
+Each release publishes two versions of `io.github.flink-gcp:flink-datastream-protobuf` from one source revision:
+
+| Version | Flink runtime |
+|---|---|
+| `X.Y.Z` | The current and previous Flink 2.x minors |
+| `X.Y.Z-1.20` | Flink 1.20 LTS |
+
+Choose the line that matches the application's Flink runtime and stay on it; each line's jar is compiled for its own runtime.
+Both lines share one artifactId, and Maven orders their versions alternately, `1.0.0 < 1.0.0-1.20 < 1.0.1 < 1.0.1-1.20`, so Maven Central and update tools report each release's `-1.20` build as the latest version.
+
+Dependabot treats `-1.20` as an ordinary release version and does not keep either line.
+Its version updates move to the highest version, which is each release's `-1.20` build: correct on the LTS line, wrong on the 2.x line.
+Its security updates move to the lowest version that fixes the advisory, which can be the release's `X.Y.Z` on the LTS line.
+Check that every proposal keeps the line, and list the other line's versions in an ignore condition, which accepts exact versions and Maven ranges but no pattern and also applies to security updates.
+On the 2.x line, list each `-1.20` version, and Dependabot then proposes the same release's `X.Y.Z`; on the LTS line, list the bare versions, such as `[1.0.1]`:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: io.github.flink-gcp:flink-datastream-protobuf
+        # Stay on the Flink 2.x line: skip each release's Flink 1.20 LTS build.
+        versions: ["[1.0.0-1.20]", "[1.0.1-1.20]"]
+```
+
+Renovate's [`allowedVersions`](https://docs.renovatebot.com/configuration-options/#packagerulesallowedversions) accepts a regular expression, which keeps either line without an entry per release:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchPackageNames": ["io.github.flink-gcp:flink-datastream-protobuf"],
+      "allowedVersions": "/^[0-9]+\\.[0-9]+\\.[0-9]+$/"
+    }
+  ]
+}
+```
+
+On the LTS line, use `"/^[0-9]+\\.[0-9]+\\.[0-9]+-1\\.20$/"` instead.
 
 ## Three compatibility checks
 

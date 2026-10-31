@@ -26,7 +26,7 @@ Published-artifact capture and consumer verification remain release requirements
 | 2.3 | 2.3.0 (runtime ceiling) | 17, 21 | The same `X.Y.Z` jar |
 | 1.20 LTS | 1.20.5 | 17 | `X.Y.Z-1.20`, compiled for 1.20 |
 
-Both version lines use `io.github.flink-gcp:flink-datastream-protobuf`.
+Both version lines use `io.github.flink-gcp:flink-datastream-protobuf`, and Maven orders each release's `X.Y.Z-1.20` after its `X.Y.Z`; stay on the line that matches your Flink runtime, as the [compatibility guide](docs/compatibility.md#artifact-lines-and-version-order) describes for Dependabot and Renovate.
 There is no binary compatibility promise between Flink 1.x and 2.x or support for Java 11.
 Source and binary compatibility do not establish savepoint compatibility across Flink versions.
 On Flink 1.20, supply explicit `ListTypeInfo` for lists of messages; `TypeHint<List<MessageType>>` falls back to a generic type in the production integration and probe tests.
