@@ -163,10 +163,10 @@ lint:
 pin-actions:
     mise x pinact -- pinact run
 
-# Build a local development artifact and verify its independent application consumer.
+# Verify the independent application consumer with a local development build, or with a published version from Maven Central.
 [positional-arguments]
-examples-verify version major repository:
-    bash scripts/verify-examples.sh "$1" "$2" "$3"
+examples-verify version major repository published="":
+    bash scripts/verify-examples.sh "$1" "$2" "$3" "$4"
 
 # Generate the site's API reference in target/apidocs with the POM's Javadoc configuration, which the release Javadoc jar also uses.
 [positional-arguments]

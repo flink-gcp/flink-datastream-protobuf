@@ -23,7 +23,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just baseline-consume <bundle> <candidate-jar> <version> <new-output>`: run a retained bundle's compiled consumers against a candidate jar without recompiling them.
 - `just release-rehearse <version> <new-output> [--unsigned]`: stage both lines' Central bundles from the committed HEAD without uploading and inspect them under ADR-0006; `just release-artifacts-test` runs its synthetic tests and those of the `Release` workflow.
 - `just central-portal status|publish|drop <id>...`: inspect, publish, or drop Central Portal deployments when recovering a release; see "Publishing a release" in `docs/development.md`.
-- `just examples-verify <version> <protobuf-major> <external-maven-repository>`: build/install the development jar and verify the standalone application.
+- `just examples-verify <version> <protobuf-major> <external-maven-repository> [<published-version>]`: build/install the development jar, or resolve a published version from Maven Central into an empty repository, and verify the standalone application.
 - `just docs` / `just docs-serve`: build or preview the shared-design site.
 - `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.
 - `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `target/apidocs`.
