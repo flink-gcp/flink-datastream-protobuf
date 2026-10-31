@@ -66,7 +66,7 @@ class DocumentationExamplesTest {
                         "protobuf-java/protoc " + protobuf4 + " and " + protobuf3);
         assertThat(Files.readString(Path.of("docs/compatibility.md")))
                 .contains(
-                        "The current source version is `" + version + "`",
+                        "A build of this source is the development version `" + version + "`",
                         "CI pairs " + protobuf4 + " generated code with runtime " + protobuf4,
                         "and " + protobuf3 + " generated code with runtime " + protobuf3);
         assertThat(Files.readString(Path.of("docs/usage.md")))

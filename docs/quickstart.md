@@ -20,9 +20,8 @@ limitations under the License.
 
 # Run a native Protobuf DataStream job
 
-Build the development library locally, install it into an isolated Maven repository, and run the standalone [application example](../examples/datastream/pom.xml).
-No library version is available from Maven Central yet.
-The 0.x versions are development milestones; 1.0.0 is the planned first public release.
+Run the standalone [application example](../examples/datastream/pom.xml) against a local build of the library, installed into an isolated Maven repository, or against the [published library](#run-against-the-published-library).
+Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LTS.
 
 ## Build the development artifact
 
@@ -168,11 +167,16 @@ The recipe always compiles the library with Protobuf 4: a 1.20 library for LTS, 
 A Protobuf 3 application therefore runs the same library jar as a Protobuf 4 application.
 Mixed generated-code/runtime pairs and cross-version state restoration are outside this verification.
 
-## Switch to Maven Central at 1.0.0
+## Run against the published library
 
-The application already resolves the library by Maven coordinates; it needs no source or classpath rewrite for publication.
-During [1.0.0 preparation](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), change the dependency version to `1.0.0` for Flink 2.x or `1.0.0-1.20` for LTS, and replace the local-build introduction with published-artifact instructions.
-Keep the development recipe for contributors.
-After both artifacts are published, verify these same examples using a fresh Maven repository without first installing the library, and with the release's supported runtime/gencode settings.
-Only then describe Central resolution as verified.
-This switch does not promise source or state compatibility with arbitrary development snapshots; consult the [compatibility guidance](compatibility.md) first.
+The application resolves the library by its Maven coordinates, so it runs against the published library without a source or classpath change.
+Pass the published version of the runtime's artifact line as the recipe's fourth argument, with a new Maven repository:
+
+```sh
+mise x -- just examples-verify 2.2.1 4 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0
+mise x -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0-1.20
+```
+
+The recipe then builds and installs no library: the application resolves the published jar from Maven Central, the recipe compares the jar and its POM with Central's checksums, and runs the same tests and launch goals.
+In your own application, depend on `1.0.0` for Flink 2.x or `1.0.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line](compatibility.md#artifact-lines-and-version-order).
+Version 1.0.0 reads no state written by a 0.x milestone, and state from a development build carries no guarantee; consult the [compatibility guidance](compatibility.md) first.

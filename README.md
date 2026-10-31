@@ -2,15 +2,22 @@
 
 Native Protocol Buffers type integration for the Apache Flink DataStream API.
 
-This project is under development.
 The repository implements native serialization, explicit TypeInformation, and superclass factory registration for generated messages, and descriptor-bound TypeInformation for DynamicMessage values.
 Versioned descriptor snapshots support serializer restoration for unchanged schemas and supported schema changes.
 MiniCluster tests verify checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends, including restoration across supported schema changes.
-No Maven Central release is available.
-Versions 0.1.0, 0.2.0, and 0.3.0 identify development milestones only; the first Maven Central release is planned for 1.0.0.
+Maven Central publishes each release in two versions of `io.github.flink-gcp:flink-datastream-protobuf`: `1.0.0` for the current and previous Flink 2.x minors, and `1.0.0-1.20` for Flink 1.20 LTS.
 
-The development artifact is `io.github.flink-gcp:flink-datastream-protobuf:1.0.0-SNAPSHOT`.
-Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to build/install it locally and run the compiled application examples.
+```xml
+<dependency>
+    <groupId>io.github.flink-gcp</groupId>
+    <artifactId>flink-datastream-protobuf</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+Versions 0.1.0, 0.2.0, and 0.3.0 were unpublished development milestones, and 1.0.0 reads no state that they wrote.
+A build of this source produces `io.github.flink-gcp:flink-datastream-protobuf:1.0.0-SNAPSHOT`.
+Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to run the compiled application examples against the published library or a local build.
 It targets full-runtime generated Protobuf messages and DynamicMessage values with protobuf-java 4.x and 3.25.x.
 Each artifact line is built with Protobuf 4.36.2, and CI runs that jar unchanged with protobuf-java/protoc 4.36.2 and 3.25.9.
 
@@ -18,9 +25,8 @@ Each artifact line is built with Protobuf 4.36.2, and CI runs that jar unchanged
 
 The [compatibility policy](docs/adr/0003-flink-version-compatibility.md) follows flink-connector-gcp: the current and previous Flink 2.x minors share one artifact, and Flink 1.20 LTS uses a separate build from the same source tree.
 The matrix covers the production serializer, type information, registration, native transport, and checkpoint/savepoint recovery with unchanged and supported changed schemas alongside separate feasibility probes.
-Published-artifact capture and consumer verification remain release requirements.
 
-| Flink runtime | Tested patch | Java | Planned release version |
+| Flink runtime | Tested patch | Java | Release version |
 |---|---|---|---|
 | 2.2 | 2.2.1 (compile floor) | 17, 21 | `X.Y.Z` |
 | 2.3 | 2.3.0 (runtime ceiling) | 17, 21 | The same `X.Y.Z` jar |
@@ -51,13 +57,12 @@ The tested value types include Google Struct, Value, ListValue, Any, Timestamp, 
 They use the native integration above, including unchanged-schema state restoration.
 See [common types and examples](docs/common-types.md) for the exact schema/runtime pins, tested configurations, and the distinction between Struct, Any, and OTel AnyValue.
 
-## Development milestones and first release
+## Development milestones
 
-The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separates generated-message integration, schema evolution, and DynamicMessage development before the first public artifact.
+The [release contract](docs/adr/0001-native-protobuf-type-integration.md) separated generated-message integration, schema evolution, and DynamicMessage development into milestones before the first release.
 The serializer implements generated-class validation, bounded framing, immutable copying, configurable size, depth, and deterministic-writing behavior, and versioned descriptor snapshots.
-The milestone table includes implemented transport, common-type acceptance, and serializer restoration, plus the remaining documentation and publication requirements.
 
-| Milestone | Planned capability |
+| Milestone | Capability |
 |---|---|
 | [0.1.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) | Native generated-message integration and unchanged-schema state restore, including common Google Well-Known Types and OpenTelemetry composite messages; GitHub Pages development documentation and benchmark evidence |
 | [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14) | Supported descriptor-based schema evolution |
@@ -68,11 +73,8 @@ See [Protobuf updates and state compatibility](docs/compatibility.md) for schema
 Protobuf messages are supported as values; use stable scalar keys for DataStream partitioning and MapState user keys.
 There is no message-key opt-in: deterministic bytes do not make generated message hash codes stable across application classloaders or JVMs.
 Both inferred and explicitly typed `keyBy` can accept message keys despite `isKeyType() == false`; that use remains unsupported.
-The unpublished 0.x milestones are development milestones whose APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
-Version 1.0.0 will establish the stable API and forward-restore contract.
-The capability roadmap ended at 0.3.0, and the remaining work prepares the first release.
-The [1.0.0 publication work](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) must validate and publish both `1.0.0` and `1.0.0-1.20`, verify consumers, and retain fixtures from each published artifact.
-No calendar deadline is set.
+The unpublished 0.x milestones were development milestones whose APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
+Version 1.0.0 establishes the [stable API and forward-restore contract](docs/compatibility.md#compatibility-from-100).
 The library has no Kryo/Chill implementation or internal fallback; Flink can still select its own generic serializer when native integration is not selected, so native usage must set `pipeline.generic-types: false`.
 The [development sequence](docs/development.md#next-implementation-steps) tracks implementation and release validation separately from the existing probes.
 

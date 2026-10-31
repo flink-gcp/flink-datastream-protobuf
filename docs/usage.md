@@ -227,7 +227,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 
 Current `1.0.0-SNAPSHOT` development builds restore the supported schema changes.
 Read [Protobuf/state compatibility](compatibility.md) before changing an application or dependency.
-Version 1.0.0 is the planned first Maven Central release and stabilization point, without a calendar deadline.
+Version 1.0.0, the first Maven Central release, is the stabilization point; see the [compatibility from 1.0.0](compatibility.md#compatibility-from-100).
 
 Generate the API reference with `mise x -- just docs-javadoc`, then open `target/apidocs/index.html`.
 The documentation site includes this API reference for each [retained version](versions.md).
