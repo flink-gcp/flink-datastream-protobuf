@@ -28,7 +28,7 @@ Milestone upgrade checks use fixed development artifacts and fixtures with exact
 
 ## Development builds before 1.0.0
 
-The current source version is `0.2.0-SNAPSHOT`, a development build that restores supported schema changes.
+The current source version is `0.3.0-SNAPSHOT`, a development build that restores supported schema changes.
 The 0.1.0 milestone accepted unchanged schemas only.
 It also accepted payload types whose graphs reach proto2 messages, which current builds reject.
 Restore compares the messages reached through fields that both schemas keep, starting at the root, together with their enclosing messages and declaring files.
@@ -141,7 +141,7 @@ They check the restored values, continued processing, and a second restore from 
 A field removed with a reservation remains in restored values as an unknown field, and the new application's savepoints keep it; the test reads the value back with the original schema.
 The [retained-baseline upgrade check](validation/development-baselines.md#restore-retained-state-with-the-current-library) restores savepoints and checkpoints written by the [retained 0.1.0 artifact](validation/development-baselines.md#retained-v010-baseline) with the current library, unchanged and with the field addition and the reserved field removal, and requires the type change to be rejected.
 It runs for each retained bundle at the Flink and Protobuf versions that wrote and read it, on HashMap and RocksDB.
-The retained 0.1.0 runtime schema declares no enum, so enum-value addition is verified only with state written by 0.2.0 development builds.
+The retained 0.1.0 runtime schema declares no enum, so enum-value addition is verified only with state that the same development build writes and restores, in the schema-evolution tests.
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 

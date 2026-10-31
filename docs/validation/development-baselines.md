@@ -257,7 +257,7 @@ The restore checks are those of the [schema-evolution test](runtime-recovery.md#
 Each retained archive holds all three state kinds, so the rejection shows only that whichever state the backend restores first fails; the schema-evolution test rejects each state kind from a savepoint that holds only that kind.
 The current library must restore each snapshot fixture's framed value at its recorded settings; when it writes the fixture's snapshot version, it must also write byte-identical snapshot metadata, which shows that the snapshot format and test schema are unchanged.
 The current library writes snapshot version 2, so the version-1 fixtures retained from v0.1.0 check only the restore.
-The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here; it is verified only with state written by 0.2.0 development builds.
+The retained v0.1.0 runtime schema declares no enum, so enum-value addition from v0.1.0 state cannot be tested here; it is verified only with state that the same development build writes and restores, in the [schema-evolution test](runtime-recovery.md#schema-changes).
 On 2026-10-21 all ten combinations passed on macOS/aarch64 (Temurin 17.0.20 and 21.0.5), 11 tests each.
 
 ## Retention
