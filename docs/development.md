@@ -378,7 +378,7 @@ Both are separate from saved-state restoration and from application gencode/runt
 ```sh
 mise x -- just baseline-fetch <tag> /tmp/baseline-<tag>
 mise x -- just api-compat /tmp/baseline-<tag>/flink2-pb3
-mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-0.3.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.0.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
@@ -810,7 +810,7 @@ The workflow's `actions/setup-java` step writes Maven settings whose `central` s
 1. Merge a pull request that prepares the release.
    Set `project.version` in `pom.xml`, `protobuf.integration.version` in `examples/datastream/pom.xml`, and every page that names the development version (`git grep -n <current-version>`) to `X.Y.Z-SNAPSHOT` if they differ, so that Verify's rehearsal on the commit to tag stages exactly `X.Y.Z`; the workflow takes the version from the tag and does not compare it with the POM.
    Switch the README, the quickstart, and the compatibility guide to the `X.Y.Z` and `X.Y.Z-1.20` coordinates in the same pull request, because the release's documentation version is built from the tagged source, and revise `DocumentationExamplesTest`, which requires those pages and the usage guide to name the POM's development version.
-   The release's acceptance evidence, such as the 1.0.0 benchmark rerun on Google Compute Engine ([#45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)), names the commit of this pull request's merge.
+   The release's acceptance evidence, such as the 1.0.0 benchmark rerun on Google Compute Engine ([#45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)), names the commit it measured; a later performance-relevant change before the tag, such as to production code or a dependency, requires a rerun or an explicit invalidation of that evidence.
 2. Optionally, on that commit, after its `CI passed` succeeds, run `gh workflow run release.yaml --ref main -f version=X.Y.Z`.
    The default `rehearse` mode builds, signs, and inspects both lines and checks the guard without uploading; the tag run repeats it before any upload, so this only gives earlier feedback.
 3. Optionally run it again with `-f mode=validate` to upload both lines, wait for Central validation, and drop both deployments; like a tag run, it refuses a commit that `main` does not contain.
@@ -971,8 +971,7 @@ The development sequence and current implementation status are:
 8. [#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) restarts the persisted formats at version 1 for 1.0.0 under new snapshot class names; the library no longer reads 0.x state, and the 0.x fixtures, upgrade guide, and CI checks against the 0.x bundles are removed.
 9. Prepare publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` in [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13), following ADR-0003's effective-model guards and two-artifact validation requirement. Rerun the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. Complete the first-release milestone only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
 
-After 0.3.0, assess remaining issues, missing implementation and validation gaps before adding another milestone.
-Define further 0.x work when needed; prepare 1.0.0 only when the design and compatibility contract are ready to stabilize.
+No further 0.x milestone followed 0.3.0, and the remaining work prepares 1.0.0.
 The 1.0.0 milestone tracks first publication, with no calendar deadline.
 
 Implementation PRs update documentation for behavior they actually deliver.
