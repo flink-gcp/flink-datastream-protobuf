@@ -14,7 +14,6 @@
 
 """Synthetic releases only: never download or execute a retained bundle."""
 
-import contextlib
 import hashlib
 import io
 import json
@@ -23,9 +22,8 @@ from pathlib import Path
 import shutil
 import sys
 import tarfile
-import tempfile
-import unittest
-from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import baseline_fetch as fetcher
@@ -132,338 +130,389 @@ class Release:
             shutil.copyfile(self.root / name, Path(directory) / name)
 
 
-class FetchTest(unittest.TestCase):
-
-    def setUp(self):
-        self.temporary = Path(tempfile.mkdtemp()).resolve()
-        self.addCleanup(shutil.rmtree, self.temporary)
-        self.output = self.temporary / "output"
-        self.checked = []
-        self.stack = contextlib.ExitStack()
-        self.addCleanup(self.stack.close)
-        self.stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-
-    def release(self, **options):
-        shutil.rmtree(self.temporary / "release", ignore_errors=True)
-        release = Release(self.temporary / "release", **options)
-        self.stack.enter_context(patch.object(fetcher, "download", release.download))
-        self.stack.enter_context(patch.object(fetcher, "baseline_check", self.checked.append))
-        self.stack.enter_context(patch.dict(fetcher.RELEASES, {TAG: release.pin}, clear=True))
-        return release
-
-    def rejected(self, message, bundles=(BUNDLE,), cache=None):
-        with self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.fetch(TAG, str(self.output), list(bundles), cache)
-        self.assertIn(message, str(raised.exception))
-        self.assertFalse(os.path.lexists(self.output))
-        self.assertEqual([], [p.name for p in self.temporary.iterdir() if p.name.startswith(".")])
-        return str(raised.exception)
-
-    def test_extracts_verified_bundle_and_keeps_release_inventory(self):
-        self.release()
-        fetcher.fetch(TAG, str(self.output), [BUNDLE])
-        for name, data in bundle_files().items():
-            self.assertEqual(data, (self.output / BUNDLE / name).read_bytes())
-        self.assertEqual({"SHA256SUMS", "FINAL-BASELINE.json", "INVENTORY.json", ARCHIVE},
-                         {p.name for p in (self.output / "release").iterdir()})
-        # The check runs in the staging directory, which becomes the output only afterwards.
-        self.assertEqual([BUNDLE], [path.name for path in self.checked])
-        self.assertTrue(self.checked[0].parent.name.startswith(".output."))
-        self.assertFalse(os.path.lexists(self.checked[0]))
-
-    def test_fetches_every_bundle_by_default_and_each_selected_bundle_once(self):
-        self.release(bundles=fetcher.BUNDLES)
-        fetcher.fetch(TAG, str(self.output), [])
-        self.assertEqual(list(fetcher.BUNDLES), [path.name for path in self.checked])
-        for bundle in fetcher.BUNDLES:
-            self.assertEqual(bundle_files(bundle)["manifest.properties"],
-                             (self.output / bundle / "manifest.properties").read_bytes())
-        self.checked.clear()
-        fetcher.fetch(TAG, str(self.temporary / "second"), ["flink2-pb4", "flink1-pb3", "flink2-pb4"])
-        self.assertEqual(["flink2-pb4", "flink1-pb3"], [path.name for path in self.checked])
-        self.assertEqual({"release", "flink2-pb4", "flink1-pb3"},
-                         {p.name for p in (self.temporary / "second").iterdir()})
-
-    def test_rejects_altered_archive_byte(self):
-        self.release(altered=True)
-        self.rejected("Checksum mismatch: " + ARCHIVE)
-        self.assertEqual([], self.checked)
-
-    def test_rejects_altered_checksum_inventory_before_other_downloads(self):
-        release = self.release()
-        with open(release.root / "SHA256SUMS", "ab") as sums:
-            sums.write(b"\n")
-        self.rejected("does not match the pinned digest")
-        self.assertEqual([["SHA256SUMS"]], release.downloads)
-
-    def test_rejects_malformed_or_duplicate_checksum_lines(self):
-        release = self.release()
-        for lines, message in ((release.lines + [release.lines[0]], "Duplicate SHA256SUMS entry"),
-                               (release.lines + ["not a checksum"], "Malformed SHA256SUMS line")):
-            with self.subTest(message=message):
-                fetcher.RELEASES[TAG] = release.rewrite(lines)
-                self.rejected(message)
-
-    def test_rejects_missing_assets(self):
-        release = self.release()
-        (release.root / ARCHIVE).unlink()
-        self.rejected("Missing release asset: " + ARCHIVE)
-        (release.root / "SHA256SUMS").unlink()
-        self.rejected("gh release download failed")
-
-    def test_rejects_designation_that_does_not_select_the_archive(self):
-        def field(path, value):
-            def mutate(final, inventory):
-                target = final
-                for key in path[:-1]:
-                    target = target[key]
-                target[path[-1]] = value(target[path[-1]])
-            return mutate
-        cases = {
-            "format": (field(["format_version"], lambda _: 2), "does not designate " + TAG),
-            "milestone": (field(["milestone"], lambda _: "v0.0.9"), "does not designate " + TAG),
-            "final": (field(["milestone_final"], lambda _: "true"), "does not designate " + TAG),
-            "duplicate": (field(["bundles"], lambda b: b + b), "Duplicate bundle in FINAL-BASELINE.json"),
-            "absent": (field(["bundles"], lambda _: []), "does not record bundle " + BUNDLE),
-            "name": (field(["bundles", 0, "asset", "file"], lambda _: "renamed.tar.gz"), "Unexpected asset name"),
-            "checksum": (field(["bundles", 0, "asset", "sha256"], lambda _: "0" * 64),
-                         "FINAL-BASELINE.json and SHA256SUMS disagree"),
-            "size": (field(["bundles", 0, "asset", "bytes"], lambda size: size + 1), "Size mismatch: " + ARCHIVE),
-        }
-        for case, (mutate, message) in cases.items():
-            with self.subTest(case=case):
-                self.release(mutate=mutate)
-                self.rejected(message)
-
-    def test_rejects_each_disagreement_between_designation_and_inventory(self):
-        def bundle(key, value):
-            def mutate(final, inventory):
-                record = final["bundles"][0]
-                target = record["manifest"] if key in record["manifest"] else record
-                target[key] = value(target[key])
-            return mutate
-        for key, value in (("file_count", lambda n: n + 1), ("uncompressed_bytes", lambda n: n + 1),
-                           ("inventory_sha256", lambda _: "0" * 64), ("library.sha256", lambda _: "0" * 64),
-                           ("consumer.sha256", lambda _: "0" * 64)):
-            with self.subTest(key=key):
-                self.release(mutate=bundle(key, value))
-                self.rejected("FINAL-BASELINE.json and INVENTORY.json disagree on " + BUNDLE)
-
-    def test_rejects_inventory_paths_that_cannot_be_extracted_safely(self):
-        def entry(path, duplicate=False):
-            def mutate(final, inventory):
-                files = inventory[BUNDLE]
-                files.append(dict(files[0], path=path, bytes=files[0]["bytes"] + 1) if duplicate
-                             else dict(files[0], path=path))
-            return mutate
-        for mutate, message in ((entry("other/file"), "Inventory path outside bundle"),
-                                (entry(BUNDLE), "Inventory path outside bundle"),
-                                (entry(BUNDLE + "/../escape"), "Unsafe path"),
-                                (entry(BUNDLE + "/SHA256SUMS", duplicate=True), "Duplicate inventory path"),
-                                (lambda final, inventory: inventory.pop(BUNDLE), "INVENTORY.json does not record")):
-            with self.subTest(message=message):
-                self.release(mutate=mutate)
-                self.rejected(message)
-
-    def test_rejects_archive_missing_an_inventory_file(self):
-        self.release(members=[m for m in default_members() if not m[0].endswith("tools.jar")])
-        self.rejected("Archive is missing inventory files: " + BUNDLE + "/tools.jar")
-
-    def test_rejects_member_whose_bytes_differ_from_inventory(self):
-        for data, message in ((b"TOOLS", "Checksum mismatch: "), (b"tools!", "Size mismatch: ")):
-            with self.subTest(message=message):
-                self.release(members=replaced(default_members(), "tools.jar", data))
-                self.rejected(message + BUNDLE + "/tools.jar")
-
-    def test_rejects_unsafe_and_unexpected_members_even_if_checksummed(self):
-        link = tarfile.TarInfo(BUNDLE + "/link")
-        link.type, link.linkname = tarfile.SYMTYPE, "../.."
-        hard = tarfile.TarInfo(BUNDLE + "/hard")
-        hard.type, hard.linkname = tarfile.LNKTYPE, BUNDLE + "/tools.jar"
-        fifo = tarfile.TarInfo(BUNDLE + "/fifo")
-        fifo.type = tarfile.FIFOTYPE
-        cases = {
-            "../escape": "Unsafe path",
-            "/absolute": "Unsafe path",
-            BUNDLE + "/../escape": "Unsafe path",
-            BUNDLE + "//double": "Unsafe path",
-            "other/file": "Archive member outside bundle",
-            BUNDLE + "/extra": "Unexpected or duplicate archive member",
-            BUNDLE + "/library.jar": "Unexpected or duplicate archive member",
-            link: "Unsupported archive member type",
-            hard: "Unsupported archive member type",
-            fifo: "Unsupported archive member type",
-        }
-        for member, message in cases.items():
-            with self.subTest(member=getattr(member, "name", member)):
-                # A payload behind the link would land outside the output if links were followed.
-                self.release(members=default_members() + [(member, b"x"), (BUNDLE + "/link/escape", b"x")])
-                self.rejected(message)
-                self.assertFalse((self.temporary / "escape").exists())
-
-    def test_rejects_existing_destination_before_download(self):
-        release = self.release()
-        self.output.mkdir()
-        with self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.fetch(TAG, str(self.output), [BUNDLE])
-        self.assertIn("Output already exists", str(raised.exception))
-        self.assertEqual([], release.downloads)
-        self.assertEqual([], list(self.output.iterdir()))
-
-    def test_does_not_take_over_a_destination_created_during_fetch(self):
-        self.release()
-        with patch.object(fetcher, "baseline_check", lambda bundle: self.output.mkdir()):
-            with self.assertRaises(fetcher.Rejected) as raised:
-                fetcher.fetch(TAG, str(self.output), [BUNDLE])
-        self.assertIn("Output appeared during fetch", str(raised.exception))
-        self.assertEqual([], list(self.output.iterdir()))
-        self.assertEqual(["output"], [p.name for p in self.temporary.iterdir() if p.name != "release"])
-
-    def test_releases_the_claimed_destination_when_the_final_rename_fails(self):
-        self.release()
-        def fail(source, target):
-            raise OSError("synthetic rename failure")
-        with patch.object(fetcher.os, "rename", fail), self.assertRaises(OSError):
-            fetcher.fetch(TAG, str(self.output), [BUNDLE])
-        self.assertFalse(os.path.lexists(self.output))
-        self.assertEqual([], [p.name for p in self.temporary.iterdir() if p.name.startswith(".")])
-
-    def test_rejects_destination_and_cache_inside_repository(self):
-        release = self.release()
-        repository = self.temporary / "Repository"
-        (repository / "target").mkdir(parents=True)
-        (self.temporary / "link").symlink_to(repository)
-        self.stack.enter_context(patch.object(fetcher, "ROOT", repository))
-        cases = [(str(repository), None), (str(repository / "target" / "new"), None),
-                 (str(self.temporary / "link" / "new"), None), (str(self.output), str(repository / "cache"))]
-        variant = self.temporary / "REPOSITORY"
-        if variant.exists():
-            # A case-insensitive filesystem resolves the variant to the same checkout.
-            cases.append((str(variant / "new"), None))
-        for output, cache in cases:
-            with self.subTest(output=output, cache=cache), self.assertRaises(fetcher.Rejected) as raised:
-                fetcher.fetch(TAG, output, [BUNDLE], cache)
-            self.assertIn("must be outside the repository", str(raised.exception))
-        self.assertEqual(["target"], [p.name for p in repository.iterdir()])
-        self.assertEqual([], release.downloads)
-
-    def test_rejects_unknown_tag_and_bundle(self):
-        self.release()
-        for tag, bundles, message in (("v9.9.9", [BUNDLE], "No pinned retained baseline"),
-                                      (TAG, ["flink3-pb5"], "Unknown bundle")):
-            with self.subTest(tag=tag), self.assertRaises(fetcher.Rejected) as raised:
-                fetcher.fetch(tag, str(self.output), bundles)
-            self.assertIn(message, str(raised.exception))
-
-    def test_failed_bundle_check_leaves_no_output(self):
-        self.release()
-        def fail(bundle):
-            raise fetcher.Rejected("baseline-check failed for " + bundle.name)
-        with patch.object(fetcher, "baseline_check", fail):
-            self.rejected("baseline-check failed for " + BUNDLE)
-
-    def test_reuses_verified_cached_archive(self):
-        release = self.release()
-        cache = self.temporary / "cache"
-        fetcher.fetch(TAG, str(self.output), [BUNDLE], str(cache))
-        self.assertEqual([ARCHIVE], [p.name for p in cache.iterdir()])
-        self.assertNotIn(ARCHIVE, [p.name for p in (self.output / "release").iterdir()])
-        release.downloads.clear()
-        fetcher.fetch(TAG, str(self.temporary / "second"), [BUNDLE], str(cache))
-        self.assertTrue(all(ARCHIVE not in names for names in release.downloads))
-        self.assertEqual(b"tools", (self.temporary / "second" / BUNDLE / "tools.jar").read_bytes())
-
-    def test_restored_cache_without_its_archive_fails_instead_of_downloading(self):
-        release = self.release()
-        cache = self.temporary / "cache"
-        cache.mkdir()
-        with self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.fetch(TAG, str(self.output), [BUNDLE], str(cache), restored=True)
-        self.assertIn("Restored archive cache lacks " + ARCHIVE, str(raised.exception))
-        self.assertTrue(all(ARCHIVE not in names for names in release.downloads))
-        self.assertFalse(os.path.lexists(self.output))
-        with self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.fetch(TAG, str(self.output), [BUNDLE], None, restored=True)
-        self.assertIn("--restored requires --archives", str(raised.exception))
-
-    def test_does_not_cache_an_altered_download(self):
-        self.release(altered=True)
-        cache = self.temporary / "cache"
-        self.rejected("Checksum mismatch: " + ARCHIVE, cache=str(cache))
-        self.assertEqual([], list(cache.iterdir()))
-
-    def test_rejects_corrupted_or_linked_cached_archive_without_replacing_it(self):
-        release = self.release()
-        cache = self.temporary / "cache"
-        corrupted = write(cache / ARCHIVE, b"corrupted")
-        message = self.rejected("Size mismatch: " + ARCHIVE, cache=str(cache))
-        self.assertIn("remove the cached copy", message)
-        self.assertEqual(corrupted, (cache / ARCHIVE).read_bytes())
-        (cache / ARCHIVE).unlink()
-        (cache / ARCHIVE).symlink_to(release.root / ARCHIVE)
-        self.rejected("Missing release asset: " + ARCHIVE, cache=str(cache))
-        self.assertTrue((cache / ARCHIVE).is_symlink())
+@pytest.fixture
+def output(tmp_path):
+    return tmp_path / "output"
 
 
-class CommandTest(unittest.TestCase):
-
-    def run_result(self, returncode, calls):
-        def run(command, **options):
-            calls.append((command, options))
-            return type("Result", (), {"returncode": returncode})()
-        return patch.object(fetcher.subprocess, "run", run)
-
-    def test_download_reads_the_project_release(self):
-        calls = []
-        with self.run_result(0, calls):
-            fetcher.download(TAG, ["SHA256SUMS", ARCHIVE], Path("/assets"))
-        self.assertEqual(["gh", "release", "download", TAG, "--repo", "flink-gcp/flink-datastream-protobuf",
-                          "--dir", "/assets", "--pattern", "SHA256SUMS", "--pattern", ARCHIVE], calls[0][0])
-        with self.run_result(1, []), self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.download(TAG, ["SHA256SUMS"], Path("/assets"))
-        self.assertIn("gh release download failed for " + TAG, str(raised.exception))
-
-    def test_bundle_check_runs_without_download_credentials(self):
-        calls = []
-        environment = {"PATH": "/bin", "GH_TOKEN": "a", "GITHUB_TOKEN": "b",
-                       "GH_ENTERPRISE_TOKEN": "c", "GITHUB_ENTERPRISE_TOKEN": "d"}
-        with patch.dict(os.environ, environment, clear=True), self.run_result(0, calls):
-            fetcher.baseline_check(Path("/bundles") / BUNDLE)
-        command, options = calls[0]
-        self.assertEqual(["java", "-cp", "/bundles/" + BUNDLE + "/tools.jar",
-                          "io.github.flink.gcp.protobuf.BaselineTool", "check", "/bundles/" + BUNDLE], command)
-        self.assertEqual({"PATH": "/bin"}, options["env"])
-        with self.run_result(1, []), self.assertRaises(fetcher.Rejected) as raised:
-            fetcher.baseline_check(Path("/bundles") / BUNDLE)
-        self.assertIn("baseline-check failed for " + BUNDLE, str(raised.exception))
-
-    def test_asset_prints_pinned_archive_checksum(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            release = Release(Path(temporary))
-            output = io.StringIO()
-            with patch.object(fetcher, "download", release.download), \
-                    patch.dict(fetcher.RELEASES, {TAG: release.pin}, clear=True), \
-                    contextlib.redirect_stdout(output):
-                self.assertEqual(0, fetcher.main(["asset", TAG, BUNDLE]))
-                with self.assertRaises(fetcher.Rejected) as raised:
-                    fetcher.asset(TAG, "flink2-pb3")
-            recorded = json.loads((Path(temporary) / "FINAL-BASELINE.json").read_text())
-            self.assertEqual(recorded["bundles"][0]["asset"]["sha256"] + "\n", output.getvalue())
-            self.assertIn("No SHA256SUMS entry for v0.1.0-flink2-pb3.tar.gz", str(raised.exception))
-
-    def test_main_reports_rejection_and_malformed_input(self):
-        for failure, message in ((None, "baseline-fetch: No pinned retained baseline for tag v9.9.9"),
-                                 (json.JSONDecodeError("bad", "", 0), "baseline-fetch: unreadable or malformed"),
-                                 (tarfile.ReadError("bad"), "baseline-fetch: unreadable or malformed")):
-            with self.subTest(message=message):
-                error = io.StringIO()
-                with contextlib.ExitStack() as stack:
-                    if failure is not None:
-                        stack.enter_context(patch.object(fetcher, "fetch", side_effect=failure))
-                    stack.enter_context(contextlib.redirect_stderr(error))
-                    self.assertEqual(1, fetcher.main(["fetch", "v9.9.9", "/nonexistent/output"]))
-                self.assertIn(message, error.getvalue())
+@pytest.fixture
+def checked():
+    return []
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.fixture
+def release(tmp_path, checked, monkeypatch):
+    """Return a factory that serves a fresh Release to the fetcher and records each checked bundle."""
+
+    def create(**options):
+        created = Release(tmp_path / "release", **options)
+        monkeypatch.setattr(fetcher, "download", created.download)
+        monkeypatch.setattr(fetcher, "baseline_check", checked.append)
+        monkeypatch.setattr(fetcher, "RELEASES", {TAG: created.pin})
+        return created
+
+    return create
+
+
+@pytest.fixture
+def rejected(tmp_path, output):
+    """Return a check that the fetch is rejected with the message and leaves no output or staging."""
+
+    def check(message, bundles=(BUNDLE,), cache=None):
+        with pytest.raises(fetcher.Rejected) as raised:
+            fetcher.fetch(TAG, str(output), list(bundles), cache)
+        assert message in str(raised.value)
+        assert not os.path.lexists(output)
+        assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+        return str(raised.value)
+
+    return check
+
+
+def test_extracts_verified_bundle_and_keeps_release_inventory(release, output, checked):
+    release()
+    fetcher.fetch(TAG, str(output), [BUNDLE])
+    for name, data in bundle_files().items():
+        assert (output / BUNDLE / name).read_bytes() == data
+    assert {p.name for p in (output / "release").iterdir()} == {"SHA256SUMS", "FINAL-BASELINE.json", "INVENTORY.json",
+                                                                ARCHIVE}
+    # The check runs in the staging directory, which becomes the output only afterwards.
+    assert [path.name for path in checked] == [BUNDLE]
+    assert checked[0].parent.name.startswith(".output.")
+    assert not os.path.lexists(checked[0])
+
+
+def test_fetches_every_bundle_by_default_and_each_selected_bundle_once(release, tmp_path, output, checked):
+    release(bundles=fetcher.BUNDLES)
+    fetcher.fetch(TAG, str(output), [])
+    assert [path.name for path in checked] == list(fetcher.BUNDLES)
+    for bundle in fetcher.BUNDLES:
+        assert (output / bundle / "manifest.properties").read_bytes() == bundle_files(bundle)["manifest.properties"]
+    checked.clear()
+    fetcher.fetch(TAG, str(tmp_path / "second"), ["flink2-pb4", "flink1-pb3", "flink2-pb4"])
+    assert [path.name for path in checked] == ["flink2-pb4", "flink1-pb3"]
+    assert {p.name for p in (tmp_path / "second").iterdir()} == {"release", "flink2-pb4", "flink1-pb3"}
+
+
+def test_rejects_altered_archive_byte(release, rejected, checked):
+    release(altered=True)
+    rejected("Checksum mismatch: " + ARCHIVE)
+    assert checked == []
+
+
+def test_rejects_altered_checksum_inventory_before_other_downloads(release, rejected):
+    created = release()
+    with open(created.root / "SHA256SUMS", "ab") as sums:
+        sums.write(b"\n")
+    rejected("does not match the pinned digest")
+    assert created.downloads == [["SHA256SUMS"]]
+
+
+@pytest.mark.parametrize(("lines", "message"), [
+    (lambda lines: lines + [lines[0]], "Duplicate SHA256SUMS entry"),
+    (lambda lines: lines + ["not a checksum"], "Malformed SHA256SUMS line"),
+], ids=["duplicate", "malformed"])
+def test_rejects_malformed_or_duplicate_checksum_lines(release, rejected, monkeypatch, lines, message):
+    created = release()
+    monkeypatch.setitem(fetcher.RELEASES, TAG, created.rewrite(lines(created.lines)))
+    rejected(message)
+
+
+def test_rejects_missing_assets(release, rejected):
+    created = release()
+    (created.root / ARCHIVE).unlink()
+    rejected("Missing release asset: " + ARCHIVE)
+    (created.root / "SHA256SUMS").unlink()
+    rejected("gh release download failed")
+
+
+def final_field(path, value):
+    def mutate(final, inventory):
+        target = final
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value(target[path[-1]])
+    return mutate
+
+
+@pytest.mark.parametrize(("mutate", "message"), [
+    (final_field(["format_version"], lambda _: 2), "does not designate " + TAG),
+    (final_field(["milestone"], lambda _: "v0.0.9"), "does not designate " + TAG),
+    (final_field(["milestone_final"], lambda _: "true"), "does not designate " + TAG),
+    (final_field(["bundles"], lambda b: b + b), "Duplicate bundle in FINAL-BASELINE.json"),
+    (final_field(["bundles"], lambda _: []), "does not record bundle " + BUNDLE),
+    (final_field(["bundles", 0, "asset", "file"], lambda _: "renamed.tar.gz"), "Unexpected asset name"),
+    (final_field(["bundles", 0, "asset", "sha256"], lambda _: "0" * 64),
+     "FINAL-BASELINE.json and SHA256SUMS disagree"),
+    (final_field(["bundles", 0, "asset", "bytes"], lambda size: size + 1), "Size mismatch: " + ARCHIVE),
+], ids=["format", "milestone", "final", "duplicate", "absent", "name", "checksum", "size"])
+def test_rejects_designation_that_does_not_select_the_archive(release, rejected, mutate, message):
+    release(mutate=mutate)
+    rejected(message)
+
+
+def bundle_record(key, value):
+    def mutate(final, inventory):
+        record = final["bundles"][0]
+        target = record["manifest"] if key in record["manifest"] else record
+        target[key] = value(target[key])
+    return mutate
+
+
+@pytest.mark.parametrize(("key", "value"), [
+    ("file_count", lambda n: n + 1),
+    ("uncompressed_bytes", lambda n: n + 1),
+    ("inventory_sha256", lambda _: "0" * 64),
+    ("library.sha256", lambda _: "0" * 64),
+    ("consumer.sha256", lambda _: "0" * 64),
+], ids=["file_count", "uncompressed_bytes", "inventory_sha256", "library.sha256", "consumer.sha256"])
+def test_rejects_each_disagreement_between_designation_and_inventory(release, rejected, key, value):
+    release(mutate=bundle_record(key, value))
+    rejected("FINAL-BASELINE.json and INVENTORY.json disagree on " + BUNDLE)
+
+
+def inventory_entry(path, duplicate=False):
+    def mutate(final, inventory):
+        files = inventory[BUNDLE]
+        files.append(dict(files[0], path=path, bytes=files[0]["bytes"] + 1) if duplicate
+                     else dict(files[0], path=path))
+    return mutate
+
+
+@pytest.mark.parametrize(("mutate", "message"), [
+    (inventory_entry("other/file"), "Inventory path outside bundle"),
+    (inventory_entry(BUNDLE), "Inventory path outside bundle"),
+    (inventory_entry(BUNDLE + "/../escape"), "Unsafe path"),
+    (inventory_entry(BUNDLE + "/SHA256SUMS", duplicate=True), "Duplicate inventory path"),
+    (lambda final, inventory: inventory.pop(BUNDLE), "INVENTORY.json does not record"),
+], ids=["other-directory", "bundle-directory", "parent", "duplicate", "absent"])
+def test_rejects_inventory_paths_that_cannot_be_extracted_safely(release, rejected, mutate, message):
+    release(mutate=mutate)
+    rejected(message)
+
+
+def test_rejects_archive_missing_an_inventory_file(release, rejected):
+    release(members=[m for m in default_members() if not m[0].endswith("tools.jar")])
+    rejected("Archive is missing inventory files: " + BUNDLE + "/tools.jar")
+
+
+@pytest.mark.parametrize(("data", "message"), [(b"TOOLS", "Checksum mismatch: "), (b"tools!", "Size mismatch: ")],
+                         ids=["checksum", "size"])
+def test_rejects_member_whose_bytes_differ_from_inventory(release, rejected, data, message):
+    release(members=replaced(default_members(), "tools.jar", data))
+    rejected(message + BUNDLE + "/tools.jar")
+
+
+def special_member(name, kind, linkname=""):
+    member = tarfile.TarInfo(BUNDLE + "/" + name)
+    member.type, member.linkname = kind, linkname
+    return member
+
+
+@pytest.mark.parametrize(("member", "message"), [
+    ("../escape", "Unsafe path"),
+    ("/absolute", "Unsafe path"),
+    (BUNDLE + "/../escape", "Unsafe path"),
+    (BUNDLE + "//double", "Unsafe path"),
+    ("other/file", "Archive member outside bundle"),
+    (BUNDLE + "/extra", "Unexpected or duplicate archive member"),
+    (BUNDLE + "/library.jar", "Unexpected or duplicate archive member"),
+    (special_member("link", tarfile.SYMTYPE, "../.."), "Unsupported archive member type"),
+    (special_member("hard", tarfile.LNKTYPE, BUNDLE + "/tools.jar"), "Unsupported archive member type"),
+    (special_member("fifo", tarfile.FIFOTYPE), "Unsupported archive member type"),
+], ids=["parent", "absolute", "bundle-parent", "double-slash", "other-directory", "extra", "duplicate", "symlink",
+        "hardlink", "fifo"])
+def test_rejects_unsafe_and_unexpected_members_even_if_checksummed(release, rejected, tmp_path, member, message):
+    # A payload behind the link would land outside the output if links were followed.
+    release(members=default_members() + [(member, b"x"), (BUNDLE + "/link/escape", b"x")])
+    rejected(message)
+    assert not (tmp_path / "escape").exists()
+
+
+def test_rejects_existing_destination_before_download(release, output):
+    created = release()
+    output.mkdir()
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(TAG, str(output), [BUNDLE])
+    assert "Output already exists" in str(raised.value)
+    assert created.downloads == []
+    assert list(output.iterdir()) == []
+
+
+def test_does_not_take_over_a_destination_created_during_fetch(release, tmp_path, output, monkeypatch):
+    release()
+    monkeypatch.setattr(fetcher, "baseline_check", lambda bundle: output.mkdir())
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(TAG, str(output), [BUNDLE])
+    assert "Output appeared during fetch" in str(raised.value)
+    assert list(output.iterdir()) == []
+    assert [p.name for p in tmp_path.iterdir() if p.name != "release"] == ["output"]
+
+
+def test_releases_the_claimed_destination_when_the_final_rename_fails(release, tmp_path, output, monkeypatch):
+    release()
+    def fail(source, target):
+        raise OSError("synthetic rename failure")
+    # os.rename is global, so restore it before the assertions.
+    with monkeypatch.context() as patched, pytest.raises(OSError):
+        patched.setattr(fetcher.os, "rename", fail)
+        fetcher.fetch(TAG, str(output), [BUNDLE])
+    assert not os.path.lexists(output)
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+
+
+@pytest.mark.parametrize(("destination", "cache"), [
+    ("Repository", None),
+    ("Repository/target/new", None),
+    ("link/new", None),
+    ("output", "Repository/cache"),
+    ("REPOSITORY/new", None),
+], ids=["repository", "target", "link", "cache", "case-variant"])
+def test_rejects_destination_and_cache_inside_repository(release, tmp_path, monkeypatch, destination, cache):
+    created = release()
+    repository = tmp_path / "Repository"
+    (repository / "target").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(repository)
+    monkeypatch.setattr(fetcher, "ROOT", repository)
+    if destination.startswith("REPOSITORY") and not (tmp_path / "REPOSITORY").exists():
+        # Only a case-insensitive filesystem resolves the variant to the same checkout.
+        pytest.skip("case-sensitive filesystem: the variant names a different directory")
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(TAG, str(tmp_path / destination), [BUNDLE], cache and str(tmp_path / cache))
+    assert "must be outside the repository" in str(raised.value)
+    assert [p.name for p in repository.iterdir()] == ["target"]
+    assert created.downloads == []
+
+
+@pytest.mark.parametrize(("tag", "bundles", "message"), [
+    ("v9.9.9", [BUNDLE], "No pinned retained baseline"),
+    (TAG, ["flink3-pb5"], "Unknown bundle"),
+], ids=["tag", "bundle"])
+def test_rejects_unknown_tag_and_bundle(release, output, tag, bundles, message):
+    release()
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(tag, str(output), bundles)
+    assert message in str(raised.value)
+
+
+def test_failed_bundle_check_leaves_no_output(release, rejected, monkeypatch):
+    release()
+    def fail(bundle):
+        raise fetcher.Rejected("baseline-check failed for " + bundle.name)
+    monkeypatch.setattr(fetcher, "baseline_check", fail)
+    rejected("baseline-check failed for " + BUNDLE)
+
+
+def test_reuses_verified_cached_archive(release, tmp_path, output):
+    created = release()
+    cache = tmp_path / "cache"
+    fetcher.fetch(TAG, str(output), [BUNDLE], str(cache))
+    assert [p.name for p in cache.iterdir()] == [ARCHIVE]
+    assert ARCHIVE not in [p.name for p in (output / "release").iterdir()]
+    created.downloads.clear()
+    fetcher.fetch(TAG, str(tmp_path / "second"), [BUNDLE], str(cache))
+    assert all(ARCHIVE not in names for names in created.downloads)
+    assert (tmp_path / "second" / BUNDLE / "tools.jar").read_bytes() == b"tools"
+
+
+def test_restored_cache_without_its_archive_fails_instead_of_downloading(release, tmp_path, output):
+    created = release()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(TAG, str(output), [BUNDLE], str(cache), restored=True)
+    assert "Restored archive cache lacks " + ARCHIVE in str(raised.value)
+    assert all(ARCHIVE not in names for names in created.downloads)
+    assert not os.path.lexists(output)
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.fetch(TAG, str(output), [BUNDLE], None, restored=True)
+    assert "--restored requires --archives" in str(raised.value)
+
+
+def test_does_not_cache_an_altered_download(release, rejected, tmp_path):
+    release(altered=True)
+    cache = tmp_path / "cache"
+    rejected("Checksum mismatch: " + ARCHIVE, cache=str(cache))
+    assert list(cache.iterdir()) == []
+
+
+def test_rejects_corrupted_or_linked_cached_archive_without_replacing_it(release, rejected, tmp_path):
+    created = release()
+    cache = tmp_path / "cache"
+    corrupted = write(cache / ARCHIVE, b"corrupted")
+    message = rejected("Size mismatch: " + ARCHIVE, cache=str(cache))
+    assert "remove the cached copy" in message
+    assert (cache / ARCHIVE).read_bytes() == corrupted
+    (cache / ARCHIVE).unlink()
+    (cache / ARCHIVE).symlink_to(created.root / ARCHIVE)
+    rejected("Missing release asset: " + ARCHIVE, cache=str(cache))
+    assert (cache / ARCHIVE).is_symlink()
+
+
+def run_result(monkeypatch, returncode):
+    """Replace subprocess.run with a stand-in that returns the code, and return its recorded calls."""
+    calls = []
+    def run(command, **options):
+        calls.append((command, options))
+        return type("Result", (), {"returncode": returncode})()
+    monkeypatch.setattr(fetcher.subprocess, "run", run)
+    return calls
+
+
+def test_download_reads_the_project_release(monkeypatch):
+    calls = run_result(monkeypatch, 0)
+    fetcher.download(TAG, ["SHA256SUMS", ARCHIVE], Path("/assets"))
+    assert calls[0][0] == ["gh", "release", "download", TAG, "--repo", "flink-gcp/flink-datastream-protobuf",
+                           "--dir", "/assets", "--pattern", "SHA256SUMS", "--pattern", ARCHIVE]
+    run_result(monkeypatch, 1)
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.download(TAG, ["SHA256SUMS"], Path("/assets"))
+    assert "gh release download failed for " + TAG in str(raised.value)
+
+
+def test_bundle_check_runs_without_download_credentials(monkeypatch):
+    calls = run_result(monkeypatch, 0)
+    for key in list(os.environ):
+        monkeypatch.delenv(key)
+    for key, value in {"PATH": "/bin", "GH_TOKEN": "a", "GITHUB_TOKEN": "b",
+                       "GH_ENTERPRISE_TOKEN": "c", "GITHUB_ENTERPRISE_TOKEN": "d"}.items():
+        monkeypatch.setenv(key, value)
+    fetcher.baseline_check(Path("/bundles") / BUNDLE)
+    command, options = calls[0]
+    assert command == ["java", "-cp", "/bundles/" + BUNDLE + "/tools.jar",
+                       "io.github.flink.gcp.protobuf.BaselineTool", "check", "/bundles/" + BUNDLE]
+    assert options["env"] == {"PATH": "/bin"}
+    run_result(monkeypatch, 1)
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.baseline_check(Path("/bundles") / BUNDLE)
+    assert "baseline-check failed for " + BUNDLE in str(raised.value)
+
+
+def test_asset_prints_pinned_archive_checksum(tmp_path, monkeypatch, capsys):
+    release = Release(tmp_path)
+    monkeypatch.setattr(fetcher, "download", release.download)
+    monkeypatch.setattr(fetcher, "RELEASES", {TAG: release.pin})
+    assert fetcher.main(["asset", TAG, BUNDLE]) == 0
+    with pytest.raises(fetcher.Rejected) as raised:
+        fetcher.asset(TAG, "flink2-pb3")
+    recorded = json.loads((tmp_path / "FINAL-BASELINE.json").read_text())
+    assert capsys.readouterr().out == recorded["bundles"][0]["asset"]["sha256"] + "\n"
+    assert "No SHA256SUMS entry for v0.1.0-flink2-pb3.tar.gz" in str(raised.value)
+
+
+def raise_from_fetch(failure):
+    def fetch(*arguments, **options):
+        raise failure
+    return fetch
+
+
+@pytest.mark.parametrize(("failure", "message"), [
+    (None, "baseline-fetch: No pinned retained baseline for tag v9.9.9"),
+    (json.JSONDecodeError("bad", "", 0), "baseline-fetch: unreadable or malformed"),
+    (tarfile.ReadError("bad"), "baseline-fetch: unreadable or malformed"),
+], ids=["rejected", "json", "tar"])
+def test_main_reports_rejection_and_malformed_input(monkeypatch, capsys, failure, message):
+    if failure is not None:
+        monkeypatch.setattr(fetcher, "fetch", raise_from_fetch(failure))
+    assert fetcher.main(["fetch", "v9.9.9", "/nonexistent/output"]) == 1
+    assert message in capsys.readouterr().err

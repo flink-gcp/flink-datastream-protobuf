@@ -54,6 +54,7 @@ CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on F
 - Use JUnit 5, AssertJ, and handwritten test doubles. Do not add Guava, Mockito, PowerMock, Lombok, or AutoValue.
 - Keep TypeInfoFactory registry controls in separate test JVMs. Native integration tests disable generic types and must not rely on `--add-opens`.
 - Keep repository Python tools on the standard library and run them with `uv run --locked --isolated --no-dev python`, as the justfile `python` variable does; add test-only packages to the root uv project's `dev` group.
+- Write repository Python tests as plain pytest functions with fixtures, `monkeypatch`, and `pytest.mark.parametrize`, not `unittest` test cases, subtests, or mocks.
 - Keep generated code under target. Do not promote the probe serializer or its wire format into a public API.
 - Keep current behavior in user documentation, decisions and alternatives in ADRs, and imperative development rules here or in skills.
 - Update documentation with behavior/API changes. Distinguish planned behavior from measured behavior; support claims with pinned source or tests.

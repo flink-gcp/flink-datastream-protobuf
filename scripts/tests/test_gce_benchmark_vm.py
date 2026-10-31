@@ -29,10 +29,10 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
-import unittest
 import urllib.parse
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import gce_benchmark as tool
@@ -57,6 +57,10 @@ TIMEOUT = 60
 STUBS = Path(__file__).with_name("gce-benchmark-vm-stubs.sh")
 # Commands that the runner finds on its own PATH; the benchmark user's stubs are mise, Java, and just.
 RUNNER_COMMANDS = ("runuser", "pkill", "apt-get", "useradd", "chown", "mv", "sleep")
+
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="the VM runner needs Linux with Bash 4.4 or later")
+# After one run times out, later tests fail at once, so a hanging runner costs one timeout, not one per test.
+timed_out = False
 
 
 class Metadata(http.server.ThreadingHTTPServer):
@@ -300,215 +304,234 @@ class RunnerTimeout(AssertionError):
     pass
 
 
-@unittest.skipUnless(sys.platform == "linux", "the VM runner needs Linux with Bash 4.4 or later")
-class GceBenchmarkVmTest(unittest.TestCase):
-    # After one run times out, later tests fail at once, so a hanging runner costs one timeout, not one per test.
-    timed_out = False
-
-    @classmethod
-    def setUpClass(cls):
-        cls.temporary = tempfile.TemporaryDirectory()
-        cls.source = Source(Path(cls.temporary.name))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.temporary.cleanup()
-
-    def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.count = 0
-
-    def vm(self, **options):
-        if GceBenchmarkVmTest.timed_out:
-            self.fail("An earlier runner timed out; see that failure")
-        self.count += 1
-        directory = Path(self.directory.name) / str(self.count)
-        directory.mkdir()
-        return VirtualMachine(directory, self.source, **options)
-
-    def finished(self, vm, status):
-        try:
-            code = vm.run()
-        except RunnerTimeout:
-            GceBenchmarkVmTest.timed_out = True
-            raise
-        self.assertEqual((vm.status(), vm.events()[-1], code == 0, vm.calls("timed out")),
-                         (status, status, status == "SUCCEEDED", []), vm.report())
-        return vm
-
-    def interrupted(self, vm):
-        self.finished(vm, INTERRUPTED)
-        self.assertNotIn("FAILED", " ".join(vm.events()), "A later failure replaced the interruption")
-        events = vm.events()
-        self.assertNotIn((INTERRUPTED, INTERRUPTED), set(zip(events, events[1:])), vm.report())
-        self.assertEqual(tool.maintenance_events(vm.state)[-1].split()[-1], EVENT, vm.report())
-        return vm
-
-    def test_successful_run_retains_every_result_file_and_the_manifest(self):
-        vm = self.finished(self.vm(variants=("baseline", "candidate"), patches={"candidate": "candidate"}),
-                           "SUCCEEDED")
-        self.assertEqual(vm.events(), ["PREPARING", "RUNNING baseline", "RUNNING candidate", "SUCCEEDED"])
-        self.assertEqual(vm.calls("just"), [
-            "just benchmark-tools baseline source", "just benchmark-build baseline source",
-            "just benchmark-measure baseline source",
-            "just benchmark-build candidate candidate", "just benchmark-measure candidate candidate"])
-        self.assertEqual(tool.maintenance_events(vm.state), [])
-        self.assertEqual(tool.uncontrolled([vm.result("baseline"), vm.result("candidate")]), [])
-        chown = vm.calls("chown")
-        self.assertIn("chown -R root: " + str(vm.input) + " " + str(vm.state), chown)
-        runner = hashlib.sha256(RUNNER.read_bytes()).hexdigest()
-        patch = hashlib.sha256(self.source.patches["candidate"].read_bytes()).hexdigest()
-        for variant, patch_hash in (("baseline", ""), ("candidate", patch)):
-            with self.subTest(variant=variant):
-                result = vm.result(variant)
-                self.assertTrue(RESULT_FILES <= {path.name for path in result.iterdir()})
-                self.assertTrue((result / "benchmark/result.json").is_file())
-                self.assertEqual(vm.gate(variant)[-1].split()[1:3], ["gate", "passed"])
-                self.assertEqual(vm.gate(variant, "load-after-build")[-1].split()[1:3], ["gate", "passed"])
-                self.assertIn("chown benchmark: " + str(result), chown)
-                manifest = tool.manifest(result)
-                self.assertEqual({key: manifest[key] for key in (
-                    "run.id", "variant", "gce.zone", "gce.instance", "gce.machine.type", "gce.image",
-                    "gce.scheduling", "os.release", "cpu.model", "memory.kib", "java.version",
-                    "java.tool", "just.version", "thrift.version", "runner.sha256",
-                    "variant.patch.sha256", "boot.id", "source.revision", "source.base")}, {
-                    "run.id": "offline-1", "variant": variant, "gce.zone": "asia-northeast1-b",
-                    "gce.instance": "offline-pb4", "gce.machine.type": "c3-standard-8",
-                    "gce.image": "ubuntu-2404-noble-amd64-v20261001", "gce.scheduling": "TERMINATE",
-                    "os.release": "Ubuntu 24.04.3 LTS", "cpu.model": "Intel(R) Xeon(R) Platinum 8481C",
-                    "memory.kib": "32864356", "java.version": 'openjdk version "17.0.16" 2025-07-15',
-                    "java.tool": TOOLS["java"], "just.version": "just 1.40.0",
-                    "thrift.version": "Thrift version 0.25.0", "runner.sha256": runner,
-                    "variant.patch.sha256": patch_hash, "boot.id": "boot-1",
-                    "source.revision": self.source.revision, "source.base": self.source.base})
-                self.assertEqual((result / "source-base.txt").read_text().strip(), self.source.base)
-        # The retained source patch includes the planned commit and the files that a variant adds.
-        baseline = (vm.result("baseline") / "measurement-source.patch").read_text()
-        candidate = (vm.result("candidate") / "measurement-source.patch").read_text()
-        self.assertIn("+planned", baseline)
-        self.assertNotIn("added.txt", baseline)
-        self.assertIn("+planned", candidate)
-        self.assertIn("+added", candidate)
-        self.assertIn("+candidate", candidate)
-
-    def test_gate_resets_on_load_and_swap_and_waits_for_a_low_sample_to_leave_the_window(self):
-        # In the first gate, a load of 10, a swap-out, and a swap-in above 1 MiB each follow nine good
-        # samples, so only a reset delays the pass to the 40th sample; a 1 MiB swap-in is still good.
-        good = [(99, 0.5, 0, 0)] * 9
-        samples = good + [(99, 10.0, 0, 0)] + good + [(99, 0.5, 0, 1)] + good + [(99, 0.5, 257, 0)]
-        samples += good + [(99, 0.5, 256, 0)]
-        # In the second, an 84% sample keeps the gate closed until it leaves the window of ten.
-        samples += [(84, 0.5, 0, 0)] + good + [(99, 0.5, 0, 0)]
-        vm = self.finished(self.vm(samples=samples), "SUCCEEDED")
-        before = vm.gate("baseline")
-        self.assertEqual([line.split()[-1] for line in before[:40]],
-                         ["sample_ok=" + ("0" if index in (9, 19, 29) else "1") for index in range(40)])
-        self.assertIn("swapin_bytes=1048576", before[39])
-        self.assertEqual(before[40:], [before[40].split()[0] + " gate passed mean_idle=99 min_idle=99.00"])
-        after = vm.gate("baseline", "load-after-build")
-        self.assertEqual(len(after), 12)
-        self.assertEqual(after[11].split()[1:], ["gate", "passed", "mean_idle=99", "min_idle=99.00"])
-
-    def test_gate_passes_at_its_mean_and_minimum_boundaries(self):
-        # The first gate's first window averages 89.9; the second gate's averages 90 with a minimum of 85.
-        samples = [(89, 0.5, 0, 0)] * 9 + [(98, 0.5, 0, 0), (99, 0.5, 0, 0)]
-        samples += [(85, 0.5, 0, 0)] * 5 + [(95, 0.5, 0, 0)] * 5
-        vm = self.finished(self.vm(samples=samples), "SUCCEEDED")
-        before = vm.gate("baseline")
-        self.assertEqual(len(before), 12)
-        self.assertEqual(before[11].split()[1:3], ["gate", "passed"])
-        after = vm.gate("baseline", "load-after-build")
-        self.assertEqual(len(after), 11)
-        self.assertEqual(after[10].split()[1:], ["gate", "passed", "mean_idle=90", "min_idle=85.00"])
-
-    def test_gate_timeout_fails_the_run_before_building(self):
-        vm = self.finished(self.vm(settings="GATE_TIMEOUT_MINUTES=0\n"), "FAILED baseline")
-        self.assertEqual(vm.gate("baseline")[-1].split()[1:], ["gate", "timed", "out"])
-        self.assertEqual(vm.calls("just benchmark-build"), [])
-
-    def test_event_during_root_only_steps_stops_benchmark_work_launched_after_it(self):
-        # Preparation does not check between steps; the watcher must stop the mise install, which
-        # would otherwise block, possibly before the stub records its start.
-        vm = self.interrupted(self.vm(actions={"apt-get": "event", "mise-install": "block"}))
-        self.assertTrue((vm.state / "tools.log").is_file())
-        self.assertEqual(vm.calls("just"), [])
-        self.assertFalse(vm.results.exists() and any(vm.results.iterdir()))
-
-    def test_event_during_the_gate_stops_it_and_withholds_its_pass(self):
-        for observation in (1, 10):
-            with self.subTest(observation=observation):
-                vm = self.interrupted(self.vm(event_at=observation))
-                gate = vm.gate("baseline")
-                self.assertEqual(len(gate), observation)
-                self.assertTrue(all("sample_ok=1" in line for line in gate))
-                self.assertEqual(vm.calls("just benchmark-build"), [])
-
-    def test_event_during_a_benchmark_process_ends_the_run_at_the_next_step(self):
-        with self.subTest("the process returns"):
-            vm = self.interrupted(self.vm(actions={"benchmark-build": "event"}))
-            self.assertEqual(vm.calls("just benchmark-measure"), [])
-            self.assertFalse((vm.result("baseline") / "load-after-build.log").exists())
-        with self.subTest("the measurement returns"):
-            vm = self.interrupted(self.vm(actions={"benchmark-measure": "event"}))
-            self.assertTrue((vm.result("baseline") / "end-utc.txt").is_file())
-        with self.subTest("the runner stops the watcher before it records the interruption"):
-            vm = self.interrupted(self.vm(hold_watcher=True, actions={"benchmark-build": "event"}))
-            self.assertEqual(vm.events(), ["PREPARING", "RUNNING baseline", INTERRUPTED])
-        with self.subTest("a runner status update replaces the watcher's status file"):
-            vm = self.interrupted(self.vm(actions={"benchmark-build": "event-status-replaced"}))
-            self.assertEqual(vm.events(), ["PREPARING", "RUNNING baseline", INTERRUPTED])
-        with self.subTest("a runner status update follows the watcher's event"):
-            vm = self.interrupted(self.vm(actions={"benchmark-build": "event-logged-late"}))
-            self.assertEqual(vm.events(), ["PREPARING", "RUNNING baseline", INTERRUPTED, "RUNNING baseline",
-                                           INTERRUPTED])
-        with self.subTest("the process keeps running"):
-            vm = self.interrupted(self.vm(variants=("baseline", "candidate"),
-                                          actions={"benchmark-measure": "event-block"}))
-            self.assertFalse((vm.result("baseline") / "end-utc.txt").exists())
-            self.assertFalse(vm.result("candidate").exists())
-
-    def test_unavailable_metadata_requests_are_logged_and_retried(self):
-        # The first two requests fail, and so does the first held request after the third returns.
-        vm = self.vm(unavailable=(1, 2, 4), watched=4, actions={"apt-get": "watched"})
-        self.finished(vm, "SUCCEEDED")
-        log = (vm.state / "maintenance-events.log").read_text().splitlines()
-        self.assertEqual([line.split()[-1] for line in log], ["UNAVAILABLE", "UNAVAILABLE", "NONE", "UNAVAILABLE"])
-        self.assertEqual(tool.maintenance_events(vm.state), [])
-        requests = [path for path in vm.server.paths if path.startswith("/instance/maintenance-event")]
-        held = "/instance/maintenance-event?wait_for_change=true&last_etag=etag-1"
-        self.assertEqual(requests[:3], ["/instance/maintenance-event"] * 3)
-        self.assertEqual(set(requests[3:]), {held}, "A retry after a failed held request lost the ETag")
-
-    def test_failures_record_the_step_in_progress(self):
-        # Each case names the first call that the failure must prevent and a file it must leave.
-        cases = [
-            ("package index", {"actions": {"apt-get.update": "fail"}}, "FAILED prepare", "apt-get install", None),
-            ("package installation", {"actions": {"apt-get.install": "fail"}}, "FAILED prepare", "mise", None),
-            ("mise checksum", {"checksum": "0" * 64}, "FAILED prepare", "mise", None),
-            ("tool installation", {"actions": {"mise-install": "fail"}}, "FAILED prepare", "mise where", None),
-            ("checkout", {"variants": ("baseline", "candidate"), "patches": {"candidate": "broken"}},
-             "FAILED candidate", "just benchmark-build candidate", "baseline/end-utc.txt"),
-            ("Thrift build", {"actions": {"benchmark-tools": "fail"}}, "FAILED baseline", "just benchmark-build",
-             None),
-            ("metadata lookup", {"metadata": {key: value for key, value in METADATA.items() if key != "image"}},
-             "FAILED baseline", "just benchmark-build", None),
-            ("build", {"actions": {"benchmark-build": "fail"}}, "FAILED baseline", "just benchmark-measure",
-             "baseline/build.log"),
-            ("measurement", {"variants": ("baseline", "candidate"),
-                             "actions": {"benchmark-measure.baseline": "fail"}},
-             "FAILED baseline", "just benchmark-build candidate", "baseline/start-utc.txt"),
-            ("boot ID", {"variants": ("baseline", "candidate"), "actions": {"benchmark-measure": "reboot"}},
-             "FAILED baseline", "just benchmark-build candidate", "baseline/end-utc.txt"),
-        ]
-        for name, options, status, unreached, kept in cases:
-            with self.subTest(name):
-                vm = self.finished(self.vm(**options), status)
-                self.assertEqual(vm.calls(unreached), [], vm.report())
-                if kept:
-                    variant, file = kept.split("/")
-                    self.assertTrue((vm.result(variant) / file).is_file(), kept)
+@pytest.fixture(scope="module")
+def source(tmp_path_factory):
+    return Source(tmp_path_factory.mktemp("source"))
 
 
-if __name__ == "__main__":
-    unittest.main()
+def virtual_machine(directory, source, **options):
+    if timed_out:
+        pytest.fail("An earlier runner timed out; see that failure")
+    directory.mkdir()
+    return VirtualMachine(directory, source, **options)
+
+
+@pytest.fixture
+def new_vm(tmp_path, source):
+    """Return a factory of the test's VM."""
+    return lambda **options: virtual_machine(tmp_path / "vm", source, **options)
+
+
+def finished(vm, status):
+    global timed_out
+    try:
+        code = vm.run()
+    except RunnerTimeout:
+        timed_out = True
+        raise
+    assert (vm.status(), vm.events()[-1], code == 0, vm.calls("timed out")) == (
+        status, status, status == "SUCCEEDED", []), vm.report()
+    return vm
+
+
+def interrupted(vm):
+    finished(vm, INTERRUPTED)
+    assert "FAILED" not in " ".join(vm.events()), "A later failure replaced the interruption"
+    events = vm.events()
+    assert (INTERRUPTED, INTERRUPTED) not in set(zip(events, events[1:])), vm.report()
+    assert tool.maintenance_events(vm.state)[-1].split()[-1] == EVENT, vm.report()
+    return vm
+
+
+@pytest.fixture(scope="module")
+def successful_run(tmp_path_factory, source):
+    """Run two variants once; the tests below check the run and each variant's results."""
+    vm = virtual_machine(tmp_path_factory.mktemp("successful-run") / "vm", source,
+                         variants=("baseline", "candidate"), patches={"candidate": "candidate"})
+    return finished(vm, "SUCCEEDED")
+
+
+def test_successful_run_records_every_step_and_the_measured_source(successful_run):
+    vm = successful_run
+    assert vm.events() == ["PREPARING", "RUNNING baseline", "RUNNING candidate", "SUCCEEDED"]
+    assert vm.calls("just") == [
+        "just benchmark-tools baseline source", "just benchmark-build baseline source",
+        "just benchmark-measure baseline source",
+        "just benchmark-build candidate candidate", "just benchmark-measure candidate candidate"]
+    assert tool.maintenance_events(vm.state) == []
+    assert tool.uncontrolled([vm.result("baseline"), vm.result("candidate")]) == []
+    assert "chown -R root: " + str(vm.input) + " " + str(vm.state) in vm.calls("chown")
+    # The retained source patch includes the planned commit and the files that a variant adds.
+    baseline = (vm.result("baseline") / "measurement-source.patch").read_text()
+    candidate = (vm.result("candidate") / "measurement-source.patch").read_text()
+    assert "+planned" in baseline
+    assert "added.txt" not in baseline
+    assert "+planned" in candidate
+    assert "+added" in candidate
+    assert "+candidate" in candidate
+
+
+@pytest.mark.parametrize("variant", ["baseline", "candidate"])
+def test_successful_run_retains_every_result_file_and_the_manifest(successful_run, source, variant):
+    vm = successful_run
+    runner = hashlib.sha256(RUNNER.read_bytes()).hexdigest()
+    patch_hash = hashlib.sha256(source.patches["candidate"].read_bytes()).hexdigest() if variant == "candidate" else ""
+    result = vm.result(variant)
+    assert RESULT_FILES <= {path.name for path in result.iterdir()}
+    assert (result / "benchmark/result.json").is_file()
+    assert vm.gate(variant)[-1].split()[1:3] == ["gate", "passed"]
+    assert vm.gate(variant, "load-after-build")[-1].split()[1:3] == ["gate", "passed"]
+    assert "chown benchmark: " + str(result) in vm.calls("chown")
+    manifest = tool.manifest(result)
+    assert {key: manifest[key] for key in (
+        "run.id", "variant", "gce.zone", "gce.instance", "gce.machine.type", "gce.image",
+        "gce.scheduling", "os.release", "cpu.model", "memory.kib", "java.version",
+        "java.tool", "just.version", "thrift.version", "runner.sha256",
+        "variant.patch.sha256", "boot.id", "source.revision", "source.base")} == {
+        "run.id": "offline-1", "variant": variant, "gce.zone": "asia-northeast1-b",
+        "gce.instance": "offline-pb4", "gce.machine.type": "c3-standard-8",
+        "gce.image": "ubuntu-2404-noble-amd64-v20261001", "gce.scheduling": "TERMINATE",
+        "os.release": "Ubuntu 24.04.3 LTS", "cpu.model": "Intel(R) Xeon(R) Platinum 8481C",
+        "memory.kib": "32864356", "java.version": 'openjdk version "17.0.16" 2025-07-15',
+        "java.tool": TOOLS["java"], "just.version": "just 1.40.0",
+        "thrift.version": "Thrift version 0.25.0", "runner.sha256": runner,
+        "variant.patch.sha256": patch_hash, "boot.id": "boot-1",
+        "source.revision": source.revision, "source.base": source.base}
+    assert (result / "source-base.txt").read_text().strip() == source.base
+
+
+def test_gate_resets_on_load_and_swap_and_waits_for_a_low_sample_to_leave_the_window(new_vm):
+    # In the first gate, a load of 10, a swap-out, and a swap-in above 1 MiB each follow nine good
+    # samples, so only a reset delays the pass to the 40th sample; a 1 MiB swap-in is still good.
+    good = [(99, 0.5, 0, 0)] * 9
+    samples = good + [(99, 10.0, 0, 0)] + good + [(99, 0.5, 0, 1)] + good + [(99, 0.5, 257, 0)]
+    samples += good + [(99, 0.5, 256, 0)]
+    # In the second, an 84% sample keeps the gate closed until it leaves the window of ten.
+    samples += [(84, 0.5, 0, 0)] + good + [(99, 0.5, 0, 0)]
+    vm = finished(new_vm(samples=samples), "SUCCEEDED")
+    before = vm.gate("baseline")
+    assert [line.split()[-1] for line in before[:40]] == [
+        "sample_ok=" + ("0" if index in (9, 19, 29) else "1") for index in range(40)]
+    assert "swapin_bytes=1048576" in before[39]
+    assert before[40:] == [before[40].split()[0] + " gate passed mean_idle=99 min_idle=99.00"]
+    after = vm.gate("baseline", "load-after-build")
+    assert len(after) == 12
+    assert after[11].split()[1:] == ["gate", "passed", "mean_idle=99", "min_idle=99.00"]
+
+
+def test_gate_passes_at_its_mean_and_minimum_boundaries(new_vm):
+    # The first gate's first window averages 89.9; the second gate's averages 90 with a minimum of 85.
+    samples = [(89, 0.5, 0, 0)] * 9 + [(98, 0.5, 0, 0), (99, 0.5, 0, 0)]
+    samples += [(85, 0.5, 0, 0)] * 5 + [(95, 0.5, 0, 0)] * 5
+    vm = finished(new_vm(samples=samples), "SUCCEEDED")
+    before = vm.gate("baseline")
+    assert len(before) == 12
+    assert before[11].split()[1:3] == ["gate", "passed"]
+    after = vm.gate("baseline", "load-after-build")
+    assert len(after) == 11
+    assert after[10].split()[1:] == ["gate", "passed", "mean_idle=90", "min_idle=85.00"]
+
+
+def test_gate_timeout_fails_the_run_before_building(new_vm):
+    vm = finished(new_vm(settings="GATE_TIMEOUT_MINUTES=0\n"), "FAILED baseline")
+    assert vm.gate("baseline")[-1].split()[1:] == ["gate", "timed", "out"]
+    assert vm.calls("just benchmark-build") == []
+
+
+def test_event_during_root_only_steps_stops_benchmark_work_launched_after_it(new_vm):
+    # Preparation does not check between steps; the watcher must stop the mise install, which
+    # would otherwise block, possibly before the stub records its start.
+    vm = interrupted(new_vm(actions={"apt-get": "event", "mise-install": "block"}))
+    assert (vm.state / "tools.log").is_file()
+    assert vm.calls("just") == []
+    assert not (vm.results.exists() and any(vm.results.iterdir()))
+
+
+@pytest.mark.parametrize("observation", [1, 10], ids=["observation-1", "observation-10"])
+def test_event_during_the_gate_stops_it_and_withholds_its_pass(new_vm, observation):
+    vm = interrupted(new_vm(event_at=observation))
+    gate = vm.gate("baseline")
+    assert len(gate) == observation
+    assert all("sample_ok=1" in line for line in gate)
+    assert vm.calls("just benchmark-build") == []
+
+
+def stops_before_measuring(vm):
+    assert vm.calls("just benchmark-measure") == []
+    assert not (vm.result("baseline") / "load-after-build.log").exists()
+
+
+def records_the_end(vm):
+    assert (vm.result("baseline") / "end-utc.txt").is_file()
+
+
+def records_one_interruption(vm):
+    assert vm.events() == ["PREPARING", "RUNNING baseline", INTERRUPTED]
+
+
+def records_the_interruption_again(vm):
+    assert vm.events() == ["PREPARING", "RUNNING baseline", INTERRUPTED, "RUNNING baseline", INTERRUPTED]
+
+
+def stops_the_measurement_and_later_variants(vm):
+    assert not (vm.result("baseline") / "end-utc.txt").exists()
+    assert not vm.result("candidate").exists()
+
+
+@pytest.mark.parametrize(("options", "check"), [
+    # The process returns.
+    ({"actions": {"benchmark-build": "event"}}, stops_before_measuring),
+    # The measurement returns.
+    ({"actions": {"benchmark-measure": "event"}}, records_the_end),
+    # The runner stops the watcher before it records the interruption.
+    ({"hold_watcher": True, "actions": {"benchmark-build": "event"}}, records_one_interruption),
+    # A runner status update replaces the watcher's status file.
+    ({"actions": {"benchmark-build": "event-status-replaced"}}, records_one_interruption),
+    # A runner status update follows the watcher's event.
+    ({"actions": {"benchmark-build": "event-logged-late"}}, records_the_interruption_again),
+    # The process keeps running.
+    ({"variants": ("baseline", "candidate"), "actions": {"benchmark-measure": "event-block"}},
+     stops_the_measurement_and_later_variants),
+], ids=["process-returns", "measurement-returns", "watcher-stopped", "status-replaced", "status-follows-event",
+        "process-keeps-running"])
+def test_event_during_a_benchmark_process_ends_the_run_at_the_next_step(new_vm, options, check):
+    check(interrupted(new_vm(**options)))
+
+
+def test_unavailable_metadata_requests_are_logged_and_retried(new_vm):
+    # The first two requests fail, and so does the first held request after the third returns.
+    vm = new_vm(unavailable=(1, 2, 4), watched=4, actions={"apt-get": "watched"})
+    finished(vm, "SUCCEEDED")
+    log = (vm.state / "maintenance-events.log").read_text().splitlines()
+    assert [line.split()[-1] for line in log] == ["UNAVAILABLE", "UNAVAILABLE", "NONE", "UNAVAILABLE"]
+    assert tool.maintenance_events(vm.state) == []
+    requests = [path for path in vm.server.paths if path.startswith("/instance/maintenance-event")]
+    held = "/instance/maintenance-event?wait_for_change=true&last_etag=etag-1"
+    assert requests[:3] == ["/instance/maintenance-event"] * 3
+    assert set(requests[3:]) == {held}, "A retry after a failed held request lost the ETag"
+
+
+# Each case names the first call that the failure must prevent and a file it must leave.
+@pytest.mark.parametrize(("options", "status", "unreached", "kept"), [
+    ({"actions": {"apt-get.update": "fail"}}, "FAILED prepare", "apt-get install", None),
+    ({"actions": {"apt-get.install": "fail"}}, "FAILED prepare", "mise", None),
+    ({"checksum": "0" * 64}, "FAILED prepare", "mise", None),
+    ({"actions": {"mise-install": "fail"}}, "FAILED prepare", "mise where", None),
+    ({"variants": ("baseline", "candidate"), "patches": {"candidate": "broken"}},
+     "FAILED candidate", "just benchmark-build candidate", "baseline/end-utc.txt"),
+    ({"actions": {"benchmark-tools": "fail"}}, "FAILED baseline", "just benchmark-build", None),
+    ({"metadata": {key: value for key, value in METADATA.items() if key != "image"}},
+     "FAILED baseline", "just benchmark-build", None),
+    ({"actions": {"benchmark-build": "fail"}}, "FAILED baseline", "just benchmark-measure", "baseline/build.log"),
+    ({"variants": ("baseline", "candidate"), "actions": {"benchmark-measure.baseline": "fail"}},
+     "FAILED baseline", "just benchmark-build candidate", "baseline/start-utc.txt"),
+    ({"variants": ("baseline", "candidate"), "actions": {"benchmark-measure": "reboot"}},
+     "FAILED baseline", "just benchmark-build candidate", "baseline/end-utc.txt"),
+], ids=["package-index", "package-installation", "mise-checksum", "tool-installation", "checkout", "thrift-build",
+        "metadata-lookup", "build", "measurement", "boot-id"])
+def test_failures_record_the_step_in_progress(new_vm, options, status, unreached, kept):
+    vm = finished(new_vm(**options), status)
+    assert vm.calls(unreached) == [], vm.report()
+    if kept:
+        variant, file = kept.split("/")
+        assert (vm.result(variant) / file).is_file(), kept
