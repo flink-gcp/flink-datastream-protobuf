@@ -358,6 +358,7 @@ It retains packaged library jars, compiled consumers, resolved runtime dependenc
 The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
 The final v0.2.0 bundles, captured from source revision `e697ee957000f3258ba4b6fd5940458514fada5c` and assembled with `baseline-release`, are the assets of the `v0.2.0` pre-release; see the [retained v0.2.0 baseline](validation/development-baselines.md#retained-v020-baseline).
+The final v0.3.0 bundles, captured from source revision `142862b9d86f449e3e4894715602a991a018fd63`, are the assets of the `v0.3.0` pre-release; see the [retained v0.3.0 baseline](validation/development-baselines.md#retained-v030-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` then restores their state with the current library and applications, resolving this build's dependencies instead of the retained ones.
 
