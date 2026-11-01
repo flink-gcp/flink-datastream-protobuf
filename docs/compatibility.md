@@ -49,6 +49,8 @@ From 1.0.0, each release keeps these contracts within its major version:
 
 Downgrades, restores across Flink minors or artifact lines, and restores across changed built-in descriptors are not part of the contract.
 A change that breaks one of these contracts requires a new major version with migration documentation.
+Within a major version, a patch release, such as 1.0.1, only fixes defects or security issues and updates dependencies, including pinned patch versions, without changing which Flink minors and Protobuf lines it supports.
+A minor release, such as 1.1.0, can also add API or configuration, move the supported Flink versions under [ADR-0003](adr/0003-flink-version-compatibility.md), or change the implementation beyond a fix, such as a performance change in serialization.
 
 ## Artifact lines and version order
 

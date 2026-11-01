@@ -829,6 +829,7 @@ After the workflow succeeds:
 3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
    For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](compatibility.md#development-builds-before-100) does.
 4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.
+   Set `X.Y.Z+1-SNAPSHOT` instead when the next release is to be a patch: a patch release tags a commit of `main` whose changes since the previous release are all ones that the [compatibility guide](compatibility.md#compatibility-from-100) allows in a patch, even if later commits of `main` add minor-release changes.
 
 The workflow runs one release at a time; GitHub cancels a pending run when a newer one queues in the same group, so re-run a cancelled tag run from the Actions page, because it uploaded nothing and the tag still exists.
 
