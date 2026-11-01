@@ -190,7 +190,9 @@ Update the module pin deliberately and review the resulting theme, navigation an
 The version assembly and controls are adapted from connector commit `83b05d26c736625549824cf54b021eeb9f70c18c` under Apache-2.0.
 
 Existing Markdown remains the canonical prose for GitHub and Hugo; Example source files own the rendered code excerpts.
-The site mounts the guides, ADRs and validation reports without duplicating their bodies or publishing raw evidence archives.
+The site mounts the guides and validation reports without duplicating their bodies or publishing raw evidence archives.
+Architecture decision records are maintainer records and stay out of the site; the link render hook sends links to them to GitHub at the recorded source commit.
+A retained version keeps its tagged configuration, so the 1.0 version built from `v1.0.0` still publishes its ADR pages.
 Some Javadoc distributions emit a DejaVu stylesheet import without the font resources.
 Site preparation removes that import only when its target is absent, leaving the doclet's system-font fallbacks in effect.
 The assembled-site check validates CSS resources as well as HTML links; other missing resources fail publication.

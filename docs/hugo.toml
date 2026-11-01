@@ -43,10 +43,11 @@ disableKinds = ["taxonomy", "term"]
   [[module.mounts]]
     source = "content"
     target = "content"
+  # Architecture decision records stay in the repository; links to them resolve to GitHub.
   [[module.mounts]]
     source = "."
     target = "content/docs"
-    files = ["/*.md", "/adr/**.md", "/validation/**.md"]
+    files = ["/*.md", "/validation/**.md"]
   [[module.mounts]]
     source = "../target/apidocs"
     target = "static/api/java"
