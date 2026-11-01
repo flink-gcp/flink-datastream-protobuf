@@ -16,7 +16,7 @@ Maven Central publishes each release in two versions of `io.github.flink-gcp:fli
 ```
 
 Versions 0.1.0, 0.2.0, and 0.3.0 were unpublished development milestones, and 1.0.0 reads no state that they wrote.
-A build of this source produces `io.github.flink-gcp:flink-datastream-protobuf:1.0.0-SNAPSHOT`.
+A build of this source produces `io.github.flink-gcp:flink-datastream-protobuf:1.1.0-SNAPSHOT`.
 Start with the [quickstart](https://flink-gcp.github.io/flink-datastream-protobuf/docs/quickstart/) to run the compiled application examples against the published library or a local build.
 It targets full-runtime generated Protobuf messages and DynamicMessage values with protobuf-java 4.x and 3.25.x.
 Each artifact line is built with Protobuf 4.36.2, and CI runs that jar unchanged with protobuf-java/protoc 4.36.2 and 3.25.9.
