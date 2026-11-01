@@ -15,12 +15,13 @@
 """Capture staging IDs and publish or drop Central Portal deployments (ADR-0006).
 
 Ported from flink-connector-gcp's scripts/central-portal.py at
-f5e8d50466dc8940e19b620aa84dbd530a7c6a70 (its ADR-0147).
+f5e8d50466dc8940e19b620aa84dbd530a7c6a70 (its ADR-0147), with the three-hour wait of
+2b417720fbdbb7c3347ff5bd6253c216862d3273.
 
 `capture ID_FILE COMMAND ...` streams the command's output and saves each upload
 ID immediately, even when Maven subsequently fails validation. `publish ID ID`
 checks both deployments before publishing either and waits for both to be PUBLISHED.
-It also resumes the same IDs after an interrupted publish. `drop ID ...` attempts
+It also resumes the same IDs after an interrupted publish or an expired wait. `drop ID ...` attempts
 every requested deletion; PUBLISHING and PUBLISHED deployments cannot be dropped.
 """
 
@@ -50,7 +51,10 @@ UPLOAD = re.compile(
 STATES = {"PENDING", "VALIDATING", "VALIDATED", "PUBLISHING", "PUBLISHED", "FAILED"}
 BASE_URL = "https://central.sonatype.com/api/v1/publisher"
 REQUEST_TIMEOUT = 30
-WAIT_TIMEOUT = 1800
+# The v1.0.0 deployments outlasted a 30-minute wait, and repo1 served them about 2 h 41 min after
+# the Publish request (#181). A longer publication fails the release workflow's publish job,
+# which "Re-run failed jobs" resumes with the same IDs.
+WAIT_TIMEOUT = 3 * 60 * 60
 POLL_INTERVAL = 5
 
 
@@ -220,7 +224,8 @@ def publish(portal: Portal, ids: list[str]) -> None:
         if remaining:
             if time.monotonic() >= deadline:
                 raise PortalError(
-                    "publication wait timed out; resume with the same deployment IDs"
+                    "publication wait timed out; resume with the same deployment IDs "
+                    "(in the release workflow, Re-run failed jobs)"
                 )
             time.sleep(POLL_INTERVAL)
     summary("All requested Central deployments are PUBLISHED.")
