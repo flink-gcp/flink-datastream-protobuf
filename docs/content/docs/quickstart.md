@@ -179,4 +179,4 @@ mise x -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven
 
 The recipe then builds and installs no library: the application resolves the published jar from Maven Central, the recipe compares the jar and its POM with Central's checksums, and runs the same tests and launch goals.
 In your own application, depend on `1.0.0` for Flink 2.x or `1.0.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line]({{< relref "docs/compatibility#artifact-lines-and-version-order" >}}).
-Version 1.0.0 reads no state written by a 0.x milestone, and state from a development build carries no guarantee; consult the [compatibility guidance]({{< relref "docs/compatibility" >}}) first.
+State from a development build carries no guarantee; consult the [compatibility guidance]({{< relref "docs/compatibility" >}}) first.

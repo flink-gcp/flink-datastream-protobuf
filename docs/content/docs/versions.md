@@ -20,25 +20,19 @@ limitations under the License.
 
 # Documentation versions
 
-Before 1.0.0, the site contains Development from `main` and each 0.x development milestone.
-A milestone is a published GitHub pre-release tagged `v0.Y.Z`; the site keeps the latest patch of each 0.x minor and labels it, for example, `0.1 (development milestone)`.
-A milestone page shows only its tagged source, so behavior added on `main` afterwards appears only in Development.
-Neither Development nor milestone documentation implies that artifacts are available on Maven Central.
-Existing development evidence remains in the source tree.
-Milestones leave the site when the first stable release is published.
-
-From 1.0.0, the site keeps the latest patch of the current and previous published minor series, plus Development.
+The site keeps the latest patch of the current and previous published minor series, plus Development.
 For example, 1.2.1 and the latest 1.1.x appear together; a later 1.1.x patch does not make that series current.
 The two-series window crosses major boundaries: 2.0 and the last published 1.x minor occupy its slots.
 The Flink 1.20 artifact suffix does not create another documentation version.
+Development follows `main` and does not imply that its artifacts are available on Maven Central.
 
 Each release uses its exact tagged source, dependencies, examples, and Javadoc.
 The Source link identifies the resolved commit.
-The API reference uses that source's default Flink 2.x build, with Protobuf 4 from 0.3.0 and Protobuf 3 in earlier milestones; both adapters and Protobuf profiles remain checked in CI.
-Release and milestone pages have no edit-on-main link.
+The API reference uses that source's default Flink 2.x build with Protobuf 4; both adapters and Protobuf profiles remain checked in CI.
+Release pages have no edit-on-main link.
 
-URLs such as `1.0/` or `0.1/` track the latest patch in that minor.
-Unversioned pages redirect to the current release when it contains that page, or to Development before the first stable release; a milestone is never the redirect target.
+URLs such as `1.0/` track the latest patch in that minor.
+Unversioned pages redirect to the current release when it contains that page.
 A page with no current counterpart returns the root 404 page.
 The version selector preserves the page, query, and fragment when a corresponding page exists; otherwise it opens that version's homepage.
 Search stays within the selected version.
@@ -48,6 +42,6 @@ Without JavaScript, ordinary version links remain available.
 When a series leaves the window, its hosted pages disappear.
 The [release archive](https://github.com/flink-gcp/flink-datastream-protobuf/releases) retains links to its tagged documentation.
 Hosting documentation does not promise continued maintenance of that library version.
-Development and milestone pages are marked `noindex` and omitted from the sitemap.
+Development pages are marked `noindex` and omitted from the sitemap.
 
 [Site licenses]({{< relref "docs/licenses" >}}) retain the design and third-party notices.
