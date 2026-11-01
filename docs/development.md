@@ -364,7 +364,7 @@ The final v0.3.0 bundles, captured from source revision `142862b9d86f449e3e48947
 The bundles that the published 1.0.0 artifacts wrote, captured from source revision `0cbc2e7fe405eb12814b0aeddf7bcb636b77d1df`, are assets of the `v1.0.0` release; see the [retained v1.0.0 baseline](validation/development-baselines.md#retained-v100-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
-The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and CI still runs them on its own [development bundle](validation/development-baselines.md#inspect-and-restore) until [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) switches it to the retained v1.0.0 bundles.
+The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and the `Retained v1.0.0` Verify jobs run them on the retained v1.0.0 bundles.
 
 ### API compatibility gate
 
@@ -415,7 +415,7 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-CI still runs both checks only on its own [development bundle](validation/development-baselines.md#inspect-and-restore); [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) switches them to the retained v1.0.0 bundles.
+The `Retained v1.0.0` Verify jobs run both checks against each retained v1.0.0 bundle: `api-compat` compares the candidate with the published 1.0.0 library of that line, and `baseline-consume` runs the bundle's compiled consumers on the candidate at each Flink version and JDK that the bundle was read with.
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 
@@ -650,8 +650,8 @@ A job time limit cancels the job instead, and the gate does not run after cancel
 The organization's GitHub Free plan runs at most 20 jobs at a time, and a pull-request run of Verify, Lint, and Docs starts more, so the longest matrix jobs can wait for a runner.
 To shorten pull-request runs, CI's first job, `Freeze source revision`, uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to compare a pull request with its base branch and passes the result to Verify as the `benchmarks` and `baseline` inputs.
 An empty token makes the filter use git, so the job needs no `pull-requests` permission, and the selection adds no job that the matrix jobs would wait for.
-The development bundle jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, or `scripts/api-compat.sh`.
-Capture builds and runs the current library and test sources from a clean tree, so all of those except the API gate script are its inputs; the same job runs that script on the captured bundle.
+The development bundle and `Retained v1.0.0` jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, `scripts/api-compat.sh`, or the retained-bundle retrieval in `scripts/baseline-fetch.py`, `scripts/lib/`, `.github/actions/baseline-fetch/`, and the uv project's `pyproject.toml` and `uv.lock`.
+Capture builds and runs the current library and test sources from a clean tree, so the source and build paths are its inputs; the `Retained v1.0.0` jobs also use the API gate script and the retrieval code.
 Capture also archives every tracked file and rejects names that are not valid UTF-8 or that contain a colon, a backslash, or a control character; `just lint`, which Lint runs on every pull request, checks those names so that a skipped capture cannot hide one.
 Matrix jobs run the benchmark compiler and smoke steps for the same paths and for the evidence gate, `scripts/benchmark-evidence.py` and its `scripts/lib/credential_rules.py`; the benchmark build compiles the test sources as well.
 Pushes to main, the weekly schedule, and manual `workflow_dispatch` runs always run both, so a change that a pull request skipped is still checked after it merges; start Verify manually on the branch to run them before merging.
