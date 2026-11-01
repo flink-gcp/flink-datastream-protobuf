@@ -118,6 +118,7 @@ It works in one external work directory that holds `bundles/<bundle>/` and the m
    ```
 
    The readers run from the work directory with the retained jars and dependencies, and write `<work>/verification/`; the command records the capture checkout's HEAD and the absence of its build output.
+   Run `read`, `review`, and `assemble` from the tagged worktree too: the running script's reader table decides which Flink versions and JDKs are read and which results `assemble` requires, so `read` refuses a script whose checkout HEAD differs from the capture checkout's, and `assemble` one whose HEAD is not the tag's commit.
 4. Run `mise x -- just baseline-release review <work>`, which searches every bundle file and reader output, including the members of nested ZIP, JAR, and tar archives, the bytes other than the members' contents, such as a launcher prefix, local headers, a comment, or trailing data, and the content of gzip, bzip2, and xz streams, with the bounded credential rules of the [benchmark evidence gate](../development.md#automated-content-gate), and lists JVM diagnostic files, credential files, and compressed files it cannot open by name.
    It also reports archives and members that cannot be read and archives nested more deeply than it searches, and rejects symbolic links, including a linked `verification/`.
    The scan of four bundles takes several minutes.
