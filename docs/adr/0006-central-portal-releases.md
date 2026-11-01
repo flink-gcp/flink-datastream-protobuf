@@ -20,7 +20,7 @@ limitations under the License.
 - Date: 2026-10-31
 - Issue: [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13)
 - Implements: The publication requirements of [ADR-0003](0003-flink-version-compatibility.md#state-and-release-acceptance)
-- Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; the first publication remains in #13
+- Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; version 1.0.0 is the first publication through them
 - Current instructions: [Release artifacts](../development.md#release-artifacts) and [Publishing a release](../development.md#publishing-a-release)
 
 ## Context
