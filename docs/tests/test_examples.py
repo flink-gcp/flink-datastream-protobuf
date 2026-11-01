@@ -14,6 +14,7 @@
 """Render marked Example sources through the pinned theme, without Maven substitutes."""
 
 import os
+import re
 import shutil
 import subprocess
 from html.parser import HTMLParser
@@ -112,8 +113,10 @@ def test_site_renders_its_own_source_without_copied_markdown(site, version):
     assert not list((site / "docs/public").rglob("*.java"))
     assert not list((site / "docs/public").rglob("*.proto"))
     public = site / "docs/public"
-    assert (public / "favicon.svg").is_file()
-    assert (public / "fuse.min.mjs").is_file()
+    for published in ("favicon.png", "favicon.svg", "fuse.min.mjs"):
+        assert (public / published).is_file()
+    for unpublished in ("katex", "asciinema", "mermaid.min.js"):
+        assert not (public / unpublished).exists()
 
 
 @pytest.mark.parametrize("source, diagnostic", [
@@ -151,3 +154,61 @@ def test_invalid_or_missing_references_fail(site, identity, diagnostic):
     assert result.returncode != 0
     assert identity in result.stdout + result.stderr
     assert diagnostic in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("shortcode", ["katex", "mermaid", "asciinema"])
+def test_excluded_theme_shortcodes_fail_site_generation(site, shortcode):
+    (site / "docs/content/docs/probe.md").write_text(
+        f"---\ntitle: Probe\n---\n{{{{< {shortcode} >}}}}\n"
+    )
+    result = render(site)
+    assert result.returncode != 0
+    assert f'template for shortcode "{shortcode}" not found' in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("language, source, bundle", [
+    ("mermaid", "graph TD; A-->B", "mermaid.min.js"),
+    ("katex", "x^2 + y^2", "katex/"),
+])
+def test_excluded_code_blocks_render_without_the_unpublished_bundle(
+    site, language, source, bundle
+):
+    (site / "docs/content/docs/probe.md").write_text(
+        f"---\ntitle: Probe\n---\n```{language}\n{source}\n```\n"
+    )
+    result = render(site)
+    assert result.returncode == 0, result.stdout + result.stderr
+    page = (site / "docs/public/docs/probe/index.html").read_text()
+    assert source in "".join(Text(page).parts)
+    assert bundle not in page
+
+
+def documented_hugo_book_version():
+    page = (ROOT / "docs/content/docs/licenses.md").read_text()
+    match = re.search(r'hugo-book-version "([^"]+)"', page)
+    assert match, "docs/content/docs/licenses.md calls no hugo-book-version shortcode"
+    return match.group(1)
+
+
+def test_site_licenses_guard_accepts_the_resolved_hugo_book_version(site):
+    version = documented_hugo_book_version()
+    (site / "docs/content/docs/guard.md").write_text(
+        f'---\ntitle: Guard\n---\nHugo Book {{{{< hugo-book-version "{version}" >}}}}\n'
+    )
+    result = render(site)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"Hugo Book {version}" in "".join(
+        Text((site / "docs/public/docs/guard/index.html").read_text()).parts
+    )
+
+
+def test_site_licenses_guard_rejects_another_hugo_book_version(site):
+    (site / "docs/content/docs/guard.md").write_text(
+        '---\ntitle: Guard\n---\n{{< hugo-book-version "v0.0.0" >}}\n'
+    )
+    result = render(site)
+    assert result.returncode != 0
+    assert (
+        f'document Hugo Book "v0.0.0", but the site resolves "{documented_hugo_book_version()}"'
+        in result.stdout + result.stderr
+    )

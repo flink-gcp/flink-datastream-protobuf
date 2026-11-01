@@ -16,4 +16,7 @@ module github.com/flink-gcp/flink-datastream-protobuf/docs
 
 go 1.26.5
 
-require github.com/flink-gcp/flink-gcp-dev-tools/hugo v0.0.0-20260919134930-632527214d3d // indirect
+require (
+	github.com/alex-shpak/hugo-book v0.14.0 // indirect
+	github.com/flink-gcp/flink-gcp-dev-tools/hugo v0.0.0-20260919134930-632527214d3d // indirect
+)

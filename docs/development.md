@@ -177,11 +177,15 @@ Both adapters and Protobuf profiles are checked in CI.
 ### Documentation site and publication
 
 The site imports `flink-gcp-dev-tools/hugo` at commit `632527214d3d1a41cc0c5099e64d3893358059f9`, recorded in `docs/go.mod` and `docs/go.sum`.
-This module supplies Hugo Book v0.14.0 and the shared layout, theme toggle, typography and code palettes.
+This module supplies the shared layout, theme toggle, typography and code palettes; the site imports Hugo Book itself, as described below.
 Search initialization and its regression test are maintained in the shared repository.
-As in flink-connector-gcp, `docs/hugo.toml` imports only that module, so the site publishes Hugo Book's complete static assets, including its KaTeX, Mermaid and asciinema bundles.
-The shared assets retain Apache-2.0 attribution; the [site licenses](content/docs/licenses.md) retain the notices for Hugo Book, modern-normalize, and the KaTeX, Mermaid, and asciinema-player bundles that the theme distributes, whose minified files carry no notice of their own.
+As in flink-connector-gcp, `docs/hugo.toml` ignores the design module's own imports, imports Hugo Book after it, and publishes from Hugo Book's `static/` directory only the two favicons and the Fuse.js module.
+Hugo Book's KaTeX, Mermaid and asciinema-player features are excluded, so their shortcodes fail the build; enabling one means mounting its files and adding every notice its bundle owes first, including those of the dependencies it compiles in.
+The hidden [site licenses](content/docs/licenses.md) page carries the notices for what the site publishes and names the Hugo Book version it documents; `just docs` fails when the site resolves another version or a replacement, and `docs/tests/test_examples.py` holds the exclusions and the guard's version check.
 Update the module pin deliberately and review the resulting theme, navigation and mobile rendering.
+When the design module pin moves, check that its `hugo.toml` still imports nothing but Hugo Book, and that its templates reference no Hugo Book static file beyond those published.
+When Hugo Book moves, compare its `assets/`, `layouts/`, `i18n/` and published static files between the two tags, update each affected section of the site licenses from the upstream license at the new version, and then change the version the page names.
+A third-party file that the design module adds itself needs a section too, which no check catches.
 The version assembly and controls are adapted from connector commit `83b05d26c736625549824cf54b021eeb9f70c18c` under Apache-2.0.
 
 The site follows flink-connector-gcp's layout: its pages are the Markdown under `docs/content/`, and Example source files own the rendered code excerpts.
