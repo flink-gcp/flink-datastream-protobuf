@@ -51,7 +51,7 @@ jobs:
       - uses: ./.github/actions/maven
         with:
           save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '17' && matrix.protobuf == '4' }}
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: just
       - name: Verify the library and native probes
@@ -182,7 +182,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: just
       - name: Run the Protobuf 4 jar on the 2.x ceiling and Protobuf 3 without recompiling it
@@ -211,7 +211,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: just
       # Pull requests have no signing key, so this rehearsal skips signing (ADR-0006).
@@ -239,7 +239,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: just
       - name: Capture the development bundle once
@@ -306,7 +306,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: just
       # The bundles that the published 1.0.0 artifacts wrote; later releases must restore their state.
