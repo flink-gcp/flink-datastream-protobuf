@@ -104,6 +104,10 @@ It rejects other values with `IOException`, before writing any byte, naming the 
 A `bytes` field set from a `byte[]` keeps that array without copying it, so treat the array as immutable afterwards.
 Deterministic serialization does not order DynamicMessage map entries; both supported runtimes write them in insertion order.
 
+In the [1.0.0 release-candidate benchmarks](validation/serializer-benchmarks-v1.0.0.md#dynamicmessage-lanes), decoding the benchmark's scalar, nested, and collections records as DynamicMessage values took 5.3 to 6.3 times as long as decoding the generated messages with the same content, and writing them took 1.5 to 1.8 times as long.
+The serializer decodes both with the parser of the value's type, so the decoding difference is the cost of protobuf-java's DynamicMessage parsing.
+Writing values whose descriptors are equal-content instances from elsewhere took about as long as writing values with the serializer's own descriptors; the measured differences stayed within the variation between adjacent benchmark lanes.
+
 ## Keys and state
 
 Key streams and MapState by stable scalar values extracted from the message, as for generated messages:

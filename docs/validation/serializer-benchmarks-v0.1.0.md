@@ -349,3 +349,4 @@ Compare the candidate with the retained 0.1.0 development baseline by workload a
 If the supported Flink, JDK, Protobuf, adapter, or host versions changed, list those differences explicitly and do not attribute the entire measured difference to library changes.
 Preserve the earlier baseline unchanged and publish a separate 1.0.0 report with raw evidence and uncertainty.
 Benchmark results do not replace release API, state-compatibility, or published-artifact validation.
+The [1.0.0 release-candidate report](serializer-benchmarks-v1.0.0.md) records this remeasurement.
