@@ -421,13 +421,20 @@ class PageLinks(HTMLParser):
 
 def check_sources(site, source=ROOT):
     config = tomllib.loads((source / "docs/hugo.toml").read_text())
-    revision = os.environ.get(
-        "HUGO_PARAMS_SOURCECOMMIT", config["params"]["SourceCommit"]
-    )
-    prefix = config["params"]["BookRepo"] + "/blob/" + revision + "/"
+    # Pages link to repository files on main; older tags link to their build commit.
+    revisions = {
+        "main",
+        os.environ.get(
+            "HUGO_PARAMS_SOURCECOMMIT", config["params"].get("SourceCommit", "main")
+        ),
+    }
+    repository = config["params"]["BookRepo"] + "/blob/"
     for page in site.rglob("*.html"):
         for link in PageLinks(page.read_text()).links:
-            if link.startswith(prefix):
+            revision = next(
+                (r for r in revisions if link.startswith(repository + r + "/")), None
+            )
+            if revision is not None:
                 path = (
                     source
                     / unquote(

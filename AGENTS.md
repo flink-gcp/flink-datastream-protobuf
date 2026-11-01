@@ -26,7 +26,7 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just examples-verify <version> <protobuf-major> <external-maven-repository> [<published-version>]`: build/install the development jar, or resolve a published version from Maven Central into an empty repository, and verify the standalone application.
 - `just docs` / `just docs-serve`: build or preview the shared-design site.
 - `just docs-validate` / `just test-doc-versions`: verify source-backed site content and version assembly.
-- `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `target/apidocs`.
+- `just docs-javadoc <flink1|flink2> <3|4>`: generate strict API documentation under `docs/static/api/java`.
 - `just probe-chill`: opt in to the separate comparison, with generic types enabled only there.
 - `just benchmark-tools <external-cache>`: build the pinned Thrift compiler for ADR-0004 benchmarks.
 - `just benchmark-tools-check <compiler>`: reject a compiler that is not the pinned version or cannot generate the benchmark corpus.

@@ -168,12 +168,13 @@ pin-actions:
 examples-verify version major repository published="":
     bash scripts/verify-examples.sh "$1" "$2" "$3" "$4"
 
-# Generate the site's API reference in target/apidocs with the POM's Javadoc configuration, which the release Javadoc jar also uses.
+# Generate the site's API reference in docs/static/api/java with the POM's Javadoc configuration, which the release Javadoc jar also uses.
 [positional-arguments]
 docs-javadoc compat="flink2" major="4":
     test "$1" = flink1 || test "$1" = flink2
     test "$2" = 3 || test "$2" = 4
-    {{ mvn }} "-Dflink.compat=$1" "-Pprotobuf$2" clean javadoc:javadoc '-DreportOutputDirectory=${project.build.directory}'
+    rm -rf docs/static/api/java
+    {{ mvn }} "-Dflink.compat=$1" "-Pprotobuf$2" clean javadoc:javadoc '-DreportOutputDirectory=${project.basedir}/docs/static/api' -DdestDir=java
 
 # Render the existing Markdown with the pinned shared design.
 docs:
@@ -194,7 +195,7 @@ docs-validate:
     floor=$({{ python }} -c 'import xml.etree.ElementTree as E; print(E.parse("pom.xml").getroot().findtext("{*}properties/{*}flink.version"))')
     just examples-verify "$floor" 4 "$repository"
     just docs-javadoc
-    just docs-site prepare-api target/apidocs
+    just docs-site prepare-api docs/static/api/java
     just docs
 
 # Check release selection, provenance, rendering and navigation.

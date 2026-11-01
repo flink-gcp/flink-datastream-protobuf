@@ -20,7 +20,7 @@ limitations under the License.
 
 # Configure native Protobuf values
 
-The [quickstart](quickstart.md) builds and runs the application examples.
+The [quickstart]({{< relref "docs/quickstart" >}}) builds and runs the application examples.
 The public application entrypoints are `ProtobufTypeInformation` and `ProtobufTypeInfoFactory`.
 The serializer and snapshot classes are internal machinery; construct types through the public factory or builder.
 
@@ -28,11 +28,11 @@ The serializer and snapshot classes are internal machinery; construct types thro
 
 Use explicit type information for `.returns(...)` and per-type settings.
 The following construction example uses the generated full-runtime `Event` class from the quickstart.
-The [explicit example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) shows the imports for these types.
+The [explicit example]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) shows the imports for these types.
 
 `ProtobufTypeInformation` comes from this library; `Event` comes from the application's generated code.
 Replace the `Event` import and class reference with the application's message type.
-The example's [`event.proto`](../examples/datastream/src/main/proto/event.proto) sets `java_package = "io.github.flink.gcp.protobuf.examples.generated"` and `java_multiple_files = true`, so `Event` is a top-level class in that Java package.
+The example's [`event.proto`]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/proto/event.proto) sets `java_package = "io.github.flink.gcp.protobuf.examples.generated"` and `java_multiple_files = true`, so `Event` is a top-level class in that Java package.
 
 Construct the default type or configure it through the builder:
 
@@ -80,7 +80,7 @@ Payloads of at most 4 KiB never share storage, and the setting changes neither t
 
 | | Aliasing enabled (default) | Aliasing disabled |
 |---|---|---|
-| Large-payload read | In the [large-read report](validation/serializer-large-read.md), reading a 64 KiB payload takes 0.43 to 0.44 times the previous serializer's time and 0.54 to 0.55 times Chill's | Each shared value is copied again after the payload is read; not measured on the benchmark protocol |
+| Large-payload read | In the [large-read report]({{< param BookRepo >}}/blob/main/docs/validation/serializer-large-read.md), reading a 64 KiB payload takes 0.43 to 0.44 times the previous serializer's time and 0.54 to 0.55 times Chill's | Each shared value is copied again after the payload is read; not measured on the benchmark protocol |
 | Allocation per large read | About the payload size for a 64 KiB `bytes` payload in the same report | The payload array plus a copy of each shared value |
 | Memory of kept values | Keeping any value that shares the array, including a `ByteString` taken from the message, keeps the whole payload array reachable | Each value owns its own copy |
 
@@ -98,7 +98,7 @@ A changed setting reaches those restored heap values from the next restore after
 
 ## Factory registration
 
-The example's [config.yaml](../examples/datastream/config/config.yaml) contains ordinary [Flink pipeline configuration](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/config/#pipeline-serialization-config).
+The example's [config.yaml]({{< param BookRepo >}}/blob/main/examples/datastream/config/config.yaml) contains ordinary [Flink pipeline configuration](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/config/#pipeline-serialization-config).
 It holds the two options needed for this registration example; the library does not define a separate configuration-file format.
 Add these options to the Flink configuration used when constructing the job, or load a configuration directory explicitly as shown below.
 If `pipeline.serialization-config` already has entries for other types, add this entry to the existing list.
@@ -127,12 +127,12 @@ See Flink's [type information factory documentation](https://nightlies.apache.or
 ### Load the configuration before constructing the job
 
 The factory class is named in YAML, so this Java code needs no `ProtobufTypeInfoFactory` import.
-The [registration application](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/RegisteredExample.java) reads the actual [config.yaml](../examples/datastream/config/config.yaml) before constructing its job:
+The [registration application]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/RegisteredExample.java) reads the actual [config.yaml]({{< param BookRepo >}}/blob/main/examples/datastream/config/config.yaml) before constructing its job:
 
 {{< example "RegisteredExample#registration" >}}
 
 The argument `args[0]` names the directory containing `config.yaml`, not the YAML file itself.
-In the [quickstart](quickstart.md#run-registration-and-state-examples), `exec:exec@registered` passes `examples/datastream/config` as an absolute path to the application.
+In the [quickstart]({{< relref "docs/quickstart#run-registration-and-state-examples" >}}), `exec:exec@registered` passes `examples/datastream/config` as an absolute path to the application.
 For another application, supply a configuration directory that exists where its entrypoint runs and pass the loaded `Configuration` to the environment before creating sources or operators.
 Loading YAML produces a `Configuration`; configuring the environment applies the factory registration.
 Placing a file beside a job jar without loading it does not apply these options.
@@ -159,7 +159,7 @@ Do not add `maxMessageSize`, `recursionLimit`, `deterministicSerialization`, or 
 
 Inference from an erased runtime List instance is not promised.
 Keep generic types disabled, including when explicit type information is used elsewhere in the job.
-The [common-types guide](common-types.md) covers generated Google Struct/Value/ListValue, Any, scalar/time wrappers, and OpenTelemetry AnyValue/ArrayValue/KeyValueList.
+The [common-types guide]({{< relref "docs/common-types" >}}) covers generated Google Struct/Value/ListValue, Any, scalar/time wrappers, and OpenTelemetry AnyValue/ArrayValue/KeyValueList.
 Struct keys and AnyValue variants are data within a fixed schema; they do not require DynamicMessage.
 Any payload bytes remain opaque, without automatic unpacking or schema validation.
 
@@ -177,7 +177,7 @@ ProtobufTypeInformation<DynamicMessage> info = ProtobufTypeInformation.of(descri
 ```
 
 `ProtobufTypeInformation.newBuilder(descriptor)` accepts the same four settings as the generated-class builder, and every operator that returns DynamicMessage needs `.returns(info)`.
-See [DynamicMessage values](dynamic-messages.md) for the complete guide.
+See [DynamicMessage values]({{< relref "docs/dynamic-messages" >}}) for the complete guide.
 
 ## Scalar keys
 
@@ -189,7 +189,7 @@ Deterministic bytes neither stabilize generated-message hashing across classload
 
 ## State and recovery
 
-The [state example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/StatefulExample.java) partitions by a scalar and assigns a stable operator UID.
+The [state example]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/StatefulExample.java) partitions by a scalar and assigns a stable operator UID.
 `RunningTotal` is a nested operator class defined in that example; its `total` and `recent` fields have types `ValueState<Event>` and `MapState<String, Event>` respectively.
 The linked source includes the complete operator and its Flink imports.
 
@@ -214,21 +214,21 @@ For an intentional stop and restart, including a restart with a supported schema
 
 Here `Application` is the application's entrypoint, not the bounded demonstration job.
 Keep the generated Java class and Protobuf message names, operator UIDs, state names, and matching runtime/artifact line unchanged.
-The schema may stay the same or change as listed in [supported schema changes](compatibility.md#schema-changes); the restored job rejects other changes to the declarations that saved values reach.
+The schema may stay the same or change as listed in [supported schema changes]({{< relref "docs/compatibility#schema-changes" >}}); the restored job rejects other changes to the declarations that saved values reach.
 Reader size/depth limits may stay the same or increase; deterministic-writing mode and large-payload aliasing may change in either direction.
 A successful Protobuf parse alone does not establish state compatibility.
 
-The [MiniCluster recovery suite](validation/runtime-recovery.md) verifies completed-checkpoint recovery and separate-job savepoint restoration for HashMap and RocksDB, including continued processing.
+The [MiniCluster recovery suite]({{< param BookRepo >}}/blob/main/docs/validation/runtime-recovery.md) verifies completed-checkpoint recovery and separate-job savepoint restoration for HashMap and RocksDB, including continued processing.
 It also verifies restoration across supported schema changes and rejection of unsupported changes and reduced reader limits.
-It is separate from these application examples and the historical [Spike 0](validation/spike-0.md).
+It is separate from these application examples and the historical [Spike 0]({{< param BookRepo >}}/blob/main/docs/validation/spike-0.md).
 Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require their own evidence and are not established by these examples.
 
 ## Development upgrades and API reference
 
 Current `1.1.0-SNAPSHOT` development builds restore the supported schema changes.
-Read [Protobuf/state compatibility](compatibility.md) before changing an application or dependency.
-Version 1.0.0, the first Maven Central release, is the stabilization point; see the [compatibility from 1.0.0](compatibility.md#compatibility-from-100).
+Read [Protobuf/state compatibility]({{< relref "docs/compatibility" >}}) before changing an application or dependency.
+Version 1.0.0, the first Maven Central release, is the stabilization point; see the [compatibility from 1.0.0]({{< relref "docs/compatibility#compatibility-from-100" >}}).
 
-Generate the API reference with `mise x -- just docs-javadoc`, then open `target/apidocs/index.html`.
-The documentation site includes this API reference for each [retained version](versions.md).
+Generate the API reference with `mise x -- just docs-javadoc`, then open `docs/static/api/java/index.html`.
+The documentation site includes this API reference for each [retained version]({{< relref "docs/versions" >}}).
 The public documentation site is live and linked from README; final live verification after the search initialization repair remains tracked in [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19).

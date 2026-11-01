@@ -1,7 +1,3 @@
----
-title: "Runtime state recovery"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -57,7 +53,7 @@ Each processed input also reports the ValueState and MapState values it replaced
 Values written after the restore carry the new field or enum value, while restored values keep what the old schema wrote; an added field therefore has its default there.
 The `reserved` job keeps the removed payload as an unknown field, so its savepoint still contains the payload that the `original` schema reads back.
 The rejected cases restore `original` state with `incompatible` separately for ValueState, MapState values, and operator ListState, `changed` state with `original`, and `enum-added` state with `enum-original`.
-Each rejected job must fail, and its failure must name the generated class and the [first incompatibility](../compatibility.md#schema-changes).
+Each rejected job must fail, and its failure must name the generated class and the [first incompatibility](../content/docs/compatibility.md#schema-changes).
 The `incompatible` case shows the diagnostic for each state kind on both backends; the two reverse-direction cases register all three state kinds, so the first state that fails reports it.
 A decreased limit fails with Flink's `StateMigrationException` alone.
 These tests write and restore state with the same development build; the [retained-state upgrade check](development-baselines.md#restore-retained-state-with-the-current-library) applies the same checks to the state of a retained bundle.
@@ -110,6 +106,6 @@ Application jars are built before tests and never recompiled by the tests or att
 
 Each saved-state scenario keeps its Flink version, Protobuf profile, backend, parallelism, and state identity fixed.
 The suite does not establish backend migration, rescaling, cross-Flink state upgrades, cross-Protobuf restore, or cross-process message-key hashing.
-`CommonTypesRecoveryITCase` adds [Well-Known Type and OpenTelemetry acceptance](../common-types.md#verification-boundaries), using the same MiniCluster controls with a separate job and values on the ordinary test classpath.
+`CommonTypesRecoveryITCase` adds [Well-Known Type and OpenTelemetry acceptance](../content/docs/common-types.md#verification-boundaries), using the same MiniCluster controls with a separate job and values on the ordinary test classpath.
 It verifies direct Struct ValueState, direct AnyValue MapState values, and an application envelope in operator ListState on both backends.
 Issue #40's [development bundle tooling](development-baselines.md) captures packaged writers and compiled consumers with retained state for later release checks; published-artifact capture and validation of both release lines remain in #13.

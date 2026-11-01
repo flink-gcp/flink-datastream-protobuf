@@ -123,9 +123,10 @@ Its independent build verifies application use without relying on library source
 The existing runtime/JDK/Protobuf CI matrix verifies the examples.
 Hugo `example` shortcodes render the named marker region directly from that version's application source or YAML.
 Markdown stores only the source reference, with no copied excerpt or synchronization step.
-GitHub readers follow the adjacent links to the executable sources; Hugo validates the marker references during site generation.
+The pages are Hugo content, as in flink-connector-gcp, so their excerpts and source links render on the site rather than on GitHub; Hugo validates the marker references during site generation.
 Public API documentation is generated with the Maven Javadoc plugin, whose configuration [ADR-0006](0006-central-portal-releases.md) also applies to the release Javadoc jar.
-The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design, with existing Markdown mounted as canonical content.
+The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design with flink-connector-gcp's layout: its pages live under `docs/content/`, and the ADRs, validation reports, and development guide stay in the repository unpublished.
+Earlier versions mounted the repository Markdown, ADRs, and validation reports as site content; retained versions keep the layout of their tagged source.
 The consumer owns URLs, source links, version selection, Javadoc and publication; no Java runtime dependency on the connector or shared tooling is introduced.
 The bootstrap-only deferral of Hugo is complete.
 

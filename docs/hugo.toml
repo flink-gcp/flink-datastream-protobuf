@@ -15,45 +15,17 @@
 baseURL = "https://flink-gcp.github.io/flink-datastream-protobuf/"
 locale = "en-us"
 title = "Protobuf for Apache Flink DataStream"
-disableKinds = ["taxonomy", "term"]
 
-[markup.highlight]
-  noClasses = false
+[markup]
+  # Emit CSS classes instead of inlining one fixed colour scheme into every code
+  # block; the shared module selects the light/dark palettes so code
+  # follows the page theme.
+  [markup.highlight]
+    noClasses = false
 
+# The shared design module and its Hugo Book dependency are pinned through go.mod.
 [module]
-  [[module.imports]]
-    path = "github.com/flink-gcp/flink-gcp-dev-tools/hugo"
-    ignoreImports = true
-  # Keep the shared design first, but publish only the theme assets used here.
-  [[module.imports]]
-    path = "github.com/alex-shpak/hugo-book"
-    [[module.imports.mounts]]
-      source = "assets"
-      target = "assets"
-    [[module.imports.mounts]]
-      source = "layouts"
-      target = "layouts"
-    [[module.imports.mounts]]
-      source = "i18n"
-      target = "i18n"
-    [[module.imports.mounts]]
-      source = "static"
-      target = "static"
-      files = ["/favicon.svg", "/favicon.png", "/fuse.min.mjs"]
-  [[module.mounts]]
-    source = "content"
-    target = "content"
-  [[module.mounts]]
-    source = "."
-    target = "content/docs"
-    files = ["/*.md", "/adr/**.md", "/validation/**.md"]
-  [[module.mounts]]
-    source = "../target/apidocs"
-    target = "static/api/java"
-
-  [[module.mounts]]
-    source = "../LICENSE"
-    target = "static/licenses/apache-2.0.txt"
+  # Sub-target mounts replace the default assets mount for this component.
   [[module.mounts]]
     source = "../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples"
     target = "assets/examples/java"
@@ -67,8 +39,10 @@ disableKinds = ["taxonomy", "term"]
     target = "assets/runtime-schemas"
     files = ["/*/runtime.proto"]
 
+  [[module.imports]]
+    path = "github.com/flink-gcp/flink-gcp-dev-tools/hugo"
+
 [params]
+  # The shared module supplies BookTheme = "auto"; other Hugo Book defaults remain unset.
   BookRepo = "https://github.com/flink-gcp/flink-datastream-protobuf"
   BookEditLink = '{{ .Site.Params.BookRepo }}/edit/main/docs/{{ .Path }}'
-  SourceCommit = "main"
-  DocsVersion = "Development"

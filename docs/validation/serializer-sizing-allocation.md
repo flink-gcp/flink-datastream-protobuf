@@ -1,7 +1,3 @@
----
-title: "Sizing traversal allocation in the native serializer"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

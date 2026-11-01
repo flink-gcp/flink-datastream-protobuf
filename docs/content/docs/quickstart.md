@@ -20,7 +20,7 @@ limitations under the License.
 
 # Run a native Protobuf DataStream job
 
-Run the standalone [application example](../examples/datastream/pom.xml) against a local build of the library, installed into an isolated Maven repository, or against the [published library](#run-against-the-published-library).
+Run the standalone [application example]({{< param BookRepo >}}/blob/main/examples/datastream/pom.xml) against a local build of the library, installed into an isolated Maven repository, or against the [published library](#run-against-the-published-library).
 Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LTS.
 
 ## Build the development artifact
@@ -54,13 +54,13 @@ The application uses the normal Maven dependency:
 
 The example POM currently sets `protobuf.integration.version` to `1.1.0-SNAPSHOT`.
 The library declares Flink core and `protobuf-java` as provided dependencies, so the application explicitly supplies its Flink dependencies and Protobuf runtime.
-The example also generates its own [Event message](../examples/datastream/src/main/proto/event.proto) using the matching protoc version.
+The example also generates its own [Event message]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/proto/event.proto) using the matching protoc version.
 It does not import this repository's test messages or source directories.
 
 Both development Flink adapter builds currently use the same SNAPSHOT coordinates.
 Use a separate Maven repository for each adapter/Protobuf-major combination; the recipe rejects reuse across those combinations.
 A SNAPSHOT version alone does not identify the writer of saved state: retain the exact source revision, jar checksum, schema, and runtime versions when keeping development state.
-See [development baselines](validation/development-baselines.md).
+See [development baselines]({{< param BookRepo >}}/blob/main/docs/validation/development-baselines.md).
 
 ## Run explicit type selection
 
@@ -70,7 +70,7 @@ mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
 ```
 
 The result includes `alice:3` and `bob:8`; task prefixes and output order can vary.
-The linked [explicit example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) contains the imports for the snippets below.
+The linked [explicit example]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) contains the imports for the snippets below.
 
 `Event` is generated from the example's `event.proto`; replace its import with the generated message class from the application.
 The example disables generic types before creating the environment:
@@ -85,7 +85,7 @@ The transformation declares the same native output type:
 
 {{< example "ExplicitExample#explicit-returns" >}}
 
-See [ExplicitExample.java](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) for the complete executable entrypoint, including environment creation.
+See [ExplicitExample.java]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/ExplicitExample.java) for the complete executable entrypoint, including environment creation.
 The library has no internal Kryo fallback.
 Flink can select its own generic serializer when native integration is absent; disabling generic types makes that accidental selection fail.
 
@@ -102,7 +102,7 @@ mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
 The result includes `alice:2` and `bob:7`.
 The Maven executions use `exec:exec` to launch a separate JVM with the application classpath, avoiding the in-process `exec:java` classloader.
 Each command launches a fresh JVM; factory registration is process-global.
-The [usage guide](usage.md#factory-registration) explains registration timing and nested types.
+The [usage guide]({{< relref "docs/usage#factory-registration" >}}) explains registration timing and nested types.
 
 Run the state example:
 
@@ -115,7 +115,7 @@ mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
 The result includes `alice:2:0`, `alice:5:2`, `alice:9:3`, and `bob:7:0`.
 Each record contains the account, running total, and previous event amount for that account.
 This bounded job demonstrates ValueState and MapState values; it is not a checkpoint/savepoint recovery test.
-See [state and recovery](usage.md#state-and-recovery) for persistent-state usage and the separate recovery evidence.
+See [state and recovery]({{< relref "docs/usage#state-and-recovery" >}}) for persistent-state usage and the separate recovery evidence.
 
 Run the DynamicMessage example, which builds its descriptor from a descriptor set in the application jar instead of using the generated class:
 
@@ -126,7 +126,7 @@ mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
 ```
 
 The result includes `alice:2`, `alice:5`, `alice:9`, and `bob:7`, the running total for each account.
-See [DynamicMessage values](dynamic-messages.md) for the descriptor, type information, and field-access rules that it follows.
+See [DynamicMessage values]({{< relref "docs/dynamic-messages" >}}) for the descriptor, type information, and field-access rules that it follows.
 
 ## Submit the packaged application
 
@@ -178,5 +178,5 @@ mise x -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven
 ```
 
 The recipe then builds and installs no library: the application resolves the published jar from Maven Central, the recipe compares the jar and its POM with Central's checksums, and runs the same tests and launch goals.
-In your own application, depend on `1.0.0` for Flink 2.x or `1.0.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line](compatibility.md#artifact-lines-and-version-order).
-Version 1.0.0 reads no state written by a 0.x milestone, and state from a development build carries no guarantee; consult the [compatibility guidance](compatibility.md) first.
+In your own application, depend on `1.0.0` for Flink 2.x or `1.0.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line]({{< relref "docs/compatibility#artifact-lines-and-version-order" >}}).
+Version 1.0.0 reads no state written by a 0.x milestone, and state from a development build carries no guarantee; consult the [compatibility guidance]({{< relref "docs/compatibility" >}}) first.

@@ -1,7 +1,3 @@
----
-title: Development
-weight: 60
----
 <!--
 Copyright 2026 The flink-gcp authors
 
@@ -111,7 +107,7 @@ Native integration tests and probes disable generic types and run without `--add
 The optional `chill` profile adds Chill only in test scope, and its tagged comparison runs only when the recipe removes `chill` from the default tag exclusion; the `retained-baseline` group runs only through `baseline-upgrade`.
 
 The ordinary test schemas in `src/test/proto` generate Java into `target/generated-test-sources/protobuf`.
-This includes the [pinned official OTel common schema and WKT application envelope](common-types.md#otel-schema-provenance-and-regeneration).
+This includes the [pinned official OTel common schema and WKT application envelope](content/docs/common-types.md#otel-schema-provenance-and-regeneration).
 The OTel source retains its upstream license header and is generated with each profile's protoc; no OTel Java artifact is added as a dependency.
 The isolated runtime application has separate schemas and outputs, described in [Test resources and version updates](#test-resources-and-version-updates).
 Clean when switching profiles so generated code and runtime stay paired.
@@ -164,15 +160,15 @@ These checks run in every existing source-build CI matrix cell.
 The library's formatting and Checkstyle checks also cover the handwritten application sources.
 The quickstart and usage guide reference source excerpts through the Hugo `example` shortcode.
 Its only argument identifies a file and region: `ExplicitExample#explicit-source` selects that named region in `ExplicitExample.java`, `config.yaml#configuration` selects the marked YAML, and `changed/runtime.proto#entry` selects the marked message in that [runtime application schema](#test-resources-and-version-updates).
-Use the shortcode calls in `docs/quickstart.md` and `docs/usage.md` as authoring examples.
+Use the shortcode calls in `docs/content/docs/quickstart.md` and `docs/content/docs/usage.md` as authoring examples.
 Hugo reads the selected version's Example and runtime schema sources between matching `docs:start` and `docs:end` markers.
 Markdown stores no copy of these excerpts, so changing an Example requires no snippet synchronization.
 Missing, repeated, reversed or empty marker regions fail the site build.
-GitHub does not expand Hugo shortcodes; adjacent source links let readers open the executable examples and configuration directly.
+GitHub does not expand Hugo shortcodes, so read these pages on the site, where the excerpts and their `{{< param BookRepo >}}` source links render.
 `DocumentationExamplesTest` checks launch versions; the standalone consumer compiles and executes the Example sources, and Hugo validates their referenced regions.
 Generated application code and jars remain under the example's ignored `target/` directory and are not library publication artifacts.
 
-`just docs-javadoc <flink1|flink2> <3|4>` runs a clean `javadoc:javadoc` for the selected production adapter and Protobuf profile and writes `target/apidocs/`, which the site mounts at `api/java/`.
+`just docs-javadoc <flink1|flink2> <3|4>` runs a clean `javadoc:javadoc` for the selected production adapter and Protobuf profile and writes the ignored `docs/static/api/java/`, which Hugo copies to `api/java/`, as in flink-connector-gcp.
 The POM replaces the connector parent's Javadoc options, which disable doclint and add an export that javadoc rejects with `--release 17`, with full doclint and `failOnWarnings`, and the plugin passes `--release 17` from `maven.compiler.release`.
 The site's API reference and the release `javadoc:jar` goal therefore use one configuration and fail on the same warnings.
 The recipe cleans first, because the plugin skips generation when its previous output is current.
@@ -183,24 +179,23 @@ Both adapters and Protobuf profiles are checked in CI.
 The site imports `flink-gcp-dev-tools/hugo` at commit `632527214d3d1a41cc0c5099e64d3893358059f9`, recorded in `docs/go.mod` and `docs/go.sum`.
 This module supplies Hugo Book v0.14.0 and the shared layout, theme toggle, typography and code palettes.
 Search initialization and its regression test are maintained in the shared repository.
-The site imports that same pinned Hugo Book version directly to restrict its static mount to the favicons and Fuse module.
-Unused KaTeX, Mermaid and asciinema bundles are not distributed; enabling those features requires reviewing their assets and notices.
-The shared assets retain Apache-2.0 attribution; the [site licenses](licenses.md) retain the MIT notices for Hugo Book and modern-normalize.
+As in flink-connector-gcp, `docs/hugo.toml` imports only that module, so the site publishes Hugo Book's complete static assets, including its KaTeX, Mermaid and asciinema bundles.
+The shared assets retain Apache-2.0 attribution; the [site licenses](content/docs/licenses.md) retain the notices for Hugo Book, modern-normalize, and the KaTeX, Mermaid, and asciinema-player bundles that the theme distributes, whose minified files carry no notice of their own.
 Update the module pin deliberately and review the resulting theme, navigation and mobile rendering.
 The version assembly and controls are adapted from connector commit `83b05d26c736625549824cf54b021eeb9f70c18c` under Apache-2.0.
 
-Existing Markdown remains the canonical prose for GitHub and Hugo; Example source files own the rendered code excerpts.
-The site mounts the guides, ADRs and validation reports without duplicating their bodies or publishing raw evidence archives.
+The site follows flink-connector-gcp's layout: its pages are the Markdown under `docs/content/`, and Example source files own the rendered code excerpts.
+Pages link to each other with `relref` and to repository files with `{{< param BookRepo >}}/blob/main/<path>`.
+The ADRs, the validation reports, and this guide stay in the repository and are not published.
 Some Javadoc distributions emit a DejaVu stylesheet import without the font resources.
 Site preparation removes that import only when its target is absent, leaving the doclet's system-font fallbacks in effect.
 The assembled-site check validates CSS resources as well as HTML links; other missing resources fail publication.
-The link render hook resolves documentation links within the selected version and other repository links to the recorded source commit.
 The source-excerpt partial follows the connector tagged-snippet implementation and uses this repository's existing `docs:start` / `docs:end` markers.
 Real Hugo fixtures verify that source changes appear without editing Markdown, malformed markers fail, and each version reads its own checkout.
 
 | Command | Purpose |
 |---|---|
-| `just docs` | Render prose with warnings fatal and check repository source links; include any existing `target/apidocs` |
+| `just docs` | Render prose with warnings fatal and check repository source links; include any existing `docs/static/api/java` |
 | `just docs-serve` | Preview at localhost:1313; run `docs-validate` first for the API reference |
 | `just docs-validate` | Check launch versions, build and run the standalone default-profile examples, generate strict Javadoc, and render the site |
 | `just test-doc-versions` | Run the locked Python tests plus real Hugo and Node navigation fixtures |
@@ -214,7 +209,7 @@ Planning requires `gh` authentication and locally fetched tags; an API error or 
 Run `plan` from the controller checkout whose HEAD should supply Development.
 Create separate detached source worktrees at the manifest SHAs, run `build` for each ID with a shared new external output directory, then `assemble` and `check` into another new external directory.
 Generated HTML, Python environments, Hugo caches and temporary application repositories are not committed.
-The [version policy](versions.md) retains two released minor series and Development, and 0.x development milestones until the first stable release; zero eligible releases is a valid Development-only site.
+The [version policy](content/docs/versions.md) retains two released minor series and Development, and 0.x development milestones until the first stable release; zero eligible releases is a valid Development-only site.
 
 The CI orchestrator freezes the source revision before calling Verify, Lint and Docs.
 PRs build the same retained-version Pages artifact without deploying.
@@ -242,7 +237,7 @@ The native transport probes still exercise their separate test serializer; `Prot
 The production registration suite covers superclass lookup under both generated hierarchies through the paired Protobuf profiles, with fresh-JVM unregistered and Message-interface controls.
 The key restriction tests retain both inferred and explicit keyBy bypass controls and show that identical message bytes can select different key groups across isolated generated-class loaders.
 Those controls document unsupported message-key use; they are not a promise that the library rejects every such use.
-See the [construction and configuration examples](usage.md) for registration timing, defaults, and explicit type settings.
+See the [construction and configuration examples](content/docs/usage.md) for registration timing, defaults, and explicit type settings.
 
 The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without allocating a payload array for each record.
 Payloads of at most 4 KiB are encoded into a lazily allocated 4 KiB array that the serializer instance retains; larger payloads stream through Protobuf's per-call coded-output buffer.
@@ -301,7 +296,7 @@ Issue #13 and the 1.0.0 milestone own published-artifact fixture capture, consum
 
 ## Test resources and version updates
 
-For application upgrade decisions, read [Protobuf updates and state compatibility](compatibility.md).
+For application upgrade decisions, read [Protobuf updates and state compatibility](content/docs/compatibility.md).
 It distinguishes binary-format rules, Java runtime version guarantees, and the schema changes this library restores.
 The procedures below describe how to maintain and verify the test resources.
 
@@ -353,7 +348,7 @@ The relevant build and test sequence is:
 These suites use `RuntimeRecoveryHarness` to start jobs from the attached application jars.
 The original variant serves the unchanged-schema restores; `ProtobufSchemaEvolutionITCase` pairs the other variants with it or with each other.
 The common-types job uses the original jar's entry point and source, with WKT classes from protobuf-java and OTel/envelope classes from the ordinary test classpath.
-Its [coverage](common-types.md#verification-boundaries) complements the isolated generated-class tests.
+Its [coverage](content/docs/common-types.md#verification-boundaries) complements the isolated generated-class tests.
 The [runtime evidence](validation/runtime-recovery.md) describes the state assertions and compatibility boundaries.
 Ordinary verification creates temporary state for its jobs; the repository commits no state fixtures.
 `just verify-protobuf` and `just verify-flink` clean first, then run this same lifecycle with the selected versions.
@@ -438,15 +433,15 @@ Use this sequence for a dependency update, including patch updates proposed by D
 
 | Change | Configuration impact |
 |---|---|
-| Protobuf 4 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, the capture check in `BaselineTool`, and the versions in `docs/quickstart.md`; the `protobuf4` profile uses the root default |
-| Protobuf 3 runtime | Change `protobuf.version` in the `protobuf3` profile, the capture check in `BaselineTool`, and the explicit runtime override in `docs/quickstart.md` |
+| Protobuf 4 runtime | Change the default `protobuf.version` in `pom.xml` and `examples/datastream/pom.xml`, the capture check in `BaselineTool`, and the versions in `docs/content/docs/quickstart.md`; the `protobuf4` profile uses the root default |
+| Protobuf 3 runtime | Change `protobuf.version` in the `protobuf3` profile, the capture check in `BaselineTool`, and the explicit runtime override in `docs/content/docs/quickstart.md` |
 | Protobuf Maven plugin | `BaselineTool` records the executed protoc from `target/protobuf-maven-plugin/`; review this staging-layout coupling and run a fresh capture when updating the plugin |
 | protoc only | `protoc.version` normally follows `protobuf.version`; an intentional override changes generated code. `BaselineTool` records the distinct protoc version in captured bundles |
 | Runtime application `.proto` | Edit `src/test/runtime-app/proto/<variant>/runtime.proto`; preserve each variant's accepted or rejected relationship to its predecessor. Keep the `docs:start entry` and `docs:end entry` markers, which the documentation can render. Changing `original` or `changed` also changes their relationship to the schemas in retained bundles and requires an explicit baseline/test decision rather than silently overwriting saved schemas |
 | Snapshot-test `.proto` | Review `src/test/proto/snapshot.proto`, its imports, and the snapshot-format tests together; these schemas do not generate the runtime application |
-| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline-release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 2.x floor | Change the default `flink.version` and `release.flink.floor` in `pom.xml`, the example and benchmark `floor` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `examples/datastream/pom.xml`, `docs/content/docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline-release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Flink 2.x ceiling | Change `FLINK_CEILING` in `.github/workflows/verify.yaml` (keep it as a two-space-indented `env` entry of the form `FLINK_CEILING: 'x.y.z'`, with single quotes and no trailing comment; the `Dependency submission` workflow parses it after merge, and the [upstream release check](#upstream-release-check) parses it weekly and in its Lint test on PRs), the development-bundle `versions` in the same workflow, the accepted version in `benchmarks.just`, the `flink2` runtimes in `BaselineTool` and its test, and the `flink2` readers in `scripts/baseline-release.py`; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
-| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline-release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
+| Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/content/docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline-release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
 Dependabot scans the root Maven project.
@@ -828,9 +823,9 @@ After the workflow succeeds:
    Run `just examples-verify <flink-version> <protobuf-major> <new-repository> <published-version>` with `X.Y.Z` at the 2.x floor and ceiling and with `X.Y.Z-1.20` at the LTS version, each with Protobuf 3 and 4, and a new repository for every run.
    Capture and retain the four bundles that the published versions write as the [development baselines guide](validation/development-baselines.md#retain-a-published-release) describes, and attach them to the release.
 3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
-   For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](compatibility.md#development-builds-before-100) does.
+   For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](content/docs/compatibility.md#development-builds-before-100) does.
 4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.
-   Set `X.Y.Z+1-SNAPSHOT` instead when the next release is to be a patch: a patch release tags a commit of `main` whose changes since the previous release are all ones that the [compatibility guide](compatibility.md#compatibility-from-100) allows in a patch, even if later commits of `main` add minor-release changes.
+   Set `X.Y.Z+1-SNAPSHOT` instead when the next release is to be a patch: a patch release tags a commit of `main` whose changes since the previous release are all ones that the [compatibility guide](content/docs/compatibility.md#compatibility-from-100) allows in a patch, even if later commits of `main` add minor-release changes.
 
 The workflow runs one release at a time; GitHub cancels a pending run when a newer one queues in the same group, so re-run a cancelled tag run from the Actions page, because it uploaded nothing and the tag still exists.
 
@@ -966,8 +961,8 @@ The development sequence and current implementation status are:
 2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration.
    Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
 3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
-   Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](common-types.md).
-4. The [quickstart](quickstart.md), [usage guide](usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
+   Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](content/docs/common-types.md).
+4. The [quickstart](content/docs/quickstart.md), [usage guide](content/docs/usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
 5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
 6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) adds the upgrade guide from 0.1.0 and the [API compatibility gate](#api-compatibility-gate), which checks each candidate against the retained 0.1.0 libraries; [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63) then retains the 0.2.0 baseline and publishes the `v0.2.0` pre-release, which the next documentation deployment lists as the 0.2 milestone.
 7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) designs explicit-descriptor DynamicMessage support in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md), [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) implements its type information, serializer, and snapshot, and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) verifies state recovery and completes the usage documentation. Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.

@@ -1,7 +1,3 @@
----
-title: "Variant placement across temporary GCE VMs"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

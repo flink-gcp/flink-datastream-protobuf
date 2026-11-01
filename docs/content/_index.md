@@ -22,13 +22,12 @@ limitations under the License.
 Native Protocol Buffers type integration for the Apache Flink DataStream API.
 Use generated Protobuf messages with explicit type information or factory registration, with generic types disabled.
 
-This is **{{< param DocsVersion >}}** documentation.
 Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LTS; Development follows `main`.
 The 0.x milestones were unpublished, and their APIs and state formats are not compatibility contracts.
 
-Start with the [quickstart](docs/quickstart.md), then read [usage and configuration](docs/usage.md).
-The [compatibility guide](docs/compatibility.md) distinguishes wire compatibility from saved-state compatibility.
-[Supported types](docs/common-types.md) covers Google Well-Known Types and OpenTelemetry messages.
+Start with the [quickstart]({{< relref "docs/quickstart" >}}), then read [usage and configuration]({{< relref "docs/usage" >}}).
+The [compatibility guide]({{< relref "docs/compatibility" >}}) distinguishes wire compatibility from saved-state compatibility.
+[Supported types]({{< relref "docs/common-types" >}}) covers Google Well-Known Types and OpenTelemetry messages.
 
 The menu's API reference describes the same source revision as the selected documentation.
-See [documentation versions](docs/versions.md) for retention and source provenance, and [development](docs/development.md) for local verification.
+See [documentation versions]({{< relref "docs/versions" >}}) for retention and source provenance, and [development]({{< param BookRepo >}}/blob/main/docs/development.md) for local verification.

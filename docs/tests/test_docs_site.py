@@ -658,6 +658,23 @@ def test_source_checker_rejects_missing_source(helper, tmp_path, monkeypatch):
         helper.check_sources(tmp_path, tmp_path)
 
 
+@pytest.mark.parametrize("revision", ["main", "a" * 40])
+def test_source_checker_checks_main_links_in_a_planned_build(helper, tmp_path, monkeypatch, revision):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/hugo.toml").write_text('[params]\nBookRepo="https://github.com/example/repo"\n')
+    (tmp_path / "present.java").write_text("")
+    links = ['<a href="https://github.com/example/repo/blob/main/present.java">Code</a>',
+             f'<a href="https://github.com/example/repo/blob/{"a" * 40}/present.java">Pinned</a>']
+    (tmp_path / "index.html").write_text(html_page("".join(links)))
+    monkeypatch.setenv("HUGO_PARAMS_SOURCECOMMIT", "a" * 40)
+    helper.check_sources(tmp_path, tmp_path)
+    (tmp_path / "index.html").write_text(
+        html_page(f'<a href="https://github.com/example/repo/blob/{revision}/missing.java">Code</a>')
+    )
+    with pytest.raises(ValueError, match="missing source"):
+        helper.check_sources(tmp_path, tmp_path)
+
+
 @pytest.mark.parametrize(
     "css",
     [

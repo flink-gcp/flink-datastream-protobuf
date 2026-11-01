@@ -114,8 +114,6 @@ def test_site_renders_its_own_source_without_copied_markdown(site, version):
     public = site / "docs/public"
     assert (public / "favicon.svg").is_file()
     assert (public / "fuse.min.mjs").is_file()
-    for unused in ("katex", "asciinema", "mermaid.min.js"):
-        assert not (public / unused).exists()
 
 
 @pytest.mark.parametrize("source, diagnostic", [

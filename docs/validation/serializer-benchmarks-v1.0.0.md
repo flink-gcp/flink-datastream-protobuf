@@ -1,7 +1,3 @@
----
-title: "Serializer benchmarks for the 1.0.0 release candidate"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

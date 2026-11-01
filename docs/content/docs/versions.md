@@ -50,4 +50,4 @@ The [release archive](https://github.com/flink-gcp/flink-datastream-protobuf/rel
 Hosting documentation does not promise continued maintenance of that library version.
 Development and milestone pages are marked `noindex` and omitted from the sitemap.
 
-[Site licenses](licenses.md) retain the design and third-party notices.
+[Site licenses]({{< relref "docs/licenses" >}}) retain the design and third-party notices.

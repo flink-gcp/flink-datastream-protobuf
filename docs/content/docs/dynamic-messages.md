@@ -23,8 +23,8 @@ limitations under the License.
 `com.google.protobuf.DynamicMessage` holds a Protobuf message whose schema comes from a descriptor at runtime rather than from a generated class.
 The library transports these values and keeps them in managed state when the application supplies type information bound to a root descriptor.
 
-The [DynamicMessage example](../examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/DynamicExample.java) is compiled and run with the other [quickstart](quickstart.md) examples; the snippets below come from it.
-[ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md) records the design.
+The [DynamicMessage example]({{< param BookRepo >}}/blob/main/examples/datastream/src/main/java/io/github/flink/gcp/protobuf/examples/DynamicExample.java) is compiled and run with the other [quickstart]({{< relref "docs/quickstart" >}}) examples; the snippets below come from it.
+[ADR-0005]({{< param BookRepo >}}/blob/main/docs/adr/0005-descriptor-bound-dynamic-messages.md) records the design.
 
 ## DynamicMessage and generated common types
 
@@ -38,7 +38,7 @@ They are a different tool: their schema is fixed and known to the library throug
 | Google `Any` | A generated class in protobuf-java | A type URL and the bytes of another message, which stay opaque; the library does not unpack them |
 | OpenTelemetry `AnyValue` | Classes generated from the pinned OTel schema | One of eight fixed value kinds, as data of one fixed schema |
 
-The generated types use generated-class type information and the registered factory, as [Supported types](common-types.md) shows.
+The generated types use generated-class type information and the registered factory, as [Supported types]({{< relref "docs/common-types" >}}) shows.
 Changing a Struct key, an Any payload, or the AnyValue variant changes data, so unchanged-schema state restoration covers it.
 For DynamicMessage, the descriptor is the schema, and restoring with another descriptor is a [schema change](#state-and-restore).
 
@@ -67,13 +67,13 @@ A descriptor that a generated class supplies also works, but then the generated 
 
 ## Explicit type information
 
-`ProtobufTypeInformation.of(descriptor)` creates the type information, and `ProtobufTypeInformation.newBuilder(descriptor)` accepts the four [settings](usage.md#explicit-type-information) of the generated-class builder.
+`ProtobufTypeInformation.of(descriptor)` creates the type information, and `ProtobufTypeInformation.newBuilder(descriptor)` accepts the four [settings]({{< relref "docs/usage#explicit-type-information" >}}) of the generated-class builder.
 Give it to every operator that returns DynamicMessage values:
 
 {{< example "DynamicExample#dynamic-returns" >}}
 
 Creating the type information checks the descriptor.
-Every message type that the root reaches must be declared in a proto3 file, as for [generated messages](usage.md#nested-values-and-supported-types), with no extensions or extension ranges, no group or required field, and no field number above 536,870,911.
+Every message type that the root reaches must be declared in a proto3 file, as for [generated messages]({{< relref "docs/usage#nested-values-and-supported-types" >}}), with no extensions or extension ranges, no group or required field, and no field number above 536,870,911.
 protoc rejects groups, required fields, extension ranges, and such field numbers in proto3 files, but descriptor building accepts them in a descriptor built by hand.
 It also rebuilds the descriptors from their serialized form, as a TaskManager does, so a descriptor that cannot be rebuilt from its own content, such as one built against missing imports, fails here.
 A failure throws `IllegalArgumentException` that names the root and the failed rule.
@@ -104,7 +104,7 @@ It rejects other values with `IOException`, before writing any byte, naming the 
 A `bytes` field set from a `byte[]` keeps that array without copying it, so treat the array as immutable afterwards.
 Deterministic serialization does not order DynamicMessage map entries; both supported runtimes write them in insertion order.
 
-In the [1.0.0 release-candidate benchmarks](validation/serializer-benchmarks-v1.0.0.md#dynamicmessage-lanes), decoding the benchmark's scalar, nested, and collections records as DynamicMessage values took 5.3 to 6.3 times as long as decoding the generated messages with the same content, and writing them took 1.5 to 1.8 times as long.
+In the [1.0.0 release-candidate benchmarks]({{< param BookRepo >}}/blob/main/docs/validation/serializer-benchmarks-v1.0.0.md#dynamicmessage-lanes), decoding the benchmark's scalar, nested, and collections records as DynamicMessage values took 5.3 to 6.3 times as long as decoding the generated messages with the same content, and writing them took 1.5 to 1.8 times as long.
 The serializer decodes both with the parser of the value's type, so the decoding difference is the cost of protobuf-java's DynamicMessage parsing.
 Writing values whose descriptors are equal-content instances from elsewhere took about as long as writing values with the serializer's own descriptors; the measured differences stayed within the variation between adjacent benchmark lanes.
 
@@ -115,7 +115,7 @@ Key streams and MapState by stable scalar values extracted from the message, as 
 {{< example "DynamicExample#dynamic-keys" >}}
 
 DynamicMessage keys are not supported: their hash codes include the descriptor instance's identity, which differs between the tasks that send and receive a record.
-See [scalar keys](usage.md#scalar-keys).
+See [scalar keys]({{< relref "docs/usage#scalar-keys" >}}).
 State descriptors take the same type information as the stream:
 
 {{< example "DynamicExample#dynamic-state" >}}
@@ -124,10 +124,10 @@ State descriptors take the same type information as the stream:
 
 DynamicMessage state uses its own serializer snapshot, which records the root's full name, the complete normalized descriptor set, and the settings.
 A restore rebuilds the saved descriptors without the application's descriptor or any application class.
-The new application's type information then decides whether it can read the saved state, by the [schema-change rules](compatibility.md#schema-changes) of generated messages and the same rules for the size and depth limits and the other settings, except that no Java class name is involved: the root's full name must stay the same.
+The new application's type information then decides whether it can read the saved state, by the [schema-change rules]({{< relref "docs/compatibility#schema-changes" >}}) of generated messages and the same rules for the size and depth limits and the other settings, except that no Java class name is involved: the root's full name must stay the same.
 
 A restore that these rules reject fails with Flink's `StateMigrationException` for an incompatible new serializer, which names no reason.
-Check a schema change against the rules above before deploying it, and test the restore with a savepoint as the [upgrade procedure](compatibility.md#verified-coverage-and-upgrade-procedure) describes.
+Check a schema change against the rules above before deploying it, and test the restore with a savepoint as the [upgrade procedure]({{< relref "docs/compatibility#verified-coverage-and-upgrade-procedure" >}}) describes.
 
 After a supported schema change, restored values do not all carry the new descriptor:
 
@@ -140,7 +140,7 @@ Saved generated-message state does not restore into a DynamicMessage type, and s
 Restoring DynamicMessage state into a generated type, or generated state into a DynamicMessage type whose application still contains the generated class, fails with `StateMigrationException`.
 When the application no longer contains the generated class, restoring generated state fails earlier, because the saved class cannot load.
 
-The [DynamicMessage recovery tests](validation/runtime-recovery.md#dynamicmessage) verify checkpoint recovery, savepoint restores with unchanged and supported schemas, the descriptors that restored values carry, and the rejections above on HashMap and RocksDB, with a DynamicMessage application whose jar contains no generated class.
+The [DynamicMessage recovery tests]({{< param BookRepo >}}/blob/main/docs/validation/runtime-recovery.md#dynamicmessage) verify checkpoint recovery, savepoint restores with unchanged and supported schemas, the descriptors that restored values carry, and the rejections above on HashMap and RocksDB, with a DynamicMessage application whose jar contains no generated class.
 
 ## Scope and exclusions
 
