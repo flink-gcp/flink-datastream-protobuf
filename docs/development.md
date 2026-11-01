@@ -614,7 +614,7 @@ It is not a `<mirror>`, so an artifact that the mirror has not synced yet still 
 The action also sets `MVNW_REPOURL`, so the Maven Wrapper downloads Maven itself from the mirror, but only when the mirror holds the Maven version of every checkout's wrapper; otherwise it reports a warning and the wrapper downloads from Central, because `MVNW_REPOURL` replaces the wrapper's only URL.
 The Docs build calls the controller checkout's action, because the milestone sources it builds predate it.
 Local builds read neither variable and resolve from Central.
-The `Release` job sets `MAVEN_ARGS` to pass the same file with `--global-settings`, because `--settings` would replace the user settings in which `actions/setup-java` names the `central` server; it restores no Maven cache, and its Maven Wrapper downloads Maven from Central.
+The `Release` workflow's `stage` job sets `MAVEN_ARGS` to pass the same file with `--global-settings`, because `--settings` would replace the user settings in which `actions/setup-java` names the `central` server; it restores no Maven cache, and its Maven Wrapper downloads Maven from Central.
 
 The action then restores `~/.m2/repository` and `~/.m2/wrapper`, in place of `setup-java`'s `cache: maven`.
 Its key hashes every `pom.xml`, the wrapper properties, and the CI settings, and the `maven-repository-` prefix restores the newest entry when the exact key is missing.
@@ -798,11 +798,13 @@ Before changing the release profile, the guard, or the inspection, also run a si
 
 ### Publishing a release
 
-The `Release` job in `.github/workflows/release.yaml` runs in the `release` environment, whose secrets are `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, the project release key shared with flink-connector-gcp, and `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`, a Central Portal user token for the `io.github.flink-gcp` namespace.
+The `Release` workflow in `.github/workflows/release.yaml` has three jobs: `stage` rehearses, stages, and validates both lines, `publish-central` publishes both Central deployments, and `github-release` creates the GitHub Release.
+The first two run in the `release` environment, whose secrets are `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, the project release key shared with flink-connector-gcp, and `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`, a Central Portal user token for the `io.github.flink-gcp` namespace.
 The environment admits only the `main` branch and `v*` tags and has no required reviewers, and the repository ruleset `release tags` lets only administrators create, move, or delete `v*` tags.
 Pull requests and Verify never read the secrets.
 Register a replacement value with `gh secret set <name> --env release`; the repository holds no release secret of its own.
-The workflow's `actions/setup-java` step writes Maven settings whose `central` server reads the token pair from the environment, which only the staging steps set.
+The `stage` job's `actions/setup-java` step writes Maven settings whose `central` server reads the token pair from the environment, which only the staging steps set.
+The `github-release` job holds `contents: write` and no release secret.
 
 1. Merge a pull request that prepares the release.
    Set `project.version` in `pom.xml`, `protobuf.integration.version` in `examples/datastream/pom.xml`, and every page that names the development version (`git grep -n <current-version>`) to `X.Y.Z-SNAPSHOT` if they differ, so that Verify's rehearsal on the commit to tag stages exactly `X.Y.Z`; the workflow takes the version from the tag and does not compare it with the POM.
@@ -813,7 +815,8 @@ The workflow's `actions/setup-java` step writes Maven settings whose `central` s
 3. Optionally run it again with `-f mode=validate` to upload both lines, wait for Central validation, and drop both deployments; like a tag run, it refuses a commit that `main` does not contain.
    Its final step drops every captured deployment that is `VALIDATED` or `FAILED`, including the first when the second staging step failed; a dropped deployment may still count toward the namespace's monthly Central usage.
 4. Create a signed tag `vX.Y.Z` on that commit and push it.
-   The workflow refuses a commit that `main` does not contain and any tag other than a bare `vX.Y.Z`; it repeats the signed rehearsal, stages `X.Y.Z` and `X.Y.Z-1.20`, publishes both after both validate, and then creates the GitHub Release with generated notes.
+   The workflow refuses a commit that `main` does not contain and any tag other than a bare `vX.Y.Z`; it repeats the signed rehearsal, stages `X.Y.Z` and `X.Y.Z-1.20`, and hands both deployment IDs to `publish-central` after both validate.
+   That job publishes both and waits up to three hours for both to be `PUBLISHED`, and `github-release` then creates the GitHub Release with generated notes.
    The CI `workflow_run` hook then adds the release to the documentation site.
 
 After the workflow succeeds:
@@ -830,12 +833,25 @@ After the workflow succeeds:
 The workflow runs one release at a time; GitHub cancels a pending run when a newer one queues in the same group, so re-run a cancelled tag run from the Actions page, because it uploaded nothing and the tag still exists.
 
 The run summary records each captured deployment ID and state change.
-Recovery needs the Central token pair locally, from the maintainer's own copy because repository secrets cannot be read back, exported as `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`; inspect both deployments with `just central-portal status <2x-id> <1x-id>`.
-Before any Publish request, drop leftover `VALIDATED` or `FAILED` deployments with `just central-portal drop <id>...`, then rerun the workflow; leave a deployment that is still validating until its state can be checked again.
-After a Publish request, do not rerun the workflow, which would stage another pair under immutable coordinates; resume with `just central-portal publish <2x-id> <1x-id>`, which publishes only `VALIDATED` deployments and waits for those already publishing.
+The publication wait allows three hours, which covers v1.0.0: its deployments were still `PUBLISHING` when the earlier 30-minute wait expired, and `repo1.maven.org` served them about 2 h 41 min after the Publish request.
+
+A failure in `stage` publishes neither line.
+Before re-running it, drop leftover `VALIDATED` or `FAILED` deployments with `just central-portal drop <id>...`, which needs the Central token pair locally as described below; leave a deployment that is still validating until its state can be checked again.
+
+After `stage` succeeded, recover with "Re-run failed jobs" on the failed run, never "Re-run all jobs".
+The re-run repeats `publish-central`, `github-release`, or both with the deployment IDs of the original `stage` attempt.
+A publication that outlasted the wait therefore resumes the wait without a second Publish request, and a GitHub-side failure repeats only the Release, which the re-run leaves as it is if an earlier attempt published it; a draft or prerelease Release, which the documentation site skips, stops the job until it is made a stable release or deleted by hand.
+A successful re-run completes the run as a tag push, which the CI `workflow_run` hook publishes the documentation on; if the release still does not appear on the site, run `gh workflow run ci.yaml --ref main`.
+GitHub offers a re-run for 30 days after the run.
+"Re-run all jobs" would stage another pair under immutable coordinates, so `stage` refuses it once it succeeded in an earlier attempt; the refused attempt leaves no outputs for the later jobs, so finish that run by hand.
+
+A re-run uses the workflow of the tagged commit, so never re-run a run of a tag cut before [#181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181), such as `v1.0.0`, whose single job stages again.
+Recover such a run, a refused re-run, or a failure that no re-run fixes by hand.
+That recovery needs the Central token pair locally, from the maintainer's own copy because repository secrets cannot be read back, exported as `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`.
+Inspect both deployments, whose IDs the summary of the attempt whose `stage` succeeded records, with `just central-portal status <2x-id> <1x-id>`, and resume with `just central-portal publish <2x-id> <1x-id>`, which publishes only `VALIDATED` deployments and waits for those already publishing.
 If one deployment is `PUBLISHED` and the other `FAILED`, `publish` refuses the pair; read the Portal's error for the failed line, drop that deployment, and restage only that line from the tag in a fresh checkout with the signing variables, the token pair, and a `central` server entry in the Maven settings, using `just central-portal capture <new-id-file> just release-stage <line>`.
 Then run `just central-portal publish <published-id> <new-id>`; the published line's coordinates stay as they are, and a defect that needs a source change instead needs a new version.
-Once both deployments are `PUBLISHED`, whether after a resumed publication or when only the GitHub Release failed, create it with `gh release create vX.Y.Z --verify-tag --generate-notes --title vX.Y.Z`.
+Once both deployments are `PUBLISHED`, create the GitHub Release with `gh release create vX.Y.Z --verify-tag --generate-notes --title vX.Y.Z`.
 The documentation hook acts only on a successful tag-push run, so then run `gh workflow run ci.yaml --ref main` to add the release to the site.
 A tag on the wrong commit can be deleted and recut only before the first Publish request; changed artifacts afterwards need a new version.
 

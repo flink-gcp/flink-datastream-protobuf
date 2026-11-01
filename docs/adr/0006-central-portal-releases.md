@@ -19,6 +19,7 @@ limitations under the License.
 - Status: Accepted
 - Date: 2026-10-31
 - Issue: [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13)
+- Publication wait and re-runs amended: 2026-11-01, [issue #181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181)
 - Implements: The publication requirements of [ADR-0003](0003-flink-version-compatibility.md#state-and-release-acceptance)
 - Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; version 1.0.0 is the first publication through them
 - Current instructions: [Release artifacts](../development.md#release-artifacts) and [Publishing a release](../development.md#publishing-a-release)
@@ -60,7 +61,7 @@ The POM is not flattened; consequently, the `X.Y.Z-1.20` POM still names the 2.x
 
 Both repositories in the namespace use the same project release key and Central Portal token.
 The key's private part and passphrase are `MAVEN_GPG_KEY` and `MAVEN_GPG_PASSPHRASE`, and the token pair is `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`.
-They are secrets of the `release` environment, which only the `Release` job uses and whose deployment policy admits only the `main` branch and `v*` tags, without required reviewers.
+They are secrets of the `release` environment, which only the `Release` workflow's `stage` and `publish-central` jobs use and whose deployment policy admits only the `main` branch and `v*` tags, without required reviewers.
 A repository ruleset restricts creating, moving, and deleting `v*` tags to repository administrators.
 A run from any other ref, including a dispatch from an unmerged branch whose workflow file drops the ancestry check, therefore receives no release secret, and only an administrator can cut the tag that publishes.
 Pull-request builds and the CI rehearsal read none of them.
@@ -104,6 +105,33 @@ The Portal helper is ported from flink-connector-gcp with its tests.
 
 This repository ports ADR-0147's shape without the parts that serve a multi-module reactor: there are no uber-jars to attach to the GitHub Release, and a single module needs no module-local publication exclusions.
 
+### Publication wait and re-runs
+
+The `v1.0.0` tag run ([41269811182](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41269811182)) staged both lines in 3 minutes, and the helper requested Publish for both at 03:38:51 and 03:38:52 UTC.
+Both deployments were still `PUBLISHING` when the 30-minute wait expired at 04:08:56 UTC, and `repo1.maven.org` served both versions between 06:15 and 06:20 UTC, about 2 h 41 min after the request.
+The time at which the Portal reported `PUBLISHED` was not recorded; the `repo1.maven.org` directory listing dates the files 04:40 UTC.
+The timeout failed the single job, which skipped the GitHub Release and the documentation; the maintainer finished both by hand.
+flink-connector-gcp's `v1.3.0` run failed the same way that morning; its `v1.1.0` and `v1.2.0` publications had taken 14 and 4 minutes.
+A re-run of that job would have staged and uploaded another pair, so recovery needed the Central token outside the `release` environment.
+
+The helper now waits up to three hours, and the workflow follows flink-connector-gcp's [#1982](https://github.com/flink-gcp/flink-connector-gcp/pull/1982) in splitting into three jobs, so that a re-run no longer stages:
+
+- `stage` rehearses, stages, and validates both lines, then hands both deployment IDs on as job outputs.
+  The step that hands them on runs only after every earlier step succeeded, and the later jobs start only on this job's success.
+  It holds the signing key and the Central token with `contents: read` and `actions: read`, within 120 minutes for two validations at the plugin's 30-minute default and the builds.
+- `publish-central` runs `just central-portal publish <2x-id> <1x-id>`: it sends Publish only for a `VALIDATED` deployment, waits on a `PUBLISHING` one, and returns at once for `PUBLISHED` ones.
+  It holds the Central token with `contents: read`, has no signing key, runs no build, and stops after 200 minutes, enough for the three-hour wait and setup.
+- `github-release` creates the GitHub Release with generated notes unless an earlier attempt already published it, and stops at a draft or a prerelease, which only a maintainer creates and the documentation site skips.
+  It holds `contents: write` and no release secret.
+
+When `publish-central` or `github-release` fails, "Re-run failed jobs" runs it again with the job outputs of the original `stage` attempt.
+flink-connector-gcp measured this on a throwaway workflow ([run 41286883270](https://github.com/flink-gcp/flink-connector-gcp/actions/runs/41286883270)): the re-run job read the first attempt's output, and the succeeded job was not re-run.
+Each later job is safe to repeat, so a publication that outlasts the wait, or a GitHub error during the Release, needs only that button.
+A successful re-run completes the run with the `push` event, which the CI `workflow_run` hook requires; in flink-connector-gcp, each attempt's completion has fired its own `workflow_run` event, but the `conclusion` that a successful re-run attempt reports has not yet been observed, and the documented fallback is a manual CI dispatch.
+"Re-run all jobs" after a successful `stage` would stage the version again, so `stage` first reads the jobs of every earlier attempt and refuses before anything is checked out or signed if it succeeded in any of them.
+A refused attempt has no outputs for the later jobs, so after that mistake the run is finished by hand.
+After `stage` failed in every earlier attempt, a re-run stages afresh, as before.
+
 ## Alternatives
 
 - **Automatic publication per line.**
@@ -118,6 +146,13 @@ This repository ports ADR-0147's shape without the parts that serve a multi-modu
   The tag run instead inspects a separate signed build of the same commit before staging, and Central validates the uploaded bundle.
 - **Flattening the published POM.**
   A flattened POM would name the 1.20 runtime for the LTS line, but it changes no resolution result while every dependency is `provided` or `test`, and it adds a plugin to the release build.
+- **A resume dispatch with typed deployment IDs.**
+  Proposed in [#181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181) and drafted first in flink-connector-gcp.
+  A mistyped ID, or the pair of a run that failed before Publish, would be published irreversibly, and the deployments' Portal names cannot show whether that run passed its gates.
+  A dispatch also runs the dispatched ref's copy of the workflow, so a tag cut before the change has no resume mode, and a dispatch is not a `push` run, so the documentation would need a wider `workflow_run` guard or an `actions: write` dispatch.
+  A re-run carries the IDs from the job that captured them and needs no input.
+- **Telling a version's state from its coordinates.**
+  `repo1.maven.org` shows a version only once it is `PUBLISHED`, and the Portal documents no lookup by coordinates and no listing of deployments, so a run could not tell `PUBLISHING` from never uploaded.
 - **Scanning bytecode with `jdeps` or `javap`.**
   Both need a JDK and a resolved classpath in the inspection; the constant-pool reader in the standard-library inspection tool needs neither.
 
@@ -127,3 +162,4 @@ This repository ports ADR-0147's shape without the parts that serve a multi-modu
 - The inspection allow-lists classes by their source files, so a resource, a production source root, or a second top-level class in one source file requires changing the inspection with it.
 - A local rehearsal writes its exported tree and bundles to a new external directory and leaves the checkout unchanged.
 - The release key and token are shared with flink-connector-gcp; rotating either requires updating both repositories' secrets.
+- A re-run uses the workflow and scripts of the tagged commit, so the re-run recovery applies only to tags cut after [#181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181); `v1.0.0` and a refused re-run are recovered by hand with the Central token pair.

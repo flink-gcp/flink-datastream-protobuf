@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # The Release workflow creates the stable GitHub Release as its last tag-push step.
+  # The Release workflow creates the stable GitHub Release in its last tag-push job, also when a
+  # re-run attempt completes the run.
   # A successful manual Release dry run must not publish documentation.
   workflow_run:
     workflows: [Release]

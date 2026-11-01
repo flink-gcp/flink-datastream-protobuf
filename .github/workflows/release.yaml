@@ -1,8 +1,11 @@
 name: Release
 # A bare vX.Y.Z tag on main rehearses both artifact lines, stages them as two Central Portal
 # deployments, publishes both only after both validate, and then creates the GitHub Release
-# (ADR-0006). A manual dispatch rehearses by default; mode validate also uploads both lines,
-# waits for validation, and drops them. A dispatch never publishes, even when it targets a tag.
+# (ADR-0006). The three are separate jobs, so a run that fails after staging is finished with
+# "Re-run failed jobs": the failed publication or Release job runs again with the staged
+# deployment IDs, and staging never repeats. A manual dispatch rehearses by default; mode
+# validate also uploads both lines, waits for validation, and drops them. A dispatch never
+# publishes, even when it targets a tag.
 on:
   push:
     tags:
@@ -31,28 +34,57 @@ on:
 concurrency:
   group: release
   cancel-in-progress: false
+# Each job re-grants only what it needs. No job holds both a release secret and a write scope.
 permissions: {}
 # An explicit bash shell adds pipefail to GitHub's default -e.
 defaults:
   run:
     shell: bash
 jobs:
-  release:
+  stage:
     # Forks must not reach for this repository's secrets; the ID survives a rename or transfer.
     if: github.repository_id == '1358906035'
-    name: Rehearse, stage, and publish both lines
+    # The re-run guard below matches this name in earlier attempts.
+    name: Rehearse and stage both lines
     runs-on: ubuntu-latest
     # The release secrets are environment secrets; the environment admits only main and v* tags.
     environment: release
     permissions:
-      contents: write
-    # Two validations and the publication wait take up to 30 minutes each.
+      contents: read
+      # The re-run guard reads the jobs of earlier attempts.
+      actions: read
+    # Each validation waits up to the plugin's 30-minute waitMaxTime default; the rehearsal and
+    # both staging builds took 3 minutes in the v1.0.0 run (41269811182).
     timeout-minutes: 120
+    outputs:
+      deployment-2x: ${{ steps.ids.outputs.deployment-2x }}
+      deployment-1x: ${{ steps.ids.outputs.deployment-1x }}
     # Read Google's mirror of Central first, as CI does. Global settings keep the user settings that
     # setup-java writes for the central server; the job restores and saves no Maven cache.
     env:
       MAVEN_ARGS: --global-settings ${{ github.workspace }}/.github/maven/settings.xml
     steps:
+      # "Re-run all jobs" after this job succeeded in any earlier attempt would stage the version
+      # again while its deployments are PUBLISHING or PUBLISHED, so refuse before anything is
+      # checked out or signed. Every earlier attempt counts: a refused attempt fails this job, and
+      # a later "Re-run failed jobs" would otherwise find only that failure. A refused attempt has
+      # no outputs, so the run is then finished by hand (docs/development.md, Publishing a release).
+      - name: Refuse to restage a staged release
+        if: github.event_name == 'push' && github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE_JOB: Rehearse and stage both lines
+        run: |
+          for ((attempt = 1; attempt < GITHUB_RUN_ATTEMPT; attempt++)); do
+            conclusion=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$attempt/jobs" \
+              --jq '.jobs[] | select(.name == env.STAGE_JOB) | .conclusion')
+            if grep -qx success <<< "$conclusion"; then
+              echo "Attempt $attempt already staged this release; do not stage it again." \
+                "Finish it by hand with that attempt's deployment IDs." >&2
+              exit 1
+            fi
+          done
       # fetch-depth 0 serves the ancestry check. No Maven cache: a release resolves its build fresh.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -134,19 +166,24 @@ jobs:
           fi
           just central-portal capture "$RUNNER_TEMP/central-1x.id" \
             just release-stage "$VERSION-1.20" "-DdeploymentName=$name"
-      # Both IDs are checked before the first Publish request; a failed earlier step skips this.
-      - name: Publish both Central deployments
+      # Runs only once every earlier step succeeded, so both lines staged and validated; the later
+      # jobs start only on this job's success.
+      - name: Hand both deployment IDs to the publication
+        id: ids
         if: github.event_name == 'push'
-        env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-        run: just central-portal publish "$(cat "$RUNNER_TEMP/central-2x.id")" "$(cat "$RUNNER_TEMP/central-1x.id")"
-      # Created only after both lines are PUBLISHED; the CI workflow_run hook then deploys the documentation.
-      - name: Publish the GitHub Release
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        run: |
+          outputs=()
+          for line in 2x 1x; do
+            # Only one lower-case UUID, as capture writes it, reaches GITHUB_OUTPUT; two IDs leave
+            # a newline inside, which the anchored pattern rejects.
+            id=$(cat "$RUNNER_TEMP/central-$line.id")
+            if [[ ! "$id" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]]; then
+              echo "Release: expected one captured deployment ID for the $line line" >&2
+              exit 1
+            fi
+            outputs+=("deployment-$line=$id")
+          done
+          printf '%s\n' "${outputs[@]}" >> "$GITHUB_OUTPUT"
       # Also cleans up the first deployment when the second staging step fails.
       - name: Drop dry-run deployments
         if: always() && github.event_name == 'workflow_dispatch' && inputs.mode != 'rehearse'
@@ -162,4 +199,60 @@ jobs:
           done
           if (( ${#ids[@]} > 0 )); then
             just central-portal drop "${ids[@]}"
+          fi
+  # Sends Publish only for a VALIDATED deployment, waits on a PUBLISHING one, and returns at once
+  # for PUBLISHED ones, so a re-run resumes where the last attempt stopped. It holds the Central
+  # token but no signing key, runs no build, and has no write scope.
+  publish-central:
+    if: github.event_name == 'push'
+    needs: stage
+    name: Publish both Central deployments
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    # central-portal.py's 3-hour WAIT_TIMEOUT, with minutes for setup.
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          install_args: python uv
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: just
+      - name: Publish or wait for both Central deployments
+        env:
+          DEPLOYMENT_2X: ${{ needs.stage.outputs.deployment-2x }}
+          DEPLOYMENT_1X: ${{ needs.stage.outputs.deployment-1x }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: just central-portal publish "$DEPLOYMENT_2X" "$DEPLOYMENT_1X"
+  # Created only after both lines are PUBLISHED; the CI workflow_run hook then deploys the
+  # documentation. A re-run accepts a stable Release that an earlier attempt created, and refuses a
+  # draft or a prerelease, which only a maintainer creates and the documentation site would skip.
+  github-release:
+    if: github.event_name == 'push'
+    needs: publish-central
+    name: Publish the GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 10
+    steps:
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if unstable=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease'); then
+            if [[ "$unstable" != false ]]; then
+              echo "The GitHub Release $GITHUB_REF_NAME is a draft or a prerelease; make it a stable release or delete it by hand." >&2
+              exit 1
+            fi
+            echo "The GitHub Release $GITHUB_REF_NAME already exists."
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
           fi
