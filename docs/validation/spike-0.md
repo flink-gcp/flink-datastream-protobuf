@@ -1,7 +1,3 @@
----
-title: "Spike 0 validation"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

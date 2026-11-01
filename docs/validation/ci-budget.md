@@ -1,7 +1,3 @@
----
-title: "CI compiler reuse and job budgets"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

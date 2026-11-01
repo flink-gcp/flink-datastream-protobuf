@@ -1,7 +1,3 @@
----
-title: "Serializer implementation performance check"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

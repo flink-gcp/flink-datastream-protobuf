@@ -271,7 +271,7 @@ limitations under the License.
                     <excludes>
                         <!-- Generated documentation and dependency inventories. -->
                         <exclude>docs/go.sum</exclude><exclude>uv.lock</exclude>
-                        <exclude>docs/public/**</exclude><exclude>docs/resources/**</exclude><exclude>**/__pycache__/**</exclude>
+                        <exclude>docs/public/**</exclude><exclude>docs/resources/**</exclude><exclude>docs/static/api/**</exclude><exclude>**/__pycache__/**</exclude>
                         <exclude>**/.*</exclude><exclude>**/.*/**</exclude><exclude>**/target/**</exclude>
                         <exclude>LICENSE</exclude><exclude>NOTICE</exclude><exclude>mvnw</exclude><exclude>mvnw.cmd</exclude>
                         <exclude>mise.toml</exclude><exclude>mise.local.toml</exclude><exclude>**/*.log</exclude>

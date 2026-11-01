@@ -1,7 +1,3 @@
----
-title: "Aliased large-frame reads in the native serializer"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

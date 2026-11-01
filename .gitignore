@@ -25,4 +25,6 @@ __pycache__/
 # Generated documentation and documentation-tool environments.
 docs/public/
 docs/resources/
+# Generated API reference (`just docs-javadoc`).
+docs/static/api/
 docs/.hugo_build.lock

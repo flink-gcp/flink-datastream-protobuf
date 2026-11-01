@@ -1,7 +1,3 @@
----
-title: "Development artifact bundles"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 

@@ -52,7 +52,7 @@ class DocumentationExamplesTest {
                 .isEqualTo(version);
         assertThat(property(example, "/project/properties/flink.version")).isEqualTo(floor);
         assertThat(property(example, "/project/properties/protobuf.version")).isEqualTo(protobuf4);
-        assertThat(Files.readString(Path.of("docs/quickstart.md")))
+        assertThat(Files.readString(Path.of("docs/content/docs/quickstart.md")))
                 .contains(
                         "sets `protobuf.integration.version` to `" + version + "`",
                         "examples-verify " + floor + " 4 ",
@@ -64,12 +64,12 @@ class DocumentationExamplesTest {
                 .contains(
                         "`io.github.flink-gcp:flink-datastream-protobuf:" + version + "`",
                         "protobuf-java/protoc " + protobuf4 + " and " + protobuf3);
-        assertThat(Files.readString(Path.of("docs/compatibility.md")))
+        assertThat(Files.readString(Path.of("docs/content/docs/compatibility.md")))
                 .contains(
                         "A build of this source is the development version `" + version + "`",
                         "CI pairs " + protobuf4 + " generated code with runtime " + protobuf4,
                         "and " + protobuf3 + " generated code with runtime " + protobuf3);
-        assertThat(Files.readString(Path.of("docs/usage.md")))
+        assertThat(Files.readString(Path.of("docs/content/docs/usage.md")))
                 .contains("Current `" + version + "` development builds");
     }
 

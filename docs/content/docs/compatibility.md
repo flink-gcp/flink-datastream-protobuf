@@ -31,26 +31,26 @@ The 0.x versions are development milestones, not releases, and their APIs, defau
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 
 Version 1.0.0 is the first release and the start of the [stable API and forward-restore contract](#compatibility-from-100).
-Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling](validation/development-baselines.md).
+Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling]({{< param BookRepo >}}/blob/main/docs/validation/development-baselines.md).
 
 Version 1.0.0 restarts the persisted formats at version 1 under snapshot classes that the 0.1.0, 0.2.0, and 0.3.0 milestones never wrote, and it removes their snapshot classes.
 It therefore does not read state written by those milestones: Flink fails the restore because the saved snapshot class is absent.
 There is no migration or upgrade guide from a 0.x milestone or a development SNAPSHOT build to 1.0.0.
 An application that ran one starts 1.0.0 with fresh state or replays its input, and decides how the rebuilt state and any repeated output affect its data.
-Development APIs carry no guarantee either; compile the application against 1.0.0 and follow its [usage guide](usage.md).
+Development APIs carry no guarantee either; compile the application against 1.0.0 and follow its [usage guide]({{< relref "docs/usage" >}}).
 
 ## Compatibility from 1.0.0
 
 From 1.0.0, each release keeps these contracts within its major version:
 
-- The application-facing API annotated `@Public` or `@PublicEvolving` remains source and binary compatible; the [API compatibility gate](development.md#api-compatibility-gate) compares each candidate with the earlier release.
+- The application-facing API annotated `@Public` or `@PublicEvolving` remains source and binary compatible; the [API compatibility gate]({{< param BookRepo >}}/blob/main/docs/development.md#api-compatibility-gate) compares each candidate with the earlier release.
 - Configuration defaults keep their meaning.
 - A later release restores state that an earlier release of the same major version wrote, for unchanged schemas and the [supported schema changes](#schema-changes), with the same artifact line, Flink minor, and Protobuf runtime and generated code; each release checks this against state retained from the earlier published release.
 
 Downgrades, restores across Flink minors or artifact lines, and restores across changed built-in descriptors are not part of the contract.
 A change that breaks one of these contracts requires a new major version with migration documentation.
 Within a major version, a patch release, such as 1.0.1, only fixes defects or security issues and updates dependencies, including pinned patch versions, without changing which Flink minors and Protobuf lines it supports.
-A minor release, such as 1.1.0, can also add API or configuration, move the supported Flink versions under [ADR-0003](adr/0003-flink-version-compatibility.md), or change the implementation beyond a fix, such as a performance change in serialization.
+A minor release, such as 1.1.0, can also add API or configuration, move the supported Flink versions under [ADR-0003]({{< param BookRepo >}}/blob/main/docs/adr/0003-flink-version-compatibility.md), or change the implementation beyond a fix, such as a performance change in serialization.
 
 ## Artifact lines and version order
 
@@ -144,7 +144,7 @@ They describe the forward direction: the saved state was written with the old sc
 | Change `int32` to `int64` | Conditionally safe; values written later can exceed an old reader's range | Rejected |
 
 The binary classifications follow the [proto3 guide](https://protobuf.dev/programming-guides/proto3/#updating); ProtoJSON has different rules.
-The library applies the [directional evaluator](adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) to the complete saved descriptors.
+The library applies the [directional evaluator]({{< param BookRepo >}}/blob/main/docs/adr/0001-native-protobuf-type-integration.md#supported-schema-evolution-in-020) to the complete saved descriptors.
 It compares the messages and enums that saved bytes can reach from the root message through retained fields, together with their enclosing messages and declaring files.
 Within those declarations, every difference other than the supported changes above and added reservations or oneofs is rejected, including options, defaults, presence, oneof membership, and the order of retained fields or enum values.
 Declarations that saved bytes cannot reach, such as unrelated messages in the same file, do not affect the decision.
@@ -159,7 +159,7 @@ Cannot restore Protobuf serializer for io.example.Events$Event (example.Event): 
 ```
 
 A decreased size or depth limit fails with Flink's `StateMigrationException`, which does not name the limit.
-The [schema-evolution test](../src/test/java/io/github/flink/gcp/protobuf/ProtobufSchemaEvolutionITCase.java) verifies the accepted and rejected changes in separate jobs for ValueState, MapState values, and operator ListState on HashMap and RocksDB.
+The [schema-evolution test]({{< param BookRepo >}}/blob/main/src/test/java/io/github/flink/gcp/protobuf/ProtobufSchemaEvolutionITCase.java) verifies the accepted and rejected changes in separate jobs for ValueState, MapState values, and operator ListState on HashMap and RocksDB.
 
 ## Java runtime version updates
 
@@ -183,13 +183,13 @@ Updating only `protobuf-java` and updating protoc plus regenerating application 
 
 ## Verified coverage and upgrade procedure
 
-The [runtime suite](validation/runtime-recovery.md) restores complete savepoints within each pinned Flink/Protobuf combination.
+The [runtime suite]({{< param BookRepo >}}/blob/main/docs/validation/runtime-recovery.md) restores complete savepoints within each pinned Flink/Protobuf combination.
 It does not yet verify a complete savepoint written by one Protobuf version and restored by another, including patch and minor updates.
 
 The schema-evolution tests write and restore state with the same development build.
 They check the restored values, continued processing, and a second restore from a savepoint that the new application wrote.
 A field removed with a reservation remains in restored values as an unknown field, and the new application's savepoints keep it; the test reads the value back with the original schema.
-DynamicMessage state follows the same schema-change rules; the [DynamicMessage recovery tests](validation/runtime-recovery.md#dynamicmessage) verify them with state that the same development build writes.
+DynamicMessage state follows the same schema-change rules; the [DynamicMessage recovery tests]({{< param BookRepo >}}/blob/main/docs/validation/runtime-recovery.md#dynamicmessage) verify them with state that the same development build writes.
 
 Before deploying a dependency update, validate the actual old-writer/new-reader combination with the application's schemas, state, and runtime settings:
 
@@ -203,7 +203,7 @@ See [Flink's savepoint operations](https://nightlies.apache.org/flink/flink-docs
 An intermediate run without restoring state does not convert old state or make an incompatible schema compatible.
 If restoration is rejected, retain the old deployment or explicitly choose a documented migration or fresh-state/replay procedure.
 Starting fresh requires an explicit decision about rebuilding state and replaying input; the library has no state-migration step and provides no migration path for rejected schema changes.
-The [development guide](development.md#test-resources-and-version-updates) contains the dependency-update checks.
+The [development guide]({{< param BookRepo >}}/blob/main/docs/development.md#test-resources-and-version-updates) contains the dependency-update checks.
 
 ## Preparing schema changes
 

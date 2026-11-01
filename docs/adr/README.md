@@ -1,7 +1,3 @@
----
-title: "Architecture decisions"
-bookHidden: true
----
 <!--
 Copyright 2026 The flink-gcp authors
 
