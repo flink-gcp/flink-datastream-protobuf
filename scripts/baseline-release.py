@@ -100,10 +100,23 @@ def run(command, cwd, log):
                               stderr=subprocess.STDOUT, env=environment).returncode
 
 
+# Git variables that select a repository other than the one found from the working directory.
+REPOSITORY_SELECTION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                        "GIT_ALTERNATE_OBJECT_DIRECTORIES")
+
+
 def output(command, cwd=ROOT):
-    result = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    """Runs a command in cwd; git finds the repository from cwd, not from an inherited GIT_DIR."""
+    environment = {k: v for k, v in os.environ.items() if k not in REPOSITORY_SELECTION}
+    result = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                            env=environment)
     require(result.returncode == 0, "Command failed: " + " ".join(command) + ": " + result.stderr.strip())
     return result.stdout
+
+
+def script_head():
+    """The commit of the checkout that runs this script, whose READERS plan the readers and their check."""
+    return output(["git", "rev-parse", "HEAD"]).strip()
 
 
 def reader_names(bundle, line):
@@ -123,6 +136,9 @@ def read(work, checkout, java17, java21):
     require(not os.path.lexists(checkout / "target"),
             "Move the capture build output out of the checkout before reading: " + str(checkout / "target"))
     head = output(["git", "rev-parse", "HEAD"], cwd=checkout).strip()
+    running = script_head()
+    require(running == head, "Run read from the capture checkout: this script's checkout is at " + running
+            + ", the capture checkout at " + head)
     verification = work / "verification"
     require(not os.path.lexists(verification), "Verification output already exists: " + str(verification))
     javas = {17: java17, 21: java21}
@@ -530,6 +546,9 @@ def assemble(tag, work, run_id):
             "README.md and the review must be files in the work directory")
     readme = (work / "README.md").read_text(encoding="utf-8")
     tag_object, revision = tag_identity(tag)
+    running = script_head()
+    require(running == revision, "Run assemble from the capture checkout: this script's checkout is at " + running
+            + ", " + tag + " at " + revision)
     require(tag in readme and revision in readme and tag_object in readme,
             "README.md must name the tag, its commit, and its tag object")
     review_record = checked_review(work, readme)

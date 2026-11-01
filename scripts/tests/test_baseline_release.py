@@ -142,6 +142,7 @@ class Answers:
 def answers(monkeypatch):
     answers = Answers()
     monkeypatch.setattr(release, "tag_identity", lambda tag: (TAG_OBJECT, REVISION))
+    monkeypatch.setattr(release, "script_head", lambda: REVISION)
     monkeypatch.setattr(release, "github_run", lambda run_id: answers.ci)
     monkeypatch.setattr(release, "job_log", lambda run_id, job: answers.freeze_log if job == 7 else "")
     monkeypatch.setattr(release.layout, "baseline_check", answers.checked.append)
@@ -733,6 +734,7 @@ def test_review_writes_every_finding_unresolved_once(work):
 def test_read_runs_every_claimed_combination_and_both_controls(work, tmp_path, monkeypatch):
     shutil.rmtree(work / "verification")
     checkout, head = capture_checkout(tmp_path)
+    monkeypatch.setattr(release, "script_head", lambda: head)
     commands = []
 
     def run(command, cwd, log):
@@ -767,7 +769,8 @@ def test_read_runs_every_claimed_combination_and_both_controls(work, tmp_path, m
 ], ids=["control-passes", "control-creates-output", "reader-fails"])
 def test_read_rejects_controls_that_pass_or_create_output_and_failed_readers(work, tmp_path, monkeypatch, mode,
                                                                              message):
-    checkout, _ = capture_checkout(tmp_path)
+    checkout, head = capture_checkout(tmp_path)
+    monkeypatch.setattr(release, "script_head", lambda: head)
     shutil.rmtree(work / "verification")
 
     def run(command, cwd, log):
@@ -784,6 +787,40 @@ def test_read_rejects_controls_that_pass_or_create_output_and_failed_readers(wor
     with pytest.raises(release.Rejected) as raised:
         release.read(work, checkout, "java17", "java21")
     assert message in str(raised.value)
+
+
+def test_read_runs_only_from_the_capture_checkout(work, tmp_path, monkeypatch):
+    shutil.rmtree(work / "verification")
+    checkout, head = capture_checkout(tmp_path)
+    monkeypatch.setattr(release, "script_head", lambda: "d" * 40)
+    monkeypatch.setattr(release, "run", lambda command, cwd, log: pytest.fail("ran " + command[-1]))
+    with pytest.raises(release.Rejected) as raised:
+        release.read(work, checkout, "java17", "java21")
+    assert "Run read from the capture checkout" in str(raised.value) and head in str(raised.value)
+    assert not (work / "verification").exists()
+
+
+def test_assemble_runs_only_from_the_capture_checkout(work, monkeypatch):
+    reviewed(work)
+    monkeypatch.setattr(release, "script_head", lambda: "d" * 40)
+    assert_rejected(work, "Run assemble from the capture checkout")
+
+
+def test_script_head_is_the_running_checkout():
+    assert release.script_head() == subprocess.run(["git", "rev-parse", "HEAD"], cwd=release.ROOT, check=True,
+                                                   capture_output=True, text=True).stdout.strip()
+
+
+def test_git_queries_ignore_an_inherited_repository(tmp_path, monkeypatch):
+    (tmp_path / "other").mkdir()
+    (tmp_path / "running").mkdir()
+    other, other_head = capture_checkout(tmp_path / "other")
+    checkout, _ = capture_checkout(tmp_path / "running")
+    git(checkout, "commit", "-q", "--allow-empty", "-m", "d")
+    head = git(checkout, "rev-parse", "HEAD")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    assert release.output(["git", "rev-parse", "HEAD"], cwd=checkout).strip() == head != other_head
 
 
 def test_run_removes_credentials_from_the_instrument_environment(tmp_path, monkeypatch):
