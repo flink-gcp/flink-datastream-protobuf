@@ -35,6 +35,7 @@ limitations under the License.
 - Required `CI passed` ruleset amended: 2026-10-19
 - CI Maven mirror and shared repository cache amended: 2026-10-30, [issue #135](https://github.com/flink-gcp/flink-datastream-protobuf/issues/135)
 - Retained 0.x checks ended by the 1.0.0 format restart: 2026-10-31, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
+- Site theme files reduced to those the site uses: 2026-11-01, [issue #190](https://github.com/flink-gcp/flink-datastream-protobuf/issues/190)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -129,6 +130,18 @@ The site uses Hugo Extended and the pinned shared flink-gcp-dev-tools design wit
 Earlier versions mounted the repository Markdown, ADRs, and validation reports as site content; retained versions keep the layout of their tagged source.
 The consumer owns URLs, source links, version selection, Javadoc and publication; no Java runtime dependency on the connector or shared tooling is introduced.
 The bootstrap-only deferral of Hugo is complete.
+
+The site publishes only the theme files it uses, as flink-connector-gcp's [ADR-0164](https://github.com/flink-gcp/flink-connector-gcp/blob/bf9530aa2ed7564888ec33d37ed0bc0536049df5/docs/adr/0164-workflow-skills-and-documentation-design-come-from-dev-tools.md) also decides.
+`docs/hugo.toml` ignores the design module's own imports, which today are only Hugo Book, and imports Hugo Book after it, so the design module's layouts and assets still take precedence.
+From Hugo Book's `static/` directory the site publishes the two favicons and the Fuse.js module, and it excludes the KaTeX, Mermaid and asciinema-player shortcodes and code-block hooks.
+No page used those features, and their bundles carry no notice of their own: KaTeX's fonts are under the SIL Open Font License 1.1 rather than KaTeX's MIT license, Mermaid 11.14.0 lists 21 direct dependencies and its bundle retains license comments for only some of the code it compiles in, and asciinema-player 3.15.1's bundle embeds SolidJS.
+Publishing them with every notice they owe was rejected, because the versions compiled into each bundle are recoverable only from that project's lockfile at the bundled release and would be re-derived on every theme update.
+The hidden site licenses page carries the notices for what is published, and its `hugo-book-version` shortcode fails the build when the resolved Hugo Book version differs from the documented one or a replacement or vendored copy substitutes other files.
+The page lists the notices of what the site distributes directly: the theme and the components it ships as their own files or compiled styles, each checked against its own license.
+It does not follow those components further, so code compiled inside one, output that a tool generates, and values a component borrows stay off the page, such as the Lodash helpers inside Fuse.js, the Chroma styles Hugo generates the code palettes from, the scripts the JDK's javadoc bundles with the API reference, and the Nord colours in Hugo Book's dark theme; that trail has no natural end.
+Measured on 2026-11-01 at base `b5514f0e625d810e415ae6295b7921ad013a166d`: this module configuration removed 67 published files (KaTeX's 63, asciinema-player's 3 and `mermaid.min.js`) and left every other output file byte-identical.
+The configuration restores the static mount that 1.0.0 used before [#187](https://github.com/flink-gcp/flink-datastream-protobuf/pull/187) imported the design module whole, and adds the layout exclusions.
+The hosted 1.0 series, built from its tag, therefore already publishes only those static files and the Apache License text, but its site licenses page lacks the Material Symbols notice until it leaves the retention window described below.
 
 From the first 1.0.0 release, documentation retains the latest patch of the current and previous released minor series plus Development.
 Only published stable `vX.Y.Z` releases from 1.0.0 are eligible for that window; the Flink 1.20 artifact suffix shares its release's documentation slot.
