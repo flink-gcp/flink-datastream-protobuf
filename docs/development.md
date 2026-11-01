@@ -366,9 +366,10 @@ The reader uses retained bytes without rebuilding them; CI verifies the same jar
 The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
 The final v0.2.0 bundles, captured from source revision `e697ee957000f3258ba4b6fd5940458514fada5c` and assembled with `baseline-release`, are the assets of the `v0.2.0` pre-release; see the [retained v0.2.0 baseline](validation/development-baselines.md#retained-v020-baseline).
 The final v0.3.0 bundles, captured from source revision `142862b9d86f449e3e4894715602a991a018fd63`, are the assets of the `v0.3.0` pre-release; see the [retained v0.3.0 baseline](validation/development-baselines.md#retained-v030-baseline).
+The bundles that the published 1.0.0 artifacts wrote, captured from source revision `0cbc2e7fe405eb12814b0aeddf7bcb636b77d1df`, are assets of the `v1.0.0` release; see the [retained v1.0.0 baseline](validation/development-baselines.md#retained-v100-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
-The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and CI meanwhile runs them on its own [development bundle](validation/development-baselines.md#inspect-and-restore).
+The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and CI still runs them on its own [development bundle](validation/development-baselines.md#inspect-and-restore) until [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) switches it to the retained v1.0.0 bundles.
 
 ### API compatibility gate
 
@@ -379,7 +380,7 @@ Both are separate from saved-state restoration and from application gencode/runt
 ```sh
 mise x -- just baseline-fetch <tag> /tmp/baseline-<tag>
 mise x -- just api-compat /tmp/baseline-<tag>/flink2-pb3
-mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.0.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.1.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
@@ -419,7 +420,7 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-Until a published release is retained, CI runs both checks only on its own [development bundle](validation/development-baselines.md#inspect-and-restore).
+CI still runs both checks only on its own [development bundle](validation/development-baselines.md#inspect-and-restore); [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) switches them to the retained v1.0.0 bundles.
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 

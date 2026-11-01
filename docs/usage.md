@@ -225,7 +225,7 @@ Cross-Flink, cross-Protobuf, backend migration, and rescaling claims require the
 
 ## Development upgrades and API reference
 
-Current `1.0.0-SNAPSHOT` development builds restore the supported schema changes.
+Current `1.1.0-SNAPSHOT` development builds restore the supported schema changes.
 Read [Protobuf/state compatibility](compatibility.md) before changing an application or dependency.
 Version 1.0.0, the first Maven Central release, is the stabilization point; see the [compatibility from 1.0.0](compatibility.md#compatibility-from-100).
 

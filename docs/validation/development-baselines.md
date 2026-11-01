@@ -25,7 +25,7 @@ The final v0.1.0, v0.2.0, and v0.3.0 bundles are retained as assets of the [`v0.
 The tooling labels a development capture `development-tooling-baseline` with `milestone.final=false`; a successful capture alone does not designate a milestone baseline.
 No 0.x coordinates are published to Maven Central.
 The 1.0.0 format restart ([#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)) removed the 0.x snapshot classes, so the current library does not restore the state in these bundles; they remain retained development records.
-The capture, check, read, restore, API, and consumer commands also apply to bundles that published releases write, starting with 1.0.0; [retain a published release](#retain-a-published-release) describes their capture and retention.
+The capture, check, read, restore, API, and consumer commands also apply to bundles that published releases write, starting with 1.0.0; [retain a published release](#retain-a-published-release) describes their capture and retention, and the [`v1.0.0` release](#retained-v100-baseline) retains the first of them.
 
 ## Capture
 
@@ -95,7 +95,7 @@ Each reader check restores the archive, processes four more inputs, and restores
 Format 2 bundles also require the `enum-original` and `enum-added` applications and schemas, and format 3 bundles also `apps/application-dynamic.jar`; `check` still accepts the format 1 layout of the v0.1.0 bundles and the format 2 layout of the v0.2.0 bundles.
 
 CI captures each of the four bundles on JDK 17, moves the build output away, and reads the retained inputs on every claimed combination.
-Until a published release is retained, it then runs [`baseline-upgrade`](#restore-retained-state-with-the-current-library), the [API compatibility gate](../development.md#api-compatibility-gate), and `baseline-consume` on that bundle on JDK 17, at each Flink version of its line for the restore and the consumers.
+Until [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) switches these checks to the retained v1.0.0 bundles, it then runs [`baseline-upgrade`](#restore-retained-state-with-the-current-library), the [API compatibility gate](../development.md#api-compatibility-gate), and `baseline-consume` on that bundle on JDK 17, at each Flink version of its line for the restore and the consumers.
 The bundle comes from the same build, so these runs keep the checks working rather than compare releases.
 Flink 2.2.1 and 2.3.0 run on JDK 17 and 21; Flink 1.20.5 runs on JDK 17.
 Each saved-state read uses its exact Flink version and Protobuf profile.
@@ -204,6 +204,19 @@ The embedded manifests keep `milestone.final=false` and the Maven version `0.3.0
 Do not rename, re-tag, or replace these assets.
 Obtain them with `mise x -- just baseline-fetch v0.3.0 <new-output>`; the release `README.md` lists equivalent manual commands.
 
+## Retained v1.0.0 baseline
+
+The [`v1.0.0` release](https://github.com/flink-gcp/flink-datastream-protobuf/releases/tag/v1.0.0) is the durable shared copy of the bundles that the published 1.0.0 artifacts wrote, assembled with [`baseline-release`](#retain-a-published-release) for [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13).
+Its source is annotated tag `v1.0.0`, commit `0cbc2e7fe405eb12814b0aeddf7bcb636b77d1df`, and its `SHA256SUMS` digest is pinned in `scripts/baseline-fetch.py`.
+The assets have the same names and roles as the v0.1.0 assets above, with the `v1.0.0-` prefix, and `FINAL-BASELINE.json` uses format 2.
+Each bundle's `library.jar` is the published `1.0.0` jar for the `flink2` bundles and the published `1.0.0-1.20` jar for the `flink1` bundles, kept with its Maven Central signature as `library.jar.asc`; the manifests record `status=published-release-baseline`, `release.tag=v1.0.0`, `writer.artifact`, and `library.url`.
+The bundles use bundle format 3, compiled at Flink 2.2.1 for 2.x and at Flink 1.20.5 for LTS, and the runtime results have 25 cases on 2.x and 26 on LTS.
+The verification archive also holds the publication review; its findings are public dependency literals and defaults, workflow keys, environment-variable reads, and synthetic test values, and its reviewed files are the tracked CI Maven settings in each source archive, each with its disposition.
+
+`FINAL-BASELINE.json`, the outer `SHA256SUMS`, and the completion record on #13 select these exact bundles as the 1.0.0 release baseline.
+Do not rename, re-tag, or replace these assets.
+Obtain them with `mise x -- just baseline-fetch v1.0.0 <new-output>`; the release `README.md` lists equivalent manual commands.
+
 ## Retrieve the retained baseline
 
 `baseline-fetch` downloads the designated release assets with `gh release download`, verifies them, and extracts the selected bundles into a new directory outside the repository.
@@ -268,8 +281,7 @@ A restored archive that is missing or fails verification fails the job without r
 The job does not fall back to a fresh download, so a corrupt or replaced entry stays visible instead of being bypassed.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-No Verify job currently uses this action, because the current library does not read the state of the retained 0.x bundles.
-The release that retains the first published bundles adds a job that fetches them and runs the restore, API, and consumer checks against the candidate.
+No Verify job currently uses this action: the current library does not read the state of the retained 0.x bundles, and [#183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) adds the job that fetches the retained v1.0.0 bundles and runs the restore, API, and consumer checks against the candidate.
 
 ## Restore retained state with the current library
 
