@@ -56,6 +56,11 @@ jobs:
               - .github/workflows/ci.yaml
               - .github/workflows/verify.yaml
               - scripts/api-compat.sh
+              - scripts/baseline-fetch.py
+              - 'scripts/lib/**'
+              - '.github/actions/baseline-fetch/**'
+              - pyproject.toml
+              - uv.lock
             benchmarks:
               - *baseline
               - scripts/benchmark-evidence.py
