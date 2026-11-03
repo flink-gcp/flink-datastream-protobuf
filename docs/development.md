@@ -140,7 +140,6 @@ The production integration and transport probe use explicit list element informa
 Top-level, POJO, tuple, Row, and explicit List transport remain required on every runtime.
 Production integration tests independently verify the native type information and serializer on those transport paths.
 The separate [runtime acceptance suite](validation/runtime-recovery.md) verifies managed-state recovery for both version lines.
-Issue #13 retains verification of the published consumer classpath.
 
 ### Application examples and API documentation
 
@@ -208,12 +207,12 @@ Real Hugo fixtures verify that source changes appear without editing Markdown, m
 | `just docs-site assemble <manifest> <inputs> <output>` | Combine every planned version into a fresh output directory |
 | `just docs-site check <manifest> <output>` | Check local page, asset and anchor destinations in the combined site |
 
-Version IDs are `development` or a minor such as `1.0` or the `0.1` development milestone; each manifest entry records its `kind` as `release`, `milestone`, or `development`.
+Version IDs are `development` or a minor such as `1.0`; each manifest entry records its `kind` as `release` or `development` (the planner selects its `milestone` kind only before a stable release exists).
 Planning requires `gh` authentication and locally fetched tags; an API error or unresolved tag fails instead of silently omitting releases.
 Run `plan` from the controller checkout whose HEAD should supply Development.
 Create separate detached source worktrees at the manifest SHAs, run `build` for each ID with a shared new external output directory, then `assemble` and `check` into another new external directory.
 Generated HTML, Python environments, Hugo caches and temporary application repositories are not committed.
-The [version policy](content/docs/versions.md) retains two released minor series and Development, and 0.x development milestones until the first stable release; zero eligible releases is a valid Development-only site.
+The [version policy](content/docs/versions.md) retains two released minor series and Development; zero eligible releases or milestones is a valid Development-only site.
 
 The CI orchestrator freezes the source revision before calling Verify, Lint and Docs.
 PRs build the same retained-version Pages artifact without deploying.
@@ -225,12 +224,9 @@ Standalone Verify retains its scheduled and manual runs; it does not deploy.
 The [`Release` workflow](#publishing-a-release) publishes by tag push and creates the stable `vX.Y.Z` GitHub Release only after both artifact lines are published.
 The CI `workflow_run` hook then rebuilds the selected release sources and current main; failed runs and manual dry runs do not deploy documentation.
 A bare tag without a published GitHub Release is not a documentation version.
-Development milestone pre-releases are created outside the `Release` workflow, so the hook does not see them; run `gh workflow run ci.yaml --ref main` afterwards, or wait for the next main push, to add the milestone to the site.
 
-GitHub Pages uses GitHub Actions as the build source, and the initial main deployment is live.
+GitHub Pages uses GitHub Actions as the build source.
 README links point to the public site.
-Verify the actual repository URL, redirects, search, assets, API reference, mobile menu and both themes after deploying the search initialization repair before treating [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19) as complete.
-No 0.x milestone archive or Maven Central publication is required for this rollout.
 
 ### Native serializer implementation
 
@@ -281,7 +277,6 @@ These tests do not establish checkpoint/savepoint recovery or packaged-artifact 
 
 `snapshotConfiguration()` returns an internal version-1 `ProtobufGeneratedSerializerSnapshot` for generated messages and a version-1 `ProtobufDynamicSerializerSnapshot` for DynamicMessage values.
 The generated snapshot is described here; [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md#dynamic-snapshot-format-version-1) defines the dynamic one.
-Neither reads the snapshot classes that 0.x milestones wrote.
 It stores both names, framing/normalization versions, all four settings, the complete normalized import closure, and a SHA-256 integrity fingerprint.
 The snapshot class/version envelope is written by Flink; the payload follows ADR-0001 exactly, including the independent 64 MiB descriptor limit.
 Reading validates metadata without resolving the saved generated class.
@@ -296,7 +291,6 @@ Unsupported formats, corrupt data, and invalid descriptors fail during reading; 
 
 Tests verify the Flink envelope, the fixed payload layout, normalized metadata, actual restored values, isolated classloaders, and rejected corrupt or incompatible inputs.
 The separate runtime suite verifies job recovery with state that the same build writes.
-Issue #13 and the 1.0.0 milestone own published-artifact fixture capture, consumer verification, and first-release completion; #6 tracks development acceptance only.
 
 ## Test resources and version updates
 
@@ -359,16 +353,13 @@ Ordinary verification creates temporary state for its jobs; the repository commi
 
 ### Fixed development bundles
 
-The [development bundle procedure](validation/development-baselines.md) provides `baseline-capture`, `baseline-check`, and `baseline-read` for #40.
+The [development bundle procedure](validation/development-baselines.md) provides `baseline-capture`, `baseline-check`, and `baseline-read`.
 It retains packaged library jars, compiled consumers, resolved runtime dependencies, snapshots, and checkpoint/savepoint archives outside the repository.
 The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
-The final v0.1.0 bundles, captured from source revision `f5063f784bdf6799250c521c39a47701900133ea`, are retained with `FINAL-BASELINE.json`, `INVENTORY.json`, and `SHA256SUMS` as assets of the `v0.1.0` pre-release; see the [retained baseline](validation/development-baselines.md#retained-v010-baseline).
-The final v0.2.0 bundles, captured from source revision `e697ee957000f3258ba4b6fd5940458514fada5c` and assembled with `baseline-release`, are the assets of the `v0.2.0` pre-release; see the [retained v0.2.0 baseline](validation/development-baselines.md#retained-v020-baseline).
-The final v0.3.0 bundles, captured from source revision `142862b9d86f449e3e4894715602a991a018fd63`, are the assets of the `v0.3.0` pre-release; see the [retained v0.3.0 baseline](validation/development-baselines.md#retained-v030-baseline).
 The bundles that the published 1.0.0 artifacts wrote, captured from source revision `0cbc2e7fe405eb12814b0aeddf7bcb636b77d1df`, are assets of the `v1.0.0` release; see the [retained v1.0.0 baseline](validation/development-baselines.md#retained-v100-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
-The current library does not read the state of these 0.x bundles; the same commands apply to bundles retained from published releases, starting with 1.0.0, and the `Retained v1.0.0` Verify jobs run them on the retained v1.0.0 bundles.
+The `Retained v1.0.0` Verify jobs run these commands on the retained v1.0.0 bundles.
 
 ### API compatibility gate
 
@@ -616,7 +607,7 @@ The action adds `--settings` with [.github/maven/settings.xml](../.github/maven/
 That file adds `https://maven-central.storage-download.googleapis.com/maven2/` as a repository and plugin repository ahead of Central.
 It is not a `<mirror>`, so an artifact that the mirror has not synced yet still resolves from Central.
 The action also sets `MVNW_REPOURL`, so the Maven Wrapper downloads Maven itself from the mirror, but only when the mirror holds the Maven version of every checkout's wrapper; otherwise it reports a warning and the wrapper downloads from Central, because `MVNW_REPOURL` replaces the wrapper's only URL.
-The Docs build calls the controller checkout's action, because the milestone sources it builds predate it.
+The Docs build calls the controller checkout's action, because the release sources it builds may predate it.
 Local builds read neither variable and resolve from Central.
 The `Release` workflow's `stage` job sets `MAVEN_ARGS` to pass the same file with `--global-settings`, because `--settings` would replace the user settings in which `actions/setup-java` names the `central` server; it restores no Maven cache, and its Maven Wrapper downloads Maven from Central.
 
@@ -826,11 +817,10 @@ The `github-release` job holds `contents: write` and no release secret.
 After the workflow succeeds:
 
 1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` serves.
-2. Verify consumers and capture fixtures from both published versions; ADR-0001 makes this the completion gate of the first release.
+2. Verify consumers and capture fixtures from both published versions.
    Run `just examples-verify <flink-version> <protobuf-major> <new-repository> <published-version>` with `X.Y.Z` at the 2.x floor and ceiling and with `X.Y.Z-1.20` at the LTS version, each with Protobuf 3 and 4, and a new repository for every run.
    Capture and retain the four bundles that the published versions write as the [development baselines guide](validation/development-baselines.md#retain-a-published-release) describes, and attach them to the release.
 3. Edit the GitHub Release's generated notes: summarize the API, default, runtime, and state-format changes, and link the compatibility guide.
-   For 1.0.0, state that no 0.x milestone or development build upgrades to it, as the [compatibility guide](content/docs/compatibility.md#development-builds-before-100) does.
 4. Merge a pull request that sets the next development version, such as `X.Y+1.0-SNAPSHOT`, in `pom.xml`, `examples/datastream/pom.xml`, and every page that names the development version.
    Set `X.Y.Z+1-SNAPSHOT` instead when the next release is to be a patch: a patch release tags a commit of `main` whose changes since the previous release are all ones that the [compatibility guide](content/docs/compatibility.md#compatibility-from-100) allows in a patch, even if later commits of `main` add minor-release changes.
 
@@ -970,47 +960,25 @@ uv tool commands ignore the project's uv settings; without these options `uvx` u
 Activate the current worktree when using Serena, and keep credentials and personal configuration outside tracked files.
 Neither MCP server is required to build or test the project.
 
-## Next implementation steps
-
-The [ADR-0001 release contract](adr/0001-native-protobuf-type-integration.md) defines the initial public entry points, settings/defaults, framing, snapshot format, and descriptor normalization.
-Versions 0.1.0, 0.2.0, and 0.3.0 were unpublished development milestones that permitted documented breaking changes while the design matured.
-Version 1.0.0 is the stabilization point and first Maven Central publication.
-The development sequence and current implementation status are:
-
-1. The immutable serializer in [#8](https://github.com/flink-gcp/flink-datastream-protobuf/issues/8) implements generated-class validation, transient parser reconstruction, limits, framing, copy, failure behavior, and the descriptor normalization needed for serializer identity.
-2. TypeInformation and superclass TypeInfoFactory registration in [#9](https://github.com/flink-gcp/flink-datastream-protobuf/issues/9) provide production transport integration.
-   Versioned descriptor snapshots and serializer-level unchanged-schema restoration are implemented by [#10](https://github.com/flink-gcp/flink-datastream-protobuf/issues/10).
-3. Production transport, checkpoint/savepoint recovery, and isolated user-code classloading are verified by [#11](https://github.com/flink-gcp/flink-datastream-protobuf/issues/11).
-   Google Well-Known Types and OpenTelemetry generated composite message acceptance in [#18](https://github.com/flink-gcp/flink-datastream-protobuf/issues/18) is covered by the [common-types tests and examples](content/docs/common-types.md).
-4. The [quickstart](content/docs/quickstart.md), [usage guide](content/docs/usage.md), and standalone compiled examples implement the documentation work in [#12](https://github.com/flink-gcp/flink-datastream-protobuf/issues/12). The shared-design site and its versioned API reference are implemented under [#19](https://github.com/flink-gcp/flink-datastream-protobuf/issues/19); the initial Pages deployment is live, with final live verification awaiting the search initialization repair.
-5. Complete the [0.1.0 development tracker #6](https://github.com/flink-gcp/flink-datastream-protobuf/issues/6) after development acceptance, documentation, and [benchmark evidence #30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30). Retain fixed development artifacts and state fixtures with source/checksum provenance for later milestone checks; Maven Central publication does not block this milestone.
-6. For [0.2.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/14), the pure directional evaluator from [#15](https://github.com/flink-gcp/flink-datastream-protobuf/issues/15) is implemented with descriptor-pair tests, and snapshot restore uses it for supported schema evolution under [#16](https://github.com/flink-gcp/flink-datastream-protobuf/issues/16), which also restores retained 0.1.0 development state with `baseline-upgrade`; [#17](https://github.com/flink-gcp/flink-datastream-protobuf/issues/17) adds the upgrade guide from 0.1.0 and the [API compatibility gate](#api-compatibility-gate), which checks each candidate against the retained 0.1.0 libraries; [#63](https://github.com/flink-gcp/flink-datastream-protobuf/issues/63) then retains the 0.2.0 baseline and publishes the `v0.2.0` pre-release, which the next documentation deployment lists as the 0.2 milestone.
-7. For [0.3.0](https://github.com/flink-gcp/flink-datastream-protobuf/issues/20), [#21](https://github.com/flink-gcp/flink-datastream-protobuf/issues/21) designs explicit-descriptor DynamicMessage support in [ADR-0005](adr/0005-descriptor-bound-dynamic-messages.md), [#22](https://github.com/flink-gcp/flink-datastream-protobuf/issues/22) implements its type information, serializer, and snapshot, and [#23](https://github.com/flink-gcp/flink-datastream-protobuf/issues/23) verifies state recovery and completes the usage documentation. Document API/state compatibility decisions and migration requirements for generated-message users, and test the declared direct/sequential development upgrade outcomes before milestone completion.
-8. [#140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140) restarts the persisted formats at version 1 for 1.0.0 under new snapshot class names; the library no longer reads 0.x state, and the 0.x fixtures, upgrade guide, and CI checks against the 0.x bundles are removed.
-9. [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) implements publication and packaged-artifact validation for `1.0.0` and `1.0.0-1.20` under ADR-0006, following ADR-0003's effective-model guards and two-artifact validation requirement, and the [1.0.0 release-candidate benchmarks](validation/serializer-benchmarks-v1.0.0.md) reran the [long benchmarks](validation/serializer-benchmarks-v0.1.0.md#benchmark-remeasurement-for-100) on Google Compute Engine from the fixed candidate. The first-release milestone completes only after both versions are published, consumers verify them, and snapshot/savepoint fixtures from each published artifact are preserved with provenance.
-
-No further 0.x milestone followed 0.3.0, and the 1.0.0 milestone tracked the first publication.
+## Acceptance scenarios
 
 Implementation PRs update documentation for behavior they actually deliver.
 Construction and registration examples describe implemented APIs; the runtime acceptance suite verifies checkpoint/savepoint recovery with unchanged and supported changed schemas.
 The README describes the published release and its supported transport.
 The optional Chill probe is not a production fallback or a release acceptance substitute.
 
-### Contract acceptance scenarios
+The linked issues introduced acceptance coverage for the following scenarios.
 
-The following scenarios are obligations for the linked implementation issues, not tests already passed by this documentation change.
-
-| Area | Required scenarios | Owner |
+| Area | Scenarios | Issues |
 |---|---|---|
 | Construction and identity | Supported generated hierarchies; invalid classes, graphs reaching messages declared in proto2 or editions files, and extension-dependent graphs; isKeyType remains false with all settings; no message-key opt-in; immutable builder results; default and nondefault settings in equality/hashCode/canEqual | #8, #9 |
 | Framing and limits | Empty and adjacent frames; negative, excessive, overflow-prone, and truncated lengths; malformed payloads; size/depth boundaries on write and read; nested/map/unknown-group recursion; no read-ahead into the next frame; exact stream copy | #8 |
 | Native selection | Generic types disabled; explicit and AbstractMessage registration; fresh-JVM missing-registration and Message-interface controls; top-level/POJO/tuple transport; explicitly typed Row/List paths | #9, #11 |
 | Snapshot and normalization | Version-1 round trips; unsupported/corrupt data and flags; missing/conflicting imports; recursive message graphs; deterministic dependency ordering; SourceCodeInfo ignored but options/declaration order/unknown content retained; same fingerprint with differing descriptor content cannot establish compatibility | #10 |
-| 0.1.0 unchanged-schema restore | Changed fields, names, imported descriptors and framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11 |
+| Snapshot restore | Schema changes outside the supported set, class and message renames, and changed framing rejected; unchanged/increased limits and either deterministic-mode transition accepted; any decreased limit rejected, including mixed transitions and decreases after new snapshot emission; isolated classloaders; missing/unsupported classes; old metadata readable without old generated classes | #10, #11, #16 |
 | Runtime values and types | Continued processing and restored values in scalar-keyed and operator state, including MapState values with scalar user keys; unknown fields; nested WKT/OTel values; Any payload bytes kept opaque; negative controls show both inferred and explicitly typed keyBy bypass the non-key declaration and equal message bytes can hash into different groups across isolated classloaders | #9, #11, #18 |
+| Schema evolution | Directional accepted/rejected descriptor pairs; restored values across each supported schema change, including a second restore from the new application's savepoint | #15, #16 |
 | Published release baseline | Attributable message/snapshot bytes and complete savepoints from the published artifact, expected values, settings, schemas/imports, job/state identity, generation commands, and exact source/artifact/toolchain provenance; retain fixtures without overwriting them with newer writers | #13 (1.0.0) |
-| 0.2.0 upgrade | Directional accepted/rejected descriptor pairs; real restoration of claimed supported fixed 0.1.0 development fixtures with old generated classes absent; explicit rejection and migration guidance for any intentional break; API checks separate from state and gencode/runtime checks | #15, #16, #17 |
-| 0.3.0 upgrade decisions | Source/API checks; already-compiled consumers for unchanged APIs and compiled replacements for intentional breaks; direct and sequential upgrade outcomes, including newly emitted state after 0.2.0 evolution; retain development fixtures and test supported restore/migration or explicit rejection; document each break and required procedure | #20, #21, #22, #23 |
 
 Run production acceptance across the ADR-0003 matrix: JDK 17/21 for both supported Flink 2.x minors and JDK 17 for Flink 1.20, with the pinned Protobuf 3.25.x/4.x profiles and matching application gencode/runtime pairs, including a packaged-library consumer for each artifact line.
 Compatibility across changed built-in descriptors is not implied by supporting both runtime profiles.

@@ -22,22 +22,17 @@ limitations under the License.
 
 Adding a field can preserve Protobuf binary compatibility, and the current development library restores state across that change.
 It accepts unchanged schemas and the [supported schema changes](#schema-changes), and it rejects other changes to the declarations that saved values reach when the job restores its state.
-Version 1.0.0 is the first release published to Maven Central; the 0.x versions were unpublished development milestones.
+Version 1.0.0 is the first release published to Maven Central and starts the [stable API and forward-restore contract](#compatibility-from-100).
 
-## Development builds before 1.0.0
+## Development builds
 
 A build of this source is the development version `1.1.0-SNAPSHOT`, which restores supported schema changes.
-The 0.x versions are development milestones, not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
+Development builds, including the `v0.x` GitHub pre-releases, are not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 
-Version 1.0.0 is the first release and the start of the [stable API and forward-restore contract](#compatibility-from-100).
-Releases after 1.0.0 are to be checked against the state, compiled consumers, and API retained from published releases with the [development bundle tooling]({{< param BookRepo >}}/blob/main/docs/validation/development-baselines.md).
-
-Version 1.0.0 restarts the persisted formats at version 1 under snapshot classes that the 0.1.0, 0.2.0, and 0.3.0 milestones never wrote, and it removes their snapshot classes.
-It therefore does not read state written by those milestones: Flink fails the restore because the saved snapshot class is absent.
-There is no migration or upgrade guide from a 0.x milestone or a development SNAPSHOT build to 1.0.0.
-An application that ran one starts 1.0.0 with fresh state or replays its input, and decides how the rebuilt state and any repeated output affect its data.
-Development APIs carry no guarantee either; compile the application against 1.0.0 and follow its [usage guide]({{< relref "docs/usage" >}}).
+There is no migration or upgrade guide from a development build to a release.
+An application that ran one plans to start the release with fresh state or to replay its input, and decides how the rebuilt state and any repeated output affect its data.
+Development APIs carry no guarantee either; compile the application against the release and follow its [usage guide]({{< relref "docs/usage" >}}).
 
 ## Compatibility from 1.0.0
 
