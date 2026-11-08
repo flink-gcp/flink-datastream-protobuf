@@ -482,6 +482,11 @@ These recipes do not replace ordinary native verification or binary compatibilit
 Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
 The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.
 `benchmark-build` and `benchmark-measure` split those recipes into the clean package and the measurement step, so a runner can check host load between them.
+`benchmark-build` first packages the library as the release does for the selected line, with Protobuf 4 at the line's Flink floor and tests skipped, and keeps that jar outside `target/` while it cleans and packages the selected profile.
+It then places the release-configuration jar in `target/benchmark-library/`, and correctness subprocesses and JMH forks load it in place of the profile's own classes.
+The first line of `classpath-sha256.txt` records that jar's SHA-256.
+The parent POM's `maven-jar-plugin` 2.4 ignores `project.build.outputTimestamp`, so the POM selects 3.x, which writes the inherited fixed timestamp; builds of one source tree with one JDK produce byte-identical jars.
+Runs of both profiles from one tree and JDK must therefore record the same hash.
 
 ### Temporary GCE execution
 

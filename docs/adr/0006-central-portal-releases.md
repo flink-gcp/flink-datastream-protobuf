@@ -20,6 +20,7 @@ limitations under the License.
 - Date: 2026-10-31
 - Issue: [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13)
 - Publication wait and re-runs amended: 2026-11-01, [issue #181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181)
+- Reproducible main jar added: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
 - Implements: The publication requirements of [ADR-0003](0003-flink-version-compatibility.md#state-and-release-acceptance)
 - Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; version 1.0.0 is the first publication through them
 - Current instructions: [Release artifacts](../development.md#release-artifacts) and [Publishing a release](../development.md#publishing-a-release)
@@ -52,6 +53,11 @@ It does not install the release version into the local repository, so a later ch
 
 The POM replaces the parent's Javadoc options with full doclint and `failOnWarnings`.
 The Maven `javadoc:javadoc` goal, which also generates the site's API reference, and the release Javadoc jar therefore succeed without the incompatible export and fail on the same warnings.
+
+The POM also replaces the parent's maven-jar-plugin 2.4, which ignores `project.build.outputTimestamp`, with 3.x.
+The main jar's entries then carry the inherited fixed timestamp, so building one source tree with one JDK reproduces it byte for byte.
+Compared with the 1.0.0 jar, its manifest no longer carries `Built-By`, which named the build user, `Build-Jdk` with the JDK's patch release, `Archiver-Version`, or `Implementation-Vendor-Id`, and it adds `Build-Jdk-Spec` with the building JDK's feature release and `Java-Version` with the compiler release, 17.
+[ADR-0004](0004-serializer-benchmarks.md) relies on that to show that benchmark runs of both Protobuf profiles measured the same jar.
 
 The published POM is the project POM with its release version.
 Its parent declares no dependencies, and the POM declares only `provided` and `test` dependencies, so neither line adds a transitive dependency to an application.
