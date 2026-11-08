@@ -308,7 +308,7 @@ limitations under the License.
             </dependencies>
             <build><plugins>
                 <!-- Fail when the benchmark Avro or Jackson pin diverges from what flink-avro brings; the inherited enforcer lacks includes for this rule. -->
-                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>3.6.3</version><executions>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>3.7.0</version><executions>
                     <execution><id>converge-benchmark-avro-jackson</id><goals><goal>enforce</goal></goals><configuration><rules>
                         <!-- The benchmark graph is test-scoped, which the rule skips by default. -->
                         <dependencyConvergence><excludedScopes/><includes><include>org.apache.avro:avro</include><include>com.fasterxml.jackson.core</include></includes></dependencyConvergence>
