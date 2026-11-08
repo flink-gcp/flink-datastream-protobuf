@@ -52,15 +52,16 @@ import java.util.Objects;
  *
  * <p>Payloads of at most 4 KiB are encoded and decoded through one lazily allocated 4 KiB array
  * that each instance retains and also uses as the chunk for stream copy and larger reads. Larger
- * payloads are written through per-record Protobuf coded-stream buffers without payload-sized
- * storage in this serializer, and each is read into a new array of its length that decoded values
- * may share unless large-payload aliasing is disabled.
+ * payloads are written through one lazily created Protobuf coded stream with a 4 KiB buffer that
+ * each instance retains between records, without payload-sized storage in this serializer, and each
+ * is read into a new array of its length that decoded values may share unless large-payload
+ * aliasing is disabled.
  *
  * <p>Each instance also retains a bounded stack of sizing frames, which hold record references only
  * during a write. Instances are not intended for concurrent use; call {@link #duplicate()} for
- * independent scratch storage and sizing frames. Generated defaults, parsers, descriptor metadata,
- * and sizing field layouts are shared by exact message class through a ClassValue cache, including
- * after Java deserialization.
+ * independent scratch storage, coded stream, and sizing frames. Generated defaults, parsers,
+ * descriptor metadata, and sizing field layouts are shared by exact message class through a
+ * ClassValue cache, including after Java deserialization.
  *
  * <p>A DynamicMessage serializer is bound to one root descriptor. Java serialization keeps its full
  * name and the deterministic encoding of its normalized descriptor closure, and each deserialized
@@ -120,6 +121,8 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
     private transient Parser<? extends Message> parser;
     private transient ProtobufMessageSize messageSize;
     private transient byte[] scratch;
+    private transient ViewOutputStream frame;
+    private transient CodedOutputStream frameOutput;
 
     /**
      * Creates an internal serializer with the default size, depth, and writing settings.
@@ -254,9 +257,10 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
      * the retained scratch array before the frame is written, so an inconsistent generated writer
      * also leaves the target untouched. For a statically bounded message type, the size of such a
      * payload may come from the runtime's generated size, which this encoding confirms. Larger
-     * payloads are written incrementally, and an inconsistent generated writer can leave a partial
-     * frame. An I/O failure of the target can leave a partial frame for any payload. Generated
-     * runtime operations may allocate their own storage.
+     * payloads are written incrementally through a coded stream that this serializer retains and
+     * discards after any failure, and an inconsistent generated writer can leave a partial frame.
+     * An I/O failure of the target can leave a partial frame for any payload. Generated runtime
+     * operations may allocate their own storage.
      *
      * <p>A DynamicMessage value, and each message value under a field that this serializer's schema
      * declares, is accepted if its descriptor is this serializer's declaration, the type that its
@@ -306,9 +310,25 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
             return;
         }
         target.writeInt(size);
-        ViewOutputStream frame = new ViewOutputStream(target, size);
-        write(value, CodedOutputStream.newInstance(frame));
-        frame.checkComplete();
+        if (frameOutput == null) {
+            frame = new ViewOutputStream();
+            frameOutput = CodedOutputStream.newInstance(frame, SCRATCH_SIZE);
+        }
+        frame.start(target, size);
+        boolean complete = false;
+        try {
+            write(value, frameOutput);
+            frame.checkComplete();
+            complete = true;
+        } finally {
+            frame.release();
+            if (!complete) {
+                // A failed write can leave bytes buffered in the coded stream, which a later frame
+                // must not receive.
+                frame = null;
+                frameOutput = null;
+            }
+        }
     }
 
     /**
@@ -547,15 +567,25 @@ public final class ProtobufTypeSerializer<T extends Message> extends TypeSeriali
         }
     }
 
-    /** Enforces the exact prevalidated payload length while writing directly to a Flink view. */
+    /**
+     * Enforces the exact prevalidated payload length while writing directly to a Flink view, and is
+     * retargeted for each large frame so that the coded stream over it can be reused.
+     */
     private static final class ViewOutputStream extends OutputStream {
-        private final DataOutputView target;
-        private final int expectedSize;
+        private DataOutputView target;
+        private int expectedSize;
         private long written;
 
-        private ViewOutputStream(DataOutputView target, int expectedSize) {
+        /** Directs the following writes to one frame's payload of the given size. */
+        private void start(DataOutputView target, int expectedSize) {
             this.target = target;
             this.expectedSize = expectedSize;
+            written = 0;
+        }
+
+        /** Drops the reference to the frame's target, which the caller owns. */
+        private void release() {
+            target = null;
         }
 
         @Override

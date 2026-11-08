@@ -237,7 +237,7 @@ Those controls document unsupported message-key use; they are not a promise that
 See the [construction and configuration examples](content/docs/usage.md) for registration timing, defaults, and explicit type settings.
 
 The serializer writes a four-byte big-endian payload length followed by Protobuf wire bytes, without allocating a payload array for each record.
-Payloads of at most 4 KiB are encoded into a lazily allocated 4 KiB array that the serializer instance retains; larger payloads stream through Protobuf's per-call coded-output buffer.
+Payloads of at most 4 KiB are encoded into a lazily allocated 4 KiB array that the serializer instance retains; larger payloads stream through one Protobuf coded stream with a 4 KiB buffer that the instance also retains, and discards after a failed write.
 Unless the generated-size path described below applies, a dedicated field-wise calculation checks size with `long` arithmetic and verifies nested message, map-entry, and group depth against the configured parser budget before the prefix is written.
 It also rejects an unknown field that reuses a declared field's number with a wire type that field accepts, which the parser would read into that field.
 `ProtobufTypeSerializerTest` covers that rejection at the root, in nested, repeated, oneof, and map values, for a map with scalar values, and for a set shared with a type that does not declare the number, and, for every scalar, string, bytes, enum, oneof, packed, and unpacked kind, checks that the parser reads the rejected value into the field or fails, as well as the wire types that stay opaque; it also rejects unknown-field numbers above 536,870,911 at the root and inside an unknown group, and accepts that maximum on both sizing paths.
@@ -264,12 +264,13 @@ Malformed input and I/O failures may leave partial input consumption or output; 
 The tests also cover parser reconstruction after Java serialization with an isolated generated-message classloader.
 Validated defaults, parsers, normalized schemas, and sizing field layouts are reused through `ClassValue`, keyed by the exact application class rather than its name.
 Protobuf's generated accessor tables already retain reflective field methods; the library adds no per-record method lookup or duplicate field-method cache.
-Each duplicate owns its scratch array and traversal frames, so instances remain thread-confined, and record size/depth summaries live for one sizing call only.
+Each duplicate owns its scratch array, large-frame coded stream, and traversal frames, so instances remain thread-confined, and record size/depth summaries live for one sizing call only.
 The [local performance comparison](validation/serializer-performance.md) measures warm construction and representative serialization paths before and after these changes, including the raw-string counting path that the move to proto3-only payloads later removed.
 The [buffer-allocation report](validation/serializer-buffer-allocation.md) separates the effect of the small-frame scratch array on writes and reads with controlled variants measured on temporary GCE VMs.
 The [sizing-allocation report](validation/serializer-sizing-allocation.md) measures the final traversal change against the previous sizing and, for an earlier candidate, separates traversal bookkeeping, descriptor work, and the remaining safe-sizing cost from output work with controlled variants.
 The [generated-size report](validation/serializer-generated-size.md) measures the generated-size path against the traversal alone.
 The [large-read report](validation/serializer-large-read.md) measures the aliased large-frame read against the streamed one.
+The [large-write report](validation/serializer-large-write.md) measures the reused large-frame coded stream against one created for each record.
 These tests do not establish checkpoint/savepoint recovery or packaged-artifact compatibility across runtime majors.
 
 `snapshotConfiguration()` returns an internal version-1 `ProtobufGeneratedSerializerSnapshot` for generated messages and a version-1 `ProtobufDynamicSerializerSnapshot` for DynamicMessage values.
@@ -313,6 +314,7 @@ Paths below are relative to the repository root.
 | `docs/validation/data/serializer-sizing-allocation-v0.2.0/` | Paired native/Chill measurements of the #43 sizing variants with GCE run records | The [data inventory](validation/data/serializer-sizing-allocation-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-generated-size-v0.2.0/` | Paired native/Chill measurements of the #112 generated-size change with GCE run records | The [data inventory](validation/data/serializer-generated-size-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/serializer-large-read-v0.2.0/` | Paired native/Chill measurements of the #113 large-frame read change with GCE run records | The [data inventory](validation/data/serializer-large-read-v0.2.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
+| `docs/validation/data/serializer-large-write-v1.1.0/` | Paired native/Chill measurements of the #176 large-frame write change with GCE run records | The [data inventory](validation/data/serializer-large-write-v1.1.0/README.md) records checksums and how to reconstruct each measured tree; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 | `docs/validation/data/gce-placement-calibration-v0.2.0/` | Paired native/Chill measurements of one unchanged tree on three VMs per profile, two runs each, with GCE run records | The [data inventory](validation/data/gce-placement-calibration-v0.2.0/README.md) records checksums, VM placement, and the measured commit; replacements require the [evidence-retention review](#retaining-diagnostic-evidence) |
 
 `runtime-app` is test application code, not another Maven module or a collection of JUnit tests.
