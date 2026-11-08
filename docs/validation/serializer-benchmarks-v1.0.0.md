@@ -231,7 +231,10 @@ Native scalar serialization is the fastest of all lanes, at 54.5 to 63.8 ns/op.
 Collections have the largest native cost relative to the fixed-layout lanes: native `serialize` takes 777 to 861 ns/op, 0.88 to 0.95 times Chill's time but 2.5 to 2.8 times Tuple's and 2.0 to 2.2 times POJO's.
 Protobuf writes each of the 16 map entries as a length-delimited message and each long as a varint, while Flink's POJO and Tuple serializers write longs as fixed eight-byte values and no per-entry length; this report does not measure how much each difference contributes.
 Native large serialization takes 0.34 times Chill's time, but 1.08 to 1.10 times Kryo's, and allocates about 4.5 KB per record for the stream encoder buffer that [#176](https://github.com/flink-gcp/flink-datastream-protobuf/issues/176) addresses.
-Generated-message `serialize` allocates 96 B/op more than DynamicMessage `serialize` of the same content in the scalar, text, and nested workloads of both profiles; [#175](https://github.com/flink-gcp/flink-datastream-protobuf/issues/175) investigates that fixed allocation.
+Generated-message `serialize` allocates 96 B/op more than DynamicMessage `serialize` of the same content in the scalar, text, and nested workloads of both profiles.
+The allocation profile recorded in [#175](https://github.com/flink-gcp/flink-datastream-protobuf/issues/175) attributes the difference to the code that protoc 4.36.2 and 3.25.9 generate for the map field `attributes`, which these workloads leave empty.
+That code iterates the empty map on every `writeTo` call and allocates the entry-set and iterator wrappers for it, while a DynamicMessage holds no value for an empty map field.
+Protoc 4.37.0-RC1 generates code that skips empty map fields ([protocolbuffers/protobuf#29660](https://github.com/protocolbuffers/protobuf/issues/29660)); this report does not measure that code, and [#200](https://github.com/flink-gcp/flink-datastream-protobuf/issues/200) tracks the measurement.
 
 ## DynamicMessage lanes
 
@@ -288,7 +291,7 @@ Values with descriptors from another instance thus show no measurable cost from 
 - On Protobuf 4.36.2, every Protobuf lane allocates an additional amount per string field when writing.
 - Protobuf 3 text write cells stay bimodal across forks, which leaves one of them inconclusive ([#178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)).
 - DynamicMessage decoding costs 5.3 to 6.3 times generated decoding for small records, which applications choosing DynamicMessage pay to protobuf-java's parser.
-- [#175](https://github.com/flink-gcp/flink-datastream-protobuf/issues/175) and [#176](https://github.com/flink-gcp/flink-datastream-protobuf/issues/176) track the two library allocations above, and [#177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177) the measured jar, all for 1.1.0.
+- [#176](https://github.com/flink-gcp/flink-datastream-protobuf/issues/176) tracks the library's large-record allocation above and [#177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177) the measured jar, both for 1.1.0; the generated-message write allocation comes from protoc's generated code, and [#200](https://github.com/flink-gcp/flink-datastream-protobuf/issues/200) waits for a release that changes it.
 
 No cell misses the tolerance, and the only encoding ratio above its 0.1.0 estimate, Protobuf 3 large `buildAndSerialize`, rose from 0.631 to 0.649 across the host and runtime changes listed above.
 The measurements therefore show no material regression and raise no performance objection to releasing this candidate as 1.0.0.
