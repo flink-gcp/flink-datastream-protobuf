@@ -28,6 +28,7 @@ limitations under the License.
 - Variant placement calibrated: 2026-10-21, [issue #109](https://github.com/flink-gcp/flink-datastream-protobuf/issues/109)
 - Pairwise comparison placement added: 2026-10-22, [issue #115](https://github.com/flink-gcp/flink-datastream-protobuf/issues/115)
 - DynamicMessage lanes added: 2026-10-31, [issue #45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)
+- Release-configuration library measured: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -36,6 +37,11 @@ Keep the single production Maven module and add a `benchmarks` profile with test
 Compile handwritten benchmark sources and generated records into test outputs only.
 Keep the compiler toolchain optional and generated Java under `target`.
 Do not publish a benchmark classifier, add production dependencies, or change the native serializer API for measurement.
+
+Every run measures the library jar that the release builds for the benchmark's artifact line: the default Protobuf 4 profile at the line's Flink floor, as [ADR-0003](0003-flink-version-compatibility.md) decides, unchanged under both Protobuf profiles.
+Each profile still generates and compiles its own benchmark records, contract tests, and correctness checks, and runs them on its own protobuf-java runtime and the benchmark's Flink version.
+The jar is reproducible, so runs of one source tree and JDK record the same SHA-256 on every profile and VM; a differing hash means the runs did not measure the same library.
+Before issue #177, each profile measured a jar compiled with that profile's Protobuf version at the benchmark's Flink version.
 
 Measure Flink `TypeSerializer` operations directly with JMH 1.37.
 Inspect serializer selection and equivalent decoded values before starting any timed region.

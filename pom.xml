@@ -79,6 +79,8 @@ limitations under the License.
         <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
         <versions-maven-plugin.version>2.23.0</versions-maven-plugin.version>
         <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
+        <!-- The parent pins maven-jar-plugin 2.4, which ignores project.build.outputTimestamp; 3.x makes the library jar reproducible. -->
+        <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
         <!-- The exact toolchains each artifact line is released with (ADR-0003); move them with the 2.x floor and the flink1 profile. -->
         <release.flink.floor>2.2.1</release.flink.floor>
         <release.flink.lts>1.20.5</release.flink.lts>
@@ -338,7 +340,7 @@ limitations under the License.
                 <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.6.4</version><executions>
                     <execution><id>run-benchmarks</id><goals><goal>exec</goal></goals><configuration>
                         <executable>${java.home}/bin/java</executable><classpathScope>test</classpathScope><arguments>
-                            <argument>-Dbenchmark.library.jar=${project.build.directory}/${project.build.finalName}.jar</argument>
+                            <argument>-Dbenchmark.library.jar=${project.build.directory}/benchmark-library/${project.build.finalName}.jar</argument>
                             <argument>-Dbenchmark.flink.version=${flink.version}</argument>
                             <argument>-Dbenchmark.protobuf.version=${protobuf.version}</argument>
                             <argument>-Dbenchmark.protoc.version=${protoc.version}</argument>

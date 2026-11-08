@@ -124,14 +124,30 @@ benchmark-execute mode version major output:
     just benchmark-build "$2" "$3"
     just benchmark-measure "$1" "$2" "$3" "$4"
 
-# Clean, generate, package, and run the benchmark contract tests without measuring.
+# Package the library in the release configuration, then clean, generate, package, and run the
+# benchmark contract tests for the selected profile without measuring.
 [positional-arguments]
 benchmark-build version major:
     #!/usr/bin/env bash
     set -euo pipefail
     declaration=$(just benchmark-arguments "$1" "$2")
     eval "$declaration"
+    # The release builds each line once with Protobuf 4 at its Flink floor and ships that jar for both
+    # runtimes (ADR-0003); every profile measures it. The jar is reproducible, so runs of one source tree
+    # and JDK on different profiles or VMs record the same SHA-256.
+    ./mvnw -ntp clean -Pprotobuf4 "-Dflink.compat=$adapter" -Dmaven.test.skip=true package
+    jars=(target/*.jar)
+    if [[ ${#jars[@]} -ne 1 || ! -f "${jars[0]}" ]]; then
+        printf 'Expected exactly one release-configuration library jar\n' >&2
+        exit 1
+    fi
+    library=$(mktemp -d)
+    trap 'rm -rf "$library"' EXIT
+    cp "${jars[0]}" "$library/"
+    # The profile build compiles the benchmark and its contract tests against that profile's generated code.
     ./mvnw -ntp clean "${args[@]}" -Dtest=BenchmarkContractTest package
+    mkdir -p target/benchmark-library
+    cp "$library/${jars[0]##*/}" target/benchmark-library/
 
 # Measure a previously built tree; GCE runs gate host load between the two steps.
 [positional-arguments]
@@ -163,7 +179,7 @@ benchmark-arguments version major:
         *) printf 'Unsupported benchmark Flink version: %s\n' "$version" >&2; exit 1 ;;
     esac
     args=(-Pbenchmarks "-Pprotobuf$major" "-Dflink.compat=$adapter" "-Dflink.version=$version" "-Dbenchmark.thrift.compiler={{benchmark_thrift}}")
-    declare -p args
+    declare -p adapter args
 
 # Validate a directory or normalized tar.gz and retain the exact checked copy and inventory.
 [positional-arguments]
