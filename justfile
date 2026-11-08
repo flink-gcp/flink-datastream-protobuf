@@ -17,7 +17,7 @@ import 'benchmarks.just'
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-dev_tools_revision := "40a3a0e54466d290422d5aeeac346dfad5091de4"
+dev_tools_revision := "c0d5afb3f0a0e89c1a5a3aaeca26a5730999983c"
 
 mvn := "./mvnw -ntp"
 
