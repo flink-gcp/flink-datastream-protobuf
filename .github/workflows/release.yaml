@@ -95,14 +95,14 @@ jobs:
         with:
           install_args: python uv
       # The generated settings name the central server and read the token pair from the staging steps' environment.
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
           server-id: central
           server-username-env-var: CENTRAL_TOKEN_USERNAME
           server-password-env-var: CENTRAL_TOKEN_PASSWORD
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just
       - name: Resolve the release version
@@ -221,7 +221,7 @@ jobs:
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           install_args: python uv
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just
       - name: Publish or wait for both Central deployments
