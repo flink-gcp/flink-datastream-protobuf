@@ -848,7 +848,8 @@ A tag on the wrong commit can be deleted and recut only before the first Publish
 
 ### Dependency updates
 
-Dependabot checks Maven, GitHub Actions, and the root uv project weekly and proposes ungrouped version updates, subject to its ignore rules and open-PR limit.
+Dependabot checks Maven, GitHub Actions, and the root uv project weekly, subject to its ignore rules and open-PR limit.
+It proposes each Maven version update in its own PR and groups each week's minor and patch GitHub Actions updates, and separately the uv ones, into one PR; major updates stay individual.
 Update the Python minor by hand: change `python` in `mise.toml` and `requires-python` together, relock, and run `just test-scripts` and `just test-doc-versions`.
 The absence of a Dependabot PR does not establish that the `protobuf3` and `flink1` profile pins or `FLINK_CEILING` are current; the [upstream release check](#upstream-release-check) reports them.
 Dependabot also proposes Maven Wrapper updates; update the Maven version under [Toolchain](#toolchain) in the same change.

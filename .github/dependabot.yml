@@ -26,8 +26,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Development tools only; one PR per week runs the CI matrix once, and a major update stays separate so it cannot hold back the others.
+    groups:
+      python-dev:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     # Keep the composite action's pins aligned with the workflows.
     directories: [/, /.github/actions/*]
     schedule:
       interval: weekly
+    # One PR per week, so the minor and patch updates that edit the same workflows run the CI matrix once instead of rebasing after each other.
+    # A major update stays separate so it cannot hold back the others.
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
