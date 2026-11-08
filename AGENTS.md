@@ -75,6 +75,7 @@ CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on F
 - Use `$push-pr-branch` before every branch push. Commit local work, fetch, rebase before squashing, and inspect the explicit deletion list.
 - Apply the verification and closing-reference bindings in `docs/development.md` when running the shared skills, including the case with no assigned issue.
 - After Draft creation, use `$self-review`, then `$self-review-round-two`, then `$independent-review`. Their instructions define the distinct passes and bounded repairs.
+- A dev-tools update PR that `flink-gcp-bot` opened from `dev-tools/update` and that holds only the bot's commit needs `$self-review-round-two` and current aggregate `CI passed` before Ready. Its shared diff already passed every review round in flink-gcp-dev-tools, so round one and the independent review are not repeated; round two checks what the update changes here and whether the description holds here. A maintainer commit on that branch, such as a migration, returns the PR to the full flow (ADR-0002).
 - Record feedback inline on changed lines using the GitHub review API comments array. Do not post standalone review summaries.
 - Route out-of-scope findings with the user; do not create issues without a routing decision. Existing authorization persists across the workflow.
 - Wait for current aggregate `CI passed` and the required review flow before Ready. The restored shared skill retains the original recorded unavailable-reviewer exception; running or uncollected reviews are incomplete. The user merges.
