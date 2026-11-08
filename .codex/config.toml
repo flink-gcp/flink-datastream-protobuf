@@ -21,7 +21,7 @@ args = [
   "--python",
   "3.14",
   "--from",
-  "serena-agent==1.7.0",
+  "serena-agent==2.1.0",
   "serena",
   "start-mcp-server",
   "--project-from-cwd",
