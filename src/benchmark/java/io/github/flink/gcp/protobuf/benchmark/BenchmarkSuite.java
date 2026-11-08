@@ -19,6 +19,7 @@ package io.github.flink.gcp.protobuf.benchmark;
 import org.openjdk.jmh.results.RunResult;
 import org.openjdk.jmh.results.format.ResultFormatType;
 import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
@@ -64,6 +65,10 @@ public final class BenchmarkSuite {
                     Lane.PROTOBUF_DYNAMIC,
                     Lane.PROTOBUF_NATIVE,
                     Lane.PROTOBUF_CHILL);
+
+    /** Text operations whose Protobuf 3 forks otherwise compile one of two ways (issue #178). */
+    private static final List<String> PINNED_TEXT_WRITES =
+            List.of("serialize", "serializeSameInstance", "buildAndSerialize");
 
     private BenchmarkSuite() {}
 
@@ -284,35 +289,7 @@ public final class BenchmarkSuite {
             boolean opened,
             int fork)
             throws Exception {
-        var options =
-                new OptionsBuilder()
-                        .include(
-                                "^"
-                                        + Pattern.quote(
-                                                SerializerBenchmark.class.getName()
-                                                        + "."
-                                                        + operation)
-                                        + "$")
-                        .param("lane", lane.name())
-                        .param("workload", workload)
-                        .param("deterministic", Boolean.toString(deterministic))
-                        .threads(1)
-                        .forks(1)
-                        .warmupIterations(smoke ? 1 : 5)
-                        .measurementIterations(smoke ? 1 : 5)
-                        .warmupTime(smoke ? TimeValue.milliseconds(100) : TimeValue.seconds(1))
-                        .measurementTime(smoke ? TimeValue.milliseconds(100) : TimeValue.seconds(1))
-                        .jvm(java())
-                        .jvmArgs(jvm(opened).toArray(String[]::new))
-                        .jvmArgsAppend(
-                                "-Dbenchmark.library.jar="
-                                        + System.getProperty("benchmark.library.jar"))
-                        .shouldFailOnError(true)
-                        .addProfiler("gc")
-                        .resultFormat(ResultFormatType.JSON)
-                        .result(file.toString())
-                        .output(file.toString().replace(".json", ".log"))
-                        .build();
+        var options = options(file, lane, workload, operation, deterministic, smoke, opened);
         System.out.println("Measuring " + file.getFileName() + " (independent block " + fork + ")");
         var results = new Runner(options).run();
         Lane.require(results.size() == 1, "Unexpected JMH result count");
@@ -321,6 +298,67 @@ public final class BenchmarkSuite {
         Lane.require(
                 result.getSecondaryResults().containsKey("gc.alloc.rate.norm"),
                 "Missing allocation profile");
+    }
+
+    static Options options(
+            Path file,
+            Lane lane,
+            String workload,
+            String operation,
+            boolean deterministic,
+            boolean smoke,
+            boolean opened) {
+        return new OptionsBuilder()
+                .include(
+                        "^"
+                                + Pattern.quote(
+                                        SerializerBenchmark.class.getName() + "." + operation)
+                                + "$")
+                .param("lane", lane.name())
+                .param("workload", workload)
+                .param("deterministic", Boolean.toString(deterministic))
+                .threads(1)
+                .forks(1)
+                .warmupIterations(smoke ? 1 : 5)
+                .measurementIterations(smoke ? 1 : 5)
+                .warmupTime(smoke ? TimeValue.milliseconds(100) : TimeValue.seconds(1))
+                .measurementTime(smoke ? TimeValue.milliseconds(100) : TimeValue.seconds(1))
+                .jvm(java())
+                .jvmArgs(
+                        measurementJvm(
+                                        lane,
+                                        workload,
+                                        operation,
+                                        opened,
+                                        System.getProperty("benchmark.protobuf.version"))
+                                .toArray(String[]::new))
+                .jvmArgsAppend(
+                        "-Dbenchmark.library.jar=" + System.getProperty("benchmark.library.jar"))
+                .shouldFailOnError(true)
+                .addProfiler("gc")
+                .resultFormat(ResultFormatType.JSON)
+                .result(file.toString())
+                .output(file.toString().replace(".json", ".log"))
+                .build();
+    }
+
+    /**
+     * Flags of one measured fork: Protobuf lanes in the Protobuf 3 text write cells inline {@code
+     * String.checkIndex} so that every fork runs in the same compilation mode.
+     */
+    static List<String> measurementJvm(
+            Lane lane, String workload, String operation, boolean opened, String protobufVersion) {
+        Lane.require(
+                protobufVersion != null && !protobufVersion.isEmpty(),
+                "Missing benchmark.protobuf.version");
+        List<String> flags = jvm(opened);
+        if (protobufVersion.startsWith("3.")
+                && PROTOBUF_CHAIN.contains(lane)
+                && workload.equals("text")
+                && PINNED_TEXT_WRITES.contains(operation)) {
+            flags.add("-XX:CompileCommand=inline,java.lang.String::checkIndex");
+        }
+        return flags;
     }
 
     private static List<String> jvm(boolean opened) {

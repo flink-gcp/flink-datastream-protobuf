@@ -176,7 +176,7 @@ Protobuf 3:
 Both inconclusive cells write payloads below 4 KiB through code that is identical in both builds.
 Protobuf 4 nested `buildAndSerialize` is at 0.948 (0.781, 1.151): the candidate's five blocks ran at 0.77 to 1.20 times Chill's time, where the baseline's ran at 0.75 to 0.90.
 Protobuf 3 text `buildAndSerialize` is at 0.608 (0.241, 1.536): one candidate block ran at 1.96 times Chill's time and the others at 0.36 to 0.84.
-The standard deviation of the five log native/Chill ratios is 0.38 to 0.75 for the three Protobuf 3 text write cells in both variants except candidate `serializeSameInstance`, at 0.02; every other cell is at most 0.28, the largest being Protobuf 3 text `streamCopy` at 0.22 and 0.28; the earlier reports recorded the same spread for these cells, and [#178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178) investigates it.
+The standard deviation of the five log native/Chill ratios is 0.38 to 0.75 for the three Protobuf 3 text write cells in both variants except candidate `serializeSameInstance`, at 0.02; every other cell is at most 0.28, the largest being Protobuf 3 text `streamCopy` at 0.22 and 0.28; the earlier reports recorded the same spread for these cells, and the [compilation-mode diagnosis](protobuf3-text-write-modes.md) for [#178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178) explains it.
 
 ### Possible regressions
 

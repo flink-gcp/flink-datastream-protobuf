@@ -124,7 +124,7 @@ The archives retain every cell.
 
 The two inconclusive Protobuf 3 cells have point estimates below the tolerance.
 Text `buildAndSerialize`, at 0.627 (0.245, 1.604), belongs to the Protobuf 3 text write cells whose JVM forks take one of two times: native text `serialize` forks take 639 to 642 or 1,467 to 1,469 ns/op, and Chill `buildAndSerialize` forks 1,496 or 3,193 to 3,359 ns/op.
-The standard deviation of the five log ratios is 0.39 to 0.76 for text `serialize`, `serializeSameInstance`, and `buildAndSerialize`, against at most 0.16 for every other cell; the [sizing-allocation](serializer-sizing-allocation.md), [generated-size](serializer-generated-size.md), and [large-read](serializer-large-read.md) reports recorded the same spread, and [#178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178) investigates it.
+The standard deviation of the five log ratios is 0.39 to 0.76 for text `serialize`, `serializeSameInstance`, and `buildAndSerialize`, against at most 0.16 for every other cell; the [sizing-allocation](serializer-sizing-allocation.md), [generated-size](serializer-generated-size.md), and [large-read](serializer-large-read.md) reports recorded the same spread, and the [compilation-mode diagnosis](protobuf3-text-write-modes.md) for [#178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178) explains it.
 Collections `serializeSameInstance`, at 0.945 (0.794, 1.125), crosses the tolerance because one native fork and one Chill fork each took about 20% longer than the other four of its lane.
 
 ## Changes since the 0.1.0 baseline

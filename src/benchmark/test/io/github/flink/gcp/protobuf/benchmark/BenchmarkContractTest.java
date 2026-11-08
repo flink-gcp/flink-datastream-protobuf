@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -155,6 +156,91 @@ class BenchmarkContractTest {
                                 Lane.PROTOBUF_DYNAMIC,
                                 Lane.PROTOBUF_NATIVE))
                 .isNull();
+    }
+
+    private static final String PIN = "-XX:CompileCommand=inline,java.lang.String::checkIndex";
+
+    @Test
+    void onlyProtobufLanesOfProtobuf3TextWritesPinTheCompilationMode() {
+        var pinnedOperations = List.of("serialize", "serializeSameInstance", "buildAndSerialize");
+        for (Lane lane : Lane.values()) {
+            for (String workload : Corpus.WORKLOADS) {
+                for (String operation : BenchmarkSuite.OPERATIONS) {
+                    boolean pinned =
+                            lane.name().startsWith("PROTOBUF_")
+                                    && workload.equals("text")
+                                    && pinnedOperations.contains(operation);
+                    assertThat(
+                                    BenchmarkSuite.measurementJvm(
+                                                    lane, workload, operation, false, "3.25.9")
+                                            .contains(PIN))
+                            .as("%s %s %s", lane, workload, operation)
+                            .isEqualTo(pinned);
+                    assertThat(
+                                    BenchmarkSuite.measurementJvm(
+                                            lane, workload, operation, false, "4.36.2"))
+                            .doesNotContain(PIN);
+                }
+            }
+        }
+        assertThat(
+                        BenchmarkSuite.measurementJvm(
+                                Lane.PROTOBUF_CHILL, "text", "serialize", true, "3.25.9"))
+                .containsExactly(
+                        "-Xms1g",
+                        "-Xmx1g",
+                        "-XX:+UseG1GC",
+                        "--add-opens=java.base/java.util=ALL-UNNAMED",
+                        PIN);
+        assertThatThrownBy(
+                        () ->
+                                BenchmarkSuite.measurementJvm(
+                                        Lane.PROTOBUF_NATIVE, "text", "serialize", false, ""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("benchmark.protobuf.version");
+    }
+
+    @Test
+    void measuredForksTakeTheirFlagsFromTheRunningProfile(@TempDir Path directory) {
+        String previous = System.getProperty("benchmark.protobuf.version");
+        Path file = directory.resolve("result.json");
+        try {
+            System.setProperty("benchmark.protobuf.version", "3.25.9");
+            var pinned =
+                    BenchmarkSuite.options(
+                            file,
+                            Lane.PROTOBUF_CHILL,
+                            "text",
+                            "buildAndSerialize",
+                            false,
+                            false,
+                            false);
+            assertThat(pinned.getJvmArgs().get()).contains(PIN);
+            assertThat(pinned.getParameter("workload").get()).containsExactly("text");
+            var unpinned =
+                    BenchmarkSuite.options(
+                            file, Lane.PROTOBUF_CHILL, "text", "deserialize", false, false, false);
+            assertThat(unpinned.getJvmArgs().get()).doesNotContain(PIN);
+            System.setProperty("benchmark.protobuf.version", "4.36.2");
+            assertThat(
+                            BenchmarkSuite.options(
+                                            file,
+                                            Lane.PROTOBUF_CHILL,
+                                            "text",
+                                            "buildAndSerialize",
+                                            false,
+                                            false,
+                                            false)
+                                    .getJvmArgs()
+                                    .get())
+                    .doesNotContain(PIN);
+        } finally {
+            if (previous == null) {
+                System.clearProperty("benchmark.protobuf.version");
+            } else {
+                System.setProperty("benchmark.protobuf.version", previous);
+            }
+        }
     }
 
     @Test
