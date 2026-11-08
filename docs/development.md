@@ -968,7 +968,7 @@ The WHAT/WHY PR template is a deliberate copy of the shared template and is revi
 The optional Context7 and Serena connections are declared in `.mcp.json` and `.codex/config.toml`.
 Both run Serena on the Python 3.14 that `mise x python@3.14` puts on PATH, and stop `uvx` from downloading one.
 uv would still prefer a uv-managed 3.14 if one were installed, so manage Python with mise rather than `uv python install`.
-uv tool commands ignore the project's uv settings; without these options `uvx` uses uv's default interpreter, which can be a newer Python for which Serena 1.7.0's dependencies cannot be built.
+uv tool commands ignore the project's uv settings; without these options `uvx` uses uv's default interpreter, which can be newer than the Python versions that Serena 2.1.0 supports (3.11 to 3.14).
 Activate the current worktree when using Serena, and keep credentials and personal configuration outside tracked files.
 Neither MCP server is required to build or test the project.
 
