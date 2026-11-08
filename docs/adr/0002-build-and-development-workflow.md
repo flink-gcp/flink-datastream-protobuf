@@ -90,7 +90,10 @@ Saving only on `main` keeps pull requests from creating entries that only their 
 The other lanes fetch the runtime-specific dependencies that the entry lacks from the mirror; a warm-up that resolves every lane before the save, or one entry per lane, was rejected because it would enlarge the cache and add steps without changing where those artifacts come from.
 The mise, Hugo, and retained-bundle caches are unchanged, because a pull request saves a copy only when it does not restore its exact key, as when `main` has no entry for it, and an unused copy is evicted after seven days without access.
 
-Dependabot proposes individual weekly Maven, GitHub Actions, and uv updates.
+Dependabot proposes weekly Maven version updates individually and groups each week's minor and patch GitHub Actions updates and uv updates into one PR per ecosystem.
+A Maven update can change the published artifacts or the supported matrix, so each one is reviewed alone; the grouped updates change only CI and development tools.
+Major GitHub Actions and uv updates stay individual, because a major update is the one most likely to need changes and would otherwise hold back the rest of its group.
+Separate GitHub Actions PRs edit the same workflow files, so each runs the full CI matrix; after the first merges, merging the next writes workflow content that its own head does not contain, which a token without the `workflow` scope cannot do until Dependabot rebases the PR and CI runs again.
 Flink major/minor changes follow ADR-0003, and Protobuf major changes require an explicit compatibility decision.
 JUnit major upgrades follow the supported Flink floor: adopt JUnit 6 when that upstream Flink release's root POM (`flink-parent`) pins it, then verify the complete supported matrix, including LTS.
 This uses the adoption condition recorded in [connector issue #906](https://github.com/flink-gcp/flink-connector-gcp/issues/906); minor and patch updates within JUnit 5 remain reviewable.
