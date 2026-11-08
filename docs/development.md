@@ -944,6 +944,9 @@ Repository skills live under `.agents/skills`, with `.claude/skills` pointing th
 The four workflow skills and `scripts/central-portal.py` come from [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools), at the full commit SHA recorded as `dev_tools_revision` in `justfile`.
 Their tracked copies work offline and are present in new Git worktrees; ordinary builds do not download them.
 
+Each flink-gcp-dev-tools release opens or updates a Draft PR from `flink-gcp-bot` on the `dev-tools/update` branch that performs the steps below for that release; AGENTS.md states the review it needs.
+Follow the steps by hand to select another reviewed commit or to roll back.
+
 To update them, choose a reviewed commit from dev-tools main, update the pin, and run `just dev-tools-sync` from this repository's root.
 The recipe requires Bash, Git, `gh`, tar, and just, and preserves unrelated skills and every other file under `scripts/`.
 It checks every skill and the tool before replacing any of them, and it refuses to overwrite differing uncommitted changes at the managed paths.

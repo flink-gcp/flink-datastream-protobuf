@@ -36,6 +36,7 @@ limitations under the License.
 - CI Maven mirror and shared repository cache amended: 2026-10-30, [issue #135](https://github.com/flink-gcp/flink-datastream-protobuf/issues/135)
 - Retained 0.x checks ended by the 1.0.0 format restart: 2026-10-31, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
 - Site theme files reduced to those the site uses: 2026-11-01, [issue #190](https://github.com/flink-gcp/flink-datastream-protobuf/issues/190)
+- Bot dev-tools update review amended: 2026-11-08, [PR #210](https://github.com/flink-gcp/flink-datastream-protobuf/pull/210)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -111,6 +112,9 @@ Require two distinct self-review rounds, an independent reviewer that did not au
 The restored original workflow permits a recorded exception when the independent reviewer cannot run; a running or uncollected review is incomplete and does not qualify.
 Freeze the base and head for review, use range-diff for bounded repairs after a completed pass, and keep feedback inline.
 Agent guidance and skills make this procedure discoverable while keeping private memory and credentials outside the repository.
+A dev-tools update PR that `flink-gcp-bot` opens from `dev-tools/update` for a flink-gcp-dev-tools release, as that repository's [release-update amendment](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/c0d5afb3f0a0e89c1a5a3aaeca26a5730999983c/docs/adr/0001-share-development-assets.md#amendment-propose-each-release-to-the-consumers-from-a-bot) decides, is the exception.
+While it holds only the bot's commit, it needs round two and current aggregate CI before Ready; round one and the independent review are not repeated, because that commit holds only the release's copies and pins, whose shared diff already passed all three rounds upstream.
+A maintainer commit on that branch returns it to the full flow, because that commit was reviewed nowhere.
 
 Maintain the four workflow skills, the Central Portal tool `scripts/central-portal.py`, and the WHAT/WHY template in [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools).
 Track the skill and tool copies at the full upstream commit recorded in the justfile and update them through `just dev-tools-sync` and a reviewed PR.
