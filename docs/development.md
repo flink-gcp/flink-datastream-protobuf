@@ -438,8 +438,9 @@ Use this sequence for a dependency update, including patch updates proposed by D
 | Flink 1.20 LTS | Change `flink.version` in the `flink1` profile and `release.flink.lts` in `pom.xml`, the example and benchmark `lts` versions and the development-bundle `versions` in `.github/workflows/verify.yaml`, `docs/content/docs/quickstart.md`, the accepted version in `benchmarks.just`, the `flink1` runtimes in `BaselineTool` and its test, and the `flink1` readers and negative controls in `scripts/baseline-release.py`; keep `flink.compat=flink1` on LTS commands; the benchmark lanes then check `benchmark.avro.version` and `benchmark.jackson.version` (see [Dependency updates](#dependency-updates)) |
 | Supported Flink minor window | Review and advance floor/ceiling together under ADR-0003; check adapters and CI lanes. Dependabot does not advance Flink major/minor versions automatically |
 
-Dependabot scans the root Maven project.
-Review the standalone example's dependency and plugin pins in `examples/datastream/pom.xml` alongside root updates; they are maintained explicitly.
+Dependabot scans the root Maven project and the standalone example in `examples/datastream`, whose plugin and dependency pins are explicit rather than inherited.
+`DocumentationExamplesTest` fails a pull request that moves `flink.version` or `protobuf.version` in only one of the two POMs; make the matching change on the same branch.
+Dependabot leaves the example's `protobuf.integration.version` to the release procedure.
 When changing the development library version, update the example's `protobuf.integration.version` and the quickstart together.
 The launch-version test rejects runtime or development-coordinate drift before the commands reach users.
 
@@ -621,7 +622,7 @@ In Docs, whose workspace holds two checkouts, the key never matches exactly, so 
 A job that restores nothing reports a warning.
 Only `floor / JDK 17 / Protobuf 4` on `main` saves an entry, through the action's `save` input.
 That job restores only the exact key, so a new key starts from an empty repository, and the entry is saved after the job succeeds.
-The entry therefore holds what that job resolved when its key was new; a version that a script names outside a POM, such as the `install-file` plugin in `scripts/verify-examples.sh`, reaches it only with the next POM change.
+The entry therefore holds what that job resolved when its key was new, so scripts invoke Maven plugins by prefix, such as `install:install-file` in `scripts/verify-examples.sh`, and take their versions from the POM, whose changes produce a new key.
 Pull requests, Docs, and Dependency submission only restore, so pull requests create no entry that only their own ref can read.
 The other lanes fetch their runtime-specific dependencies, which the entry does not hold, from the mirror on each run, and the standalone examples resolve into their own disposable repository.
 
@@ -870,7 +871,7 @@ JUnit major upgrades follow the supported Flink floor, using the same adoption c
 Check the upstream Apache Flink release's root POM (`flink-parent`) for this condition; this library inherits `flink-connector-parent` separately.
 Adopt JUnit 6 when the floor's upstream POM pins JUnit 6, then verify every supported runtime, including LTS.
 The current [floor POM (2.2.1)](https://github.com/apache/flink/blob/450c63e961805a90aa18cb815d6b412f44303b9b/pom.xml#L158) pins JUnit 5.11.4 and the [LTS POM (1.20.5)](https://github.com/apache/flink/blob/0980485040c6dbec3a1b32da05c4b655cf01ad2b/pom.xml#L155) pins 5.10.1; this project maintains its own tested JUnit 5 minor/patch pin.
-Dependabot ignores major updates to `org.junit:junit-bom`, so recheck this condition whenever the supported Flink window changes.
+Dependabot ignores major updates to `org.junit:junit-bom` and the example's `org.junit.jupiter:junit-jupiter`, so recheck this condition whenever the supported Flink window changes.
 
 Keep `slf4j-simple` on the SLF4J API major used by the supported Flink runtimes.
 The current runtimes use SLF4J 1.7.36; upgrading only the binding to 2.x leaves the 1.7 API without a usable binding and disables test logging.
@@ -892,7 +893,7 @@ A benchmark lane fails at `validate`, naming both dependency paths, when its Fli
 A lane sees a Flink patch update only after the floor, ceiling, or LTS row above moves that lane's version; a Dependabot PR that changes only `pom.xml` leaves the benchmark lanes on their previous runtime.
 The build has one `benchmark.avro.version`, so runtimes that pin different Avro versions need a per-runtime property before the rule can pass on every lane; Avro 1.12 also rejects the generated benchmark records until their package is trusted through `org.apache.avro.SERIALIZABLE_PACKAGES`.
 If a security fix requires a newer Jackson than Avro imports, override `jackson-core` together with `jackson-databind`, remove `com.fasterxml.jackson.core` from the rule's `includes` with a comment naming the advisory, and validate the Avro lanes explicitly with `just benchmark-check <version> <protobuf-major> <new-output>`.
-When updating `maven-enforcer-plugin` in that profile, confirm that a divergent `-Dbenchmark.avro.version` still fails `validate`, because a rule that stops matching passes on every lane.
+When updating `maven-enforcer-plugin`, confirm that a divergent `-Dbenchmark.avro.version` still fails `validate`, because a rule that stops matching passes on every lane.
 Dependabot ignores every `org.apache.avro:*` and `com.fasterxml.jackson.core:*` update, including patches, because the rule accepts only the exact versions Flink and Avro pin; revisit both ignore rules when that pin moves.
 
 For a Thrift or Avro update, regenerate the benchmark schemas, run both Protobuf profiles across the ADR-0003 smoke matrix, and retain new provenance separately from the fixed baseline.
@@ -913,7 +914,7 @@ A failed job appears in the Actions tab and notifies the user who triggered it (
 
 ### Upstream release check
 
-Dependabot proposes runtime updates only for the root `pom.xml` properties: patches of the Flink floor, and minors and patches of the default Protobuf pin.
+Dependabot proposes runtime updates only for the root `pom.xml` properties and their copies in the standalone example: patches of the Flink floor, and minors and patches of the default Protobuf pin.
 Its ignore rules exclude new Flink minors and majors and new Protobuf majors, and it reads neither the `flink1` and `protobuf3` profile pins nor `FLINK_CEILING`.
 The weekly `Upstream versions` workflow, also started through `workflow_dispatch`, therefore runs `just upstream-versions`, which compares the Flink 2.x floor, ceiling, and 1.20 LTS pins and both Protobuf pins with the `org.apache.flink:flink-core` and `com.google.protobuf:protobuf-java` metadata on Maven Central.
 CI does not call this workflow, so a new upstream release never fails a pull request; Lint runs only the check's offline tests.

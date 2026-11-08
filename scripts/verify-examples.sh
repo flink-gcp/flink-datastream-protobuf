@@ -49,7 +49,7 @@ protobuf_version=$("${python[@]}" -c 'import xml.etree.ElementTree as E, sys; r=
 if [[ -z "$published" ]]; then
   # The library is always compiled with Protobuf 4, and the 2.x library at the floor, as for a release.
   ./mvnw -ntp -Pprotobuf4 "-Dflink.compat=$compat" -DskipTests clean package
-  ./mvnw -ntp org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file "-Dfile=target/flink-datastream-protobuf-$library_version.jar" -DpomFile=pom.xml "-DlocalRepositoryPath=$repository"
+  ./mvnw -ntp install:install-file "-Dfile=target/flink-datastream-protobuf-$library_version.jar" -DpomFile=pom.xml "-DlocalRepositoryPath=$repository"
 fi
 consumer=(./mvnw -ntp -f examples/datastream/pom.xml "-Dmaven.repo.local=$repository" "-Dprotobuf.integration.version=$library_version" "-Dflink.version=$version" "-Dprotobuf.version=$protobuf_version")
 "${consumer[@]}" clean verify
