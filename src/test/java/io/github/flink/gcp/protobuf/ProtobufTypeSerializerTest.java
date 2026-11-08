@@ -60,6 +60,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
@@ -466,7 +467,7 @@ class ProtobufTypeSerializerTest {
     }
 
     @Test
-    void mismatchedGeneratedWriterCannotCompleteACorruptFrame() {
+    void mismatchedGeneratedWriterCannotCompleteACorruptFrame() throws Exception {
         ProtobufTypeSerializer<BrokenWriter> serializer =
                 new ProtobufTypeSerializer<>(BrokenWriter.class);
         // Declared bytes-field lengths giving payloads of 3, 4096 (the last array-encoded size),
@@ -474,6 +475,11 @@ class ProtobufTypeSerializerTest {
         for (int declared : List.of(1, SCRATCH_SIZE - 3, SCRATCH_SIZE - 2, 2 * SCRATCH_SIZE)) {
             int size =
                     CodedOutputStream.computeBytesSize(10, ByteString.copyFrom(new byte[declared]));
+            ByteArrayOutputStream consistent = new ByteArrayOutputStream();
+            new DataOutputViewStreamWrapper(consistent).writeInt(size);
+            byte[] payload = new byte[size];
+            Arrays.fill(payload, (byte) size);
+            consistent.write(payload);
             for (int count : List.of(0, size - 1, size + 1)) {
                 ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                 assertThatThrownBy(
@@ -492,8 +498,44 @@ class ProtobufTypeSerializerTest {
                 } else {
                     assertThat(bytes.size()).isLessThanOrEqualTo(4 + size);
                 }
+                // Overrunning a 4097-byte payload by one byte leaves the last two bytes in the
+                // coded-stream buffer when the frame rejects them; the next frame must not get
+                // them.
+                assertThat(encode(serializer, new BrokenWriter(declared, size)))
+                        .as("frame after a write of %d bytes for %d", count, size)
+                        .isEqualTo(consistent.toByteArray());
             }
         }
+    }
+
+    @Test
+    void largeFrameAfterATargetFailureCarriesNoBytesOfTheFailedFrame() throws Exception {
+        ProtobufTypeSerializer<ScalarMessage> serializer =
+                new ProtobufTypeSerializer<>(ScalarMessage.class);
+        ScalarMessage first = payloadOfSize(3 * SCRATCH_SIZE);
+        ScalarMessage second = payloadOfSize(2 * SCRATCH_SIZE);
+        // Accepts the four-byte prefix, then fails every payload write.
+        OutputStream failing =
+                new OutputStream() {
+                    private int accepted;
+
+                    @Override
+                    public void write(int value) throws IOException {
+                        if (accepted == 4) {
+                            throw new IOException("target failed");
+                        }
+                        accepted++;
+                    }
+                };
+        DataOutputViewStreamWrapper target = new DataOutputViewStreamWrapper(failing);
+        // The first full stream buffer fails to flush and stays in the coded stream.
+        assertThatThrownBy(() -> serializer.serialize(first, target))
+                .isInstanceOf(IOException.class)
+                .hasMessage("target failed");
+        ByteArrayOutputStream expected = new ByteArrayOutputStream();
+        new DataOutputViewStreamWrapper(expected).writeInt(second.getSerializedSize());
+        expected.write(second.toByteArray());
+        assertThat(encode(serializer, second)).isEqualTo(expected.toByteArray());
     }
 
     @Test
@@ -1624,7 +1666,10 @@ class ProtobufTypeSerializerTest {
 
         @Override
         public void writeTo(CodedOutputStream output) throws IOException {
-            output.writeRawBytes(new byte[writtenSize]);
+            // Each written size has its own fill, so bytes left from another write are visible.
+            byte[] bytes = new byte[writtenSize];
+            Arrays.fill(bytes, (byte) writtenSize);
+            output.writeRawBytes(bytes);
         }
     }
 

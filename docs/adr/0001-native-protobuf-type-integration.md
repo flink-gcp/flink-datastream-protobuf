@@ -169,6 +169,7 @@ Null messages are invalid inputs.
 Reject them with `IOException` before writing the length prefix.
 Do not allocate a payload byte array for each record written.
 A payload of at most 4 KiB may be encoded into one 4 KiB array that the serializer instance retains and reuses, then written after its exact size is confirmed; larger payloads are written incrementally to the target.
+The coded stream that writes them, with its 4 KiB buffer, may also be retained and reused by the instance, provided it is discarded after any failed write so that no buffered byte reaches a later frame.
 Enable `CodedOutputStream.useDeterministicSerialization()` only when configured.
 Framing version 1 identifies this representation in the snapshot, independently of the snapshot format version.
 
