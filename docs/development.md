@@ -175,7 +175,7 @@ Both adapters and Protobuf profiles are checked in CI.
 
 ### Documentation site and publication
 
-The site imports `flink-gcp-dev-tools/hugo` at commit `40a3a0e54466d290422d5aeeac346dfad5091de4`, recorded in `docs/go.mod` and `docs/go.sum` and moved together with `dev_tools_revision`, as [Agent tooling](#agent-tooling) describes.
+The site imports `flink-gcp-dev-tools/hugo` at the commit that `dev_tools_revision` in `justfile` names; `docs/go.mod` and `docs/go.sum` record that commit and move with the pin, as [Agent tooling](#agent-tooling) describes.
 This module supplies the shared layout, theme toggle, typography and code palettes.
 Search initialization and its regression test are maintained in the shared repository.
 The module also imports Hugo Book, decides which of its files the site publishes, and carries their notices, as its [ADR-0002](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/40a3a0e54466d290422d5aeeac346dfad5091de4/docs/adr/0002-the-design-module-owns-the-theme-files-and-their-notices.md) records; send changes to those, including a Hugo Book update, to flink-gcp-dev-tools.
