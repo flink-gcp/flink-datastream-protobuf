@@ -479,6 +479,7 @@ Beyond the lanes of that report, the suite measures two DynamicMessage lanes ove
 `just benchmark-run` writes their paired time ratios to `dynamic.csv` without a verdict, as [ADR-0004](adr/0004-serializer-benchmarks.md) decides.
 `just benchmark-pair` keeps the long-run fork, warmup, measurement, and block-order settings but measures only the native and Chill Protobuf lanes.
 Use it for controlled comparisons of native serializer changes; it does not replace a complete cross-format baseline.
+On the Protobuf 3 profile, the Protobuf lanes of the text write cells run with the compilation that ADR-0004 pins; the [compilation-mode diagnosis](validation/protobuf3-text-write-modes.md) explains why.
 These recipes do not replace ordinary native verification or binary compatibility checks.
 Benchmark source code follows the normal formatter, Checkstyle, and Apache RAT rules; generation stays under `target`.
 The CI build matrix runs the smoke after ordinary native verification and accepts no timing thresholds.

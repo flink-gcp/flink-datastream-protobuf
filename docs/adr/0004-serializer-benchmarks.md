@@ -29,6 +29,7 @@ limitations under the License.
 - Pairwise comparison placement added: 2026-10-22, [issue #115](https://github.com/flink-gcp/flink-datastream-protobuf/issues/115)
 - DynamicMessage lanes added: 2026-10-31, [issue #45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)
 - Release-configuration library measured: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
+- Protobuf 3 text write compilation pinned: 2026-11-09, [issue #178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -68,6 +69,13 @@ This is a one-sided practical non-regression target, not symmetric statistical e
 Do not infer parity from overlapping individual score intervals or average away workload-specific regressions.
 The five-block model assumes approximately normal independent log ratios; the report must retain raw data and discuss drift, scheduling, and limited replication.
 There is no simultaneous confidence claim across all workload/operation cells.
+
+On the Protobuf 3 profile, every Protobuf lane of the text `serialize`, `serializeSameInstance`, and `buildAndSerialize` cells runs its forks with `-XX:CompileCommand=inline,java.lang.String::checkIndex`.
+protobuf-java 3.x encodes a string one `String.charAt` at a time, and on JDK 17 C2 inlines the `String.checkIndex` call of a UTF-16 string only if that call was already profiled when it compiles the encoding loop; a fork compiled without it calls `checkIndex` per character and never recompiles.
+The [diagnosis of these modes](../validation/protobuf3-text-write-modes.md) found that each fork of either lane draws its mode independently and that Chill draws the slow one more often, so without the flag the paired interval would measure that draw rather than the serializers.
+The flag puts every fork of every Protobuf lane in the inlined compilation, and the tolerance, block, and interval rules apply to these cells unchanged.
+Their results describe that compilation, not the mixture of compilations that a Protobuf 3 application meets across JVM starts.
+Every other cell and lane, and the Protobuf 4 profile, whose runtime encodes through `String.getBytes`, keep the unmodified JVM configuration; the JMH output records each fork's flags.
 
 Measure DynamicMessage values with descriptor-bound native type information over the generated lane's schema and corpus.
 One lane writes values that carry the serializer's own descriptors, taken from a value it decoded.
@@ -128,3 +136,9 @@ The calibration rejected it, and a baseline repeated on every VM was not measure
 Pairwise placement keeps both sides of each comparison on one VM, as the sequential placement does, and limits each VM to two variants.
 It costs the repeated variants: three adjacent comparisons of four variants take six variant runs on three VMs instead of four on one, but the longest VM measures two variants instead of four.
 Packing several comparisons onto fewer VMs would trade that wall-clock time back for VM count and is left to a later change that needs it.
+
+For the Protobuf 3 text write cells, a longer warmup would not help, because a fork keeps its compilation of the encoding loop.
+More forks per block would average the two compilations by how often each lane draws them, which differs between the lanes, so the ratio would still depend on that draw.
+Reporting these cells without a verdict would keep the unmodified JVM but give up the native/Chill comparison of Protobuf 3 text writes.
+Forcing the inlining for every lane, cell, or profile would remove the modes with a simpler rule, but it would change the compilation of cells that never showed them.
+Pinning the slow compilation instead would measure a per-character call that the faster compilation, which most native forks reach, does not make.
