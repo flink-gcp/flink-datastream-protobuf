@@ -81,6 +81,18 @@ limitations under the License.
         <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
         <!-- The parent pins maven-jar-plugin 2.4, which ignores project.build.outputTimestamp; 3.x makes the library jar reproducible. -->
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
+        <!-- Build plugins that flink-connector-parent and its Apache parent pin; the parent's own properties keep their names. -->
+        <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+        <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+        <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
+        <maven-install-plugin.version>3.2.0</maven-install-plugin.version>
+        <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
+        <maven-remote-resources-plugin.version>3.3.0</maven-remote-resources-plugin.version>
+        <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <apache-rat-plugin.version>0.18</apache-rat-plugin.version>
+        <spotless-maven-plugin.version>3.11.0</spotless-maven-plugin.version>
         <!-- The exact toolchains each artifact line is released with (ADR-0003); move them with the 2.x floor and the flink1 profile. -->
         <release.flink.floor>2.2.1</release.flink.floor>
         <release.flink.lts>1.20.5</release.flink.lts>
@@ -106,6 +118,19 @@ limitations under the License.
                 <!-- `just release-stage` re-versions the POM and CI reads its version; pinned so the goals resolve reviewed versions. -->
                 <plugin><groupId>org.codehaus.mojo</groupId><artifactId>versions-maven-plugin</artifactId><version>${versions-maven-plugin.version}</version></plugin>
                 <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-help-plugin</artifactId><version>${maven-help-plugin.version}</version></plugin>
+                <!-- Declared here so that Dependabot updates the properties above; the parents' configuration still applies. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-clean-plugin</artifactId><version>${maven-clean-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>${maven-resources-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>${maven-compiler-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>${maven-surefire-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>${maven-install-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>${maven-enforcer-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-remote-resources-plugin</artifactId><version>${maven-remote-resources-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId><version>${maven-checkstyle-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-javadoc-plugin</artifactId><version>${maven-javadoc-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.rat</groupId><artifactId>apache-rat-plugin</artifactId><version>${apache-rat-plugin.version}</version></plugin>
+                <plugin><groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId><version>${spotless-maven-plugin.version}</version></plugin>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>${maven-jar-plugin.version}</version></plugin>
             </plugins>
         </pluginManagement>
         <resources>
@@ -262,23 +287,21 @@ limitations under the License.
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId><artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <numUnapprovedLicenses>0</numUnapprovedLicenses>
-                    <addDefaultLicenseMatchers>false</addDefaultLicenseMatchers>
-                    <licenses><license implementation="org.apache.rat.analysis.license.SimplePatternBasedLicense">
-                        <licenseFamilyCategory>AL2</licenseFamilyCategory><licenseFamilyName>Apache License 2.0</licenseFamilyName>
-                        <patterns><pattern>Licensed under the Apache License, Version 2.0</pattern><pattern>Licensed to the Apache Software Foundation (ASF) under one</pattern></patterns>
-                    </license></licenses>
-                    <licenseFamilies><licenseFamily implementation="org.apache.rat.license.SimpleLicenseFamily"><familyName>Apache License 2.0</familyName></licenseFamily></licenseFamilies>
-                    <excludes>
+                <!-- Replace the parent's configuration, which RAT 0.18 deprecates and under which it also approves RAT's default licenses. -->
+                <configuration combine.self="override">
+                    <consoleOutput>true</consoleOutput>
+                    <excludeSubProjects>false</excludeSubProjects>
+                    <configurationNoDefaults>true</configurationNoDefaults>
+                    <config>${project.basedir}/tools/maven/rat.xml</config>
+                    <inputExcludes>
                         <!-- Generated documentation and dependency inventories. -->
-                        <exclude>docs/go.sum</exclude><exclude>uv.lock</exclude>
-                        <exclude>docs/public/**</exclude><exclude>docs/resources/**</exclude><exclude>docs/static/api/**</exclude><exclude>**/__pycache__/**</exclude>
-                        <exclude>**/.*</exclude><exclude>**/.*/**</exclude><exclude>**/target/**</exclude>
-                        <exclude>LICENSE</exclude><exclude>NOTICE</exclude><exclude>mvnw</exclude><exclude>mvnw.cmd</exclude>
-                        <exclude>mise.toml</exclude><exclude>mise.local.toml</exclude><exclude>**/*.log</exclude>
-                        <exclude>README.md</exclude><exclude>AGENTS.md</exclude><exclude>CLAUDE.md</exclude>
-                    </excludes>
+                        <inputExclude>docs/go.sum</inputExclude><inputExclude>uv.lock</inputExclude>
+                        <inputExclude>docs/public/**</inputExclude><inputExclude>docs/resources/**</inputExclude><inputExclude>docs/static/api/**</inputExclude><inputExclude>**/__pycache__/**</inputExclude>
+                        <inputExclude>**/.*</inputExclude><inputExclude>**/.*/**</inputExclude><inputExclude>**/target/**</inputExclude>
+                        <inputExclude>LICENSE</inputExclude><inputExclude>NOTICE</inputExclude><inputExclude>mvnw</inputExclude><inputExclude>mvnw.cmd</inputExclude>
+                        <inputExclude>mise.toml</inputExclude><inputExclude>mise.local.toml</inputExclude><inputExclude>**/*.log</inputExclude>
+                        <inputExclude>README.md</inputExclude><inputExclude>AGENTS.md</inputExclude><inputExclude>CLAUDE.md</inputExclude>
+                    </inputExcludes>
                 </configuration>
             </plugin>
         </plugins>
@@ -309,8 +332,8 @@ limitations under the License.
                 </exclusions></dependency>
             </dependencies>
             <build><plugins>
-                <!-- Fail when the benchmark Avro or Jackson pin diverges from what flink-avro brings; the inherited enforcer lacks includes for this rule. -->
-                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>3.7.0</version><executions>
+                <!-- Fail when the benchmark Avro or Jackson pin diverges from what flink-avro brings. -->
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><executions>
                     <execution><id>converge-benchmark-avro-jackson</id><goals><goal>enforce</goal></goals><configuration><rules>
                         <!-- The benchmark graph is test-scoped, which the rule skips by default. -->
                         <dependencyConvergence><excludedScopes/><includes><include>org.apache.avro:avro</include><include>com.fasterxml.jackson.core</include></includes></dependencyConvergence>

@@ -174,7 +174,9 @@ docs-javadoc compat="flink2" major="4":
     test "$1" = flink1 || test "$1" = flink2
     test "$2" = 3 || test "$2" = 4
     rm -rf docs/static/api/java
-    {{ mvn }} "-Dflink.compat=$1" "-Pprotobuf$2" clean javadoc:javadoc '-DreportOutputDirectory=${project.basedir}/docs/static/api' -DdestDir=java
+    {{ mvn }} "-Dflink.compat=$1" "-Pprotobuf$2" clean javadoc:javadoc
+    mkdir -p docs/static/api
+    cp -R target/reports/apidocs docs/static/api/java
 
 # Render the existing Markdown with the pinned shared design.
 docs:
