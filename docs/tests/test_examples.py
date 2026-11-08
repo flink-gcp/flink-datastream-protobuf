@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Render marked Example sources through the pinned theme, without Maven substitutes."""
+"""Render marked Example sources through the pinned design module, without Maven substitutes."""
 
 import os
-import re
 import shutil
 import subprocess
 from html.parser import HTMLParser
@@ -156,59 +155,14 @@ def test_invalid_or_missing_references_fail(site, identity, diagnostic):
     assert diagnostic in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("shortcode", ["katex", "mermaid", "asciinema"])
-def test_excluded_theme_shortcodes_fail_site_generation(site, shortcode):
-    (site / "docs/content/docs/probe.md").write_text(
-        f"---\ntitle: Probe\n---\n{{{{< {shortcode} >}}}}\n"
-    )
-    result = render(site)
-    assert result.returncode != 0
-    assert f'template for shortcode "{shortcode}" not found' in result.stdout + result.stderr
-
-
-@pytest.mark.parametrize("language, source, bundle", [
-    ("mermaid", "graph TD; A-->B", "mermaid.min.js"),
-    ("katex", "x^2 + y^2", "katex/"),
-])
-def test_excluded_code_blocks_render_without_the_unpublished_bundle(
-    site, language, source, bundle
-):
-    (site / "docs/content/docs/probe.md").write_text(
-        f"---\ntitle: Probe\n---\n```{language}\n{source}\n```\n"
-    )
+def test_site_licenses_render_the_theme_notices(site):
+    # The module's shortcode carries the notices and fails the build on an unexpected Hugo Book;
+    # its tests cover that guard, so this one only checks that this site's page calls it.
+    page = site / "docs/content/docs/licenses.md"
+    shutil.copyfile(ROOT / "docs/content/docs/licenses.md", page)
+    assert "{{% theme-notices %}}" in page.read_text()
     result = render(site)
     assert result.returncode == 0, result.stdout + result.stderr
-    page = (site / "docs/public/docs/probe/index.html").read_text()
-    assert source in "".join(Text(page).parts)
-    assert bundle not in page
-
-
-def documented_hugo_book_version():
-    page = (ROOT / "docs/content/docs/licenses.md").read_text()
-    match = re.search(r'hugo-book-version "([^"]+)"', page)
-    assert match, "docs/content/docs/licenses.md calls no hugo-book-version shortcode"
-    return match.group(1)
-
-
-def test_site_licenses_guard_accepts_the_resolved_hugo_book_version(site):
-    version = documented_hugo_book_version()
-    (site / "docs/content/docs/guard.md").write_text(
-        f'---\ntitle: Guard\n---\nHugo Book {{{{< hugo-book-version "{version}" >}}}}\n'
-    )
-    result = render(site)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert f"Hugo Book {version}" in "".join(
-        Text((site / "docs/public/docs/guard/index.html").read_text()).parts
-    )
-
-
-def test_site_licenses_guard_rejects_another_hugo_book_version(site):
-    (site / "docs/content/docs/guard.md").write_text(
-        '---\ntitle: Guard\n---\n{{< hugo-book-version "v0.0.0" >}}\n'
-    )
-    result = render(site)
-    assert result.returncode != 0
-    assert (
-        f'document Hugo Book "v0.0.0", but the site resolves "{documented_hugo_book_version()}"'
-        in result.stdout + result.stderr
-    )
+    text = "".join(Text((site / "docs/public/docs/licenses/index.html").read_text()).parts)
+    assert "Copyright (c) 2018 Alex Shpak" in text
+    assert "Fuse.js" in text

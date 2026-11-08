@@ -17,7 +17,7 @@ import 'benchmarks.just'
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-dev_tools_revision := "c3784bce1f95dc75848b1fc2de0f370e5c0a09ea"
+dev_tools_revision := "40a3a0e54466d290422d5aeeac346dfad5091de4"
 
 mvn := "./mvnw -ntp"
 
@@ -29,8 +29,8 @@ python := "uv run --locked --isolated --no-dev python"
 default:
     @just --list
 
-# Refresh the four shared workflow skills from the reviewed upstream commit.
-skills-sync: (install-skills dev_tools_revision)
+# Refresh the four shared workflow skills and the shared Central Portal tool from the reviewed upstream commit.
+dev-tools-sync: (install-dev-tools dev_tools_revision)
 
 # Run Maven verification; arguments precede the final lifecycle phase.
 [positional-arguments]
@@ -128,8 +128,8 @@ release-rehearse version output *args:
 central-portal +args:
     {{ python }} scripts/central-portal.py "$@"
 
-# Run the release-artifact, Portal helper, and Release workflow checks without Maven or Central.
-release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py" "scripts/tests/test_central_portal.py" "scripts/tests/test_release_workflow.py")
+# Run the release-artifact and Release workflow checks without Maven or Central.
+release-artifacts-test: (test-scripts "scripts/tests/test_release_artifacts.py" "scripts/tests/test_release_workflow.py")
 
 # Opt in to the isolated Chill comparison as well as the native probes.
 probe-chill:

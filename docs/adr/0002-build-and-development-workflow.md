@@ -109,8 +109,9 @@ The restored original workflow permits a recorded exception when the independent
 Freeze the base and head for review, use range-diff for bounded repairs after a completed pass, and keep feedback inline.
 Agent guidance and skills make this procedure discoverable while keeping private memory and credentials outside the repository.
 
-Maintain the four workflow skills and the WHAT/WHY template in [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools).
-Track skill copies at the full upstream commit recorded in the justfile and update them through `just skills-sync` and a reviewed PR.
+Maintain the four workflow skills, the Central Portal tool `scripts/central-portal.py`, and the WHAT/WHY template in [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools).
+Track the skill and tool copies at the full upstream commit recorded in the justfile and update them through `just dev-tools-sync` and a reviewed PR.
+Send a behavior change to `central-portal.py` upstream, because the next sync replaces a committed local edit; the release workflow's use of the tool and its tests stay here, as the [shared-tools amendment](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/40a3a0e54466d290422d5aeeac346dfad5091de4/docs/adr/0001-share-development-assets.md#amendment-share-standard-library-repository-tools) records.
 Keep the installation recipe visible in `dev-tools.just`, and project-specific commands and rules in this repository's guidance.
 The shared procedures are restored from connector commit `02c4bd594d2b774cc24b0c0194c1834dd5032120`; preserve their detailed instructions, exceptions, concrete examples and historical evidence.
 Bind this library's single-module checks and supported profiles through its existing guidance rather than maintaining a second workflow.
@@ -132,14 +133,16 @@ The consumer owns URLs, source links, version selection, Javadoc and publication
 The bootstrap-only deferral of Hugo is complete.
 
 The site publishes only the theme files it uses, as flink-connector-gcp's [ADR-0164](https://github.com/flink-gcp/flink-connector-gcp/blob/bf9530aa2ed7564888ec33d37ed0bc0536049df5/docs/adr/0164-workflow-skills-and-documentation-design-come-from-dev-tools.md) also decides.
-`docs/hugo.toml` ignores the design module's own imports, which today are only Hugo Book, and imports Hugo Book after it, so the design module's layouts and assets still take precedence.
+The shared design module now owns that selection: it imports Hugo Book with the restricted mounts, excludes the features below, and carries the notices, as flink-gcp-dev-tools [ADR-0002](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/40a3a0e54466d290422d5aeeac346dfad5091de4/docs/adr/0002-the-design-module-owns-the-theme-files-and-their-notices.md) records.
+`docs/hugo.toml` imports the module without `ignoreImports` and without its own Hugo Book import, and the design module's layouts and assets still take precedence over the theme's.
 From Hugo Book's `static/` directory the site publishes the two favicons and the Fuse.js module, and it excludes the KaTeX, Mermaid and asciinema-player shortcodes and code-block hooks.
 No page used those features, and their bundles carry no notice of their own: KaTeX's fonts are under the SIL Open Font License 1.1 rather than KaTeX's MIT license, Mermaid 11.14.0 lists 21 direct dependencies and its bundle retains license comments for only some of the code it compiles in, and asciinema-player 3.15.1's bundle embeds SolidJS.
 Publishing them with every notice they owe was rejected, because the versions compiled into each bundle are recoverable only from that project's lockfile at the bundled release and would be re-derived on every theme update.
-The hidden site licenses page carries the notices for what is published, and its `hugo-book-version` shortcode fails the build when the resolved Hugo Book version differs from the documented one or a replacement or vendored copy substitutes other files.
+The hidden site licenses page states the license of the site's own sources and renders the notices with the module's `theme-notices` shortcode, which fails the build unless the site resolves the documented Hugo Book version through the module without a replacement, workspace or vendored copy.
+The notice policy and the Hugo Book update procedure are flink-gcp-dev-tools ADR-0002's; this repository keeps its module pin at the same commit as `dev_tools_revision`.
 The page lists the notices of what the site distributes directly: the theme and the components it ships as their own files or compiled styles, each checked against its own license.
 It does not follow those components further, so code compiled inside one, output that a tool generates, and values a component borrows stay off the page, such as the Lodash helpers inside Fuse.js, the Chroma styles Hugo generates the code palettes from, the scripts the JDK's javadoc bundles with the API reference, and the Nord colours in Hugo Book's dark theme; that trail has no natural end.
-Measured on 2026-11-01 at base `b5514f0e625d810e415ae6295b7921ad013a166d`: this module configuration removed 67 published files (KaTeX's 63, asciinema-player's 3 and `mermaid.min.js`) and left every other output file byte-identical.
+Measured on 2026-11-01 at base `b5514f0e625d810e415ae6295b7921ad013a166d`, before the module owned the selection: the site-level configuration removed 67 published files (KaTeX's 63, asciinema-player's 3 and `mermaid.min.js`) and left every other output file byte-identical.
 The configuration restores the static mount that 1.0.0 used before [#187](https://github.com/flink-gcp/flink-datastream-protobuf/pull/187) imported the design module whole, and adds the layout exclusions.
 The hosted 1.0 series, built from its tag, therefore already publishes only those static files and the Apache License text, but its site licenses page lacks the Material Symbols notice until it leaves the retention window described below.
 

@@ -67,7 +67,8 @@ CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on F
 
 ## GitHub workflow
 
-- The four workflow skills are tracked copies from `flink-gcp/flink-gcp-dev-tools`; `just skills-sync` installs the commit pinned in `justfile`.
+- The four workflow skills and `scripts/central-portal.py` are tracked copies from `flink-gcp/flink-gcp-dev-tools`; `just dev-tools-sync` installs the commit pinned in `justfile`.
+  Send behavior changes to `central-portal.py` upstream, because the next sync replaces a committed local edit.
 - The shared skills retain the original connector procedures, decision conditions, examples and exceptions. Keep project-specific command and compatibility bindings here and in the development guide, outside managed skill directories. Read `docs/development.md` before updating the pin or installation recipe.
 - Use `gh`; one worktree per PR under `/tmp/worktrees/flink-datastream-protobuf/`. Never switch branches in the main checkout.
 - After the initial empty commit, every change goes through a Draft PR using `.github/PULL_REQUEST_TEMPLATE.md` with filled WHAT and WHY.
