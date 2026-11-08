@@ -62,7 +62,7 @@ mise x -- just --list
 | `just examples-verify <version> <major> <external-maven-repository> [<published-version>]` | Build/install the library, or resolve a published version from Maven Central, and verify the standalone consumer and Maven launch goals |
 | `just docs-javadoc <flink1\|flink2> <3\|4>` | Generate API documentation with full doclint and warnings as errors |
 | `just release-rehearse <version> <output> [--unsigned]` | Stage `<version>` and `<version>-1.20` from the committed HEAD into a new external directory without uploading, check the release-line guard, then inspect both bundles; see [Release artifacts](#release-artifacts) |
-| `just release-artifacts-test` | Run the bundle inspection, rehearsal, Central Portal helper, and `Release` workflow checks with synthetic inputs and a stub `just` |
+| `just release-artifacts-test` | Run the bundle inspection, rehearsal, and `Release` workflow checks, including the workflow's use of the shared Central Portal tool, with synthetic inputs and a stub `just` |
 | `just central-portal status\|publish\|drop <id>...` | Inspect, publish, or drop Central Portal deployments by ID when recovering a release; see [Publishing a release](#publishing-a-release) |
 | `just release-stage <version>` | Re-version the current checkout and stage one line on the Central Portal; only for the release workflow and the rehearsal's exported tree |
 | `just probe-chill` | Clean verification including the optional Chill comparison |
@@ -83,7 +83,7 @@ mise x -- just --list
 | `just test-scripts [test-file...]` | Run the `scripts/tests` suite through the locked pytest, or only the given files; the per-tool test recipes delegate to it |
 | `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
-| `just skills-sync` | Refresh the four shared workflow skills at the recorded dev-tools commit |
+| `just dev-tools-sync` | Refresh the four shared workflow skills and `scripts/central-portal.py` at the recorded dev-tools commit |
 
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
@@ -175,16 +175,13 @@ Both adapters and Protobuf profiles are checked in CI.
 
 ### Documentation site and publication
 
-The site imports `flink-gcp-dev-tools/hugo` at commit `632527214d3d1a41cc0c5099e64d3893358059f9`, recorded in `docs/go.mod` and `docs/go.sum`.
-This module supplies the shared layout, theme toggle, typography and code palettes; the site imports Hugo Book itself, as described below.
+The site imports `flink-gcp-dev-tools/hugo` at commit `40a3a0e54466d290422d5aeeac346dfad5091de4`, recorded in `docs/go.mod` and `docs/go.sum` and moved together with `dev_tools_revision`, as [Agent tooling](#agent-tooling) describes.
+This module supplies the shared layout, theme toggle, typography and code palettes.
 Search initialization and its regression test are maintained in the shared repository.
-As in flink-connector-gcp, `docs/hugo.toml` ignores the design module's own imports, imports Hugo Book after it, and publishes from Hugo Book's `static/` directory only the two favicons and the Fuse.js module.
-Hugo Book's KaTeX, Mermaid and asciinema-player features are excluded, so their shortcodes fail the build; enabling one means mounting its files and adding every notice its bundle owes first, including those of the dependencies it compiles in.
-The hidden [site licenses](content/docs/licenses.md) page carries the notices for what the site publishes and names the Hugo Book version it documents; `just docs` fails when the site resolves another version or a replacement, and `docs/tests/test_examples.py` holds the exclusions and the guard's version check.
-Update the module pin deliberately and review the resulting theme, navigation and mobile rendering.
-When the design module pin moves, check that its `hugo.toml` still imports nothing but Hugo Book, and that its templates reference no Hugo Book static file beyond those published.
-When Hugo Book moves, compare its `assets/`, `layouts/`, `i18n/` and published static files between the two tags, update each affected section of the site licenses from the upstream license at the new version, and then change the version the page names.
-A third-party file that the design module adds itself needs a section too, which no check catches.
+The module also imports Hugo Book, decides which of its files the site publishes, and carries their notices, as its [ADR-0002](https://github.com/flink-gcp/flink-gcp-dev-tools/blob/40a3a0e54466d290422d5aeeac346dfad5091de4/docs/adr/0002-the-design-module-owns-the-theme-files-and-their-notices.md) records; send changes to those, including a Hugo Book update, to flink-gcp-dev-tools.
+`docs/hugo.toml` imports only the design module, because the first import of a module decides its mounts.
+The hidden [site licenses](content/docs/licenses.md) page states the license of the site's own sources and renders the theme's notices with the module's `{{% theme-notices %}}` shortcode, which fails the build unless the site resolves the documented Hugo Book version through the module, without a replacement, workspace or vendored copy.
+Review the resulting theme, navigation and mobile rendering when the pin moves.
 The version assembly and controls are adapted from connector commit `83b05d26c736625549824cf54b021eeb9f70c18c` under Apache-2.0.
 
 The site follows flink-connector-gcp's layout: its pages are the Markdown under `docs/content/`, and Example source files own the rendered code excerpts.
@@ -936,14 +933,17 @@ Respond to each finding through the [version-update procedure](#updating-protobu
 
 AGENTS.md is shared guidance; CLAUDE.md imports it.
 Repository skills live under `.agents/skills`, with `.claude/skills` pointing there for Claude Code.
-The four workflow skills come from [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools), at the full commit SHA recorded as `dev_tools_revision` in `justfile`.
+The four workflow skills and `scripts/central-portal.py` come from [flink-gcp-dev-tools](https://github.com/flink-gcp/flink-gcp-dev-tools), at the full commit SHA recorded as `dev_tools_revision` in `justfile`.
 Their tracked copies work offline and are present in new Git worktrees; ordinary builds do not download them.
 
-To update them, choose a reviewed commit from dev-tools main, update the pin, and run `just skills-sync` from this repository's root.
-The recipe requires Bash, Git, `gh`, tar, and just, and preserves unrelated skills.
-It refuses to overwrite differing uncommitted changes in the managed directories.
-Review and commit the pin and resulting skill changes together.
-Keep `dev-tools.just` aligned with `examples/skills.just` at the selected upstream commit when that recipe changes.
+To update them, choose a reviewed commit from dev-tools main, update the pin, and run `just dev-tools-sync` from this repository's root.
+The recipe requires Bash, Git, `gh`, tar, and just, and preserves unrelated skills and every other file under `scripts/`.
+It checks every skill and the tool before replacing any of them, and it refuses to overwrite differing uncommitted changes at the managed paths.
+If a replacement fails or is interrupted, it restores the paths it already replaced.
+After a SIGKILL or a crash, run the sync again: it skips paths already replaced and refuses a path left mid-move as local changes, which `git restore` and `git clean` at that path discard before another run.
+Move the documentation site's design module to the same commit by running `hugo mod get github.com/flink-gcp/flink-gcp-dev-tools/hugo@<full commit SHA>` and then `hugo mod tidy` from `docs/` under `mise x hugo-extended go --`; the tidy step drops the previous commit's `go.sum` entries.
+Review and commit the pins and the resulting changes together.
+Keep `dev-tools.just` aligned with `examples/dev-tools.just` at the selected upstream commit when that recipe changes.
 Use the same procedure with an earlier pin to roll back.
 The shared skills preserve the original connector workflow, including its detailed checks, examples and recorded unavailable-reviewer exception.
 Their historical connector examples do not require connector-specific tools here: use the single-module verification commands and Protobuf/JDK compatibility requirements above.
