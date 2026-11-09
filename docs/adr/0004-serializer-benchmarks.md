@@ -30,6 +30,7 @@ limitations under the License.
 - DynamicMessage lanes added: 2026-10-31, [issue #45](https://github.com/flink-gcp/flink-datastream-protobuf/issues/45)
 - Release-configuration library measured: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
 - Protobuf 3 text write compilation pinned: 2026-11-09, [issue #178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)
+- Pinned compilation extended to the UTF-16 path for JDK 21: 2026-11-09, [issue #178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -70,12 +71,15 @@ Do not infer parity from overlapping individual score intervals or average away 
 The five-block model assumes approximately normal independent log ratios; the report must retain raw data and discuss drift, scheduling, and limited replication.
 There is no simultaneous confidence claim across all workload/operation cells.
 
-On the Protobuf 3 profile, every Protobuf lane of the text `serialize`, `serializeSameInstance`, and `buildAndSerialize` cells runs its forks with `-XX:CompileCommand=inline,java.lang.String::checkIndex`.
-protobuf-java 3.x encodes a string one `String.charAt` at a time, and on JDK 17 C2 inlines the `String.checkIndex` call of a UTF-16 string only if that call was already profiled when it compiles the encoding loop; a fork compiled without it calls `checkIndex` per character and never recompiles.
-The [diagnosis of these modes](../validation/protobuf3-text-write-modes.md) found that each fork of either lane draws its mode independently and that Chill draws the slow one more often, so without the flag the paired interval would measure that draw rather than the serializers.
-The flag puts every fork of every Protobuf lane in the inlined compilation, and the tolerance, block, and interval rules apply to these cells unchanged.
-Their results describe that compilation, not the mixture of compilations that a Protobuf 3 application meets across JVM starts.
+On the Protobuf 3 profile, every Protobuf lane of the text `serialize`, `serializeSameInstance`, and `buildAndSerialize` cells runs its forks with one `-XX:CompileCommand=inline` flag for each of `java.lang.StringUTF16::charAt`, `java.lang.StringUTF16::checkIndex`, `java.lang.StringUTF16::length`, and `java.lang.String::checkIndex`.
+protobuf-java 3.x encodes a string one `String.charAt` at a time, and C2 inlines a method of the UTF-16 `charAt` path into the encoding loop only if the profile of its call site, when C2 compiles the loop, shows it as frequent or the method is below the size limit for calls without a profile; a fork compiled before that profile has accumulated calls that method per character and never recompiles.
+The method that stays out of line differs between JDK 17 and JDK 21, so the rule forces the inlining of all four non-intrinsic methods that the UTF-16 branch of `charAt` calls rather than the one a single JDK showed.
+The [diagnosis of these modes](../validation/protobuf3-text-write-modes.md) found that each fork of either lane draws its mode independently and that Chill draws the slow one more often, so without the flags the paired interval would measure that draw rather than the serializers.
+The flags put every fork of every Protobuf lane in the inlined compilation of that path, and the tolerance, block, and interval rules apply to these cells unchanged.
+Their results describe that compilation, not the mixture of compilations that a Protobuf 3 application meets across JVM starts; because the Chill lane drew the slow compilations more often, the flags lower its times more than the native times.
+A report of these cells therefore cites the slow-mode rates of each lane from the diagnosis next to the interval, and states whether the forks of JDK 17 Chill `serializeSameInstance`, which keeps a second mode of unidentified cause, split.
 Every other cell and lane, and the Protobuf 4 profile, whose runtime encodes through `String.getBytes`, keep the unmodified JVM configuration; the JMH output records each fork's flags.
+The flags name methods of the JDK's internal string implementation; a later JDK that renames or restructures that path needs the diagnosis repeated before its long runs.
 
 Measure DynamicMessage values with descriptor-bound native type information over the generated lane's schema and corpus.
 One lane writes values that carry the serializer's own descriptors, taken from a value it decoded.
@@ -142,3 +146,4 @@ More forks per block would average the two compilations by how often each lane d
 Reporting these cells without a verdict would keep the unmodified JVM but give up the native/Chill comparison of Protobuf 3 text writes.
 Forcing the inlining for every lane, cell, or profile would remove the modes with a simpler rule, but it would change the compilation of cells that never showed them.
 Pinning the slow compilation instead would measure a per-character call that the faster compilation, which most native forks reach, does not make.
+Pinning only `String.checkIndex`, as the first version of this rule did, left the modes in place on JDK 21.

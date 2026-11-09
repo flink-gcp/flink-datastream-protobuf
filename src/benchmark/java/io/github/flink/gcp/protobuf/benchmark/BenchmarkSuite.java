@@ -70,6 +70,17 @@ public final class BenchmarkSuite {
     private static final List<String> PINNED_TEXT_WRITES =
             List.of("serialize", "serializeSameInstance", "buildAndSerialize");
 
+    /**
+     * The UTF-16 {@code String.charAt} path; JDK 17 and JDK 21 leave different links of it out of
+     * line when they compile it without a profile.
+     */
+    private static final List<String> PINNED_UTF16_PATH =
+            List.of(
+                    "java.lang.StringUTF16::charAt",
+                    "java.lang.StringUTF16::checkIndex",
+                    "java.lang.StringUTF16::length",
+                    "java.lang.String::checkIndex");
+
     private BenchmarkSuite() {}
 
     public static void main(String[] args) throws Exception {
@@ -343,8 +354,8 @@ public final class BenchmarkSuite {
     }
 
     /**
-     * Flags of one measured fork: Protobuf lanes in the Protobuf 3 text write cells inline {@code
-     * String.checkIndex} so that every fork runs in the same compilation mode.
+     * Flags of one measured fork: Protobuf lanes in the Protobuf 3 text write cells inline the
+     * UTF-16 {@code String.charAt} path so that every fork runs in the same compilation mode.
      */
     static List<String> measurementJvm(
             Lane lane, String workload, String operation, boolean opened, String protobufVersion) {
@@ -356,7 +367,9 @@ public final class BenchmarkSuite {
                 && PROTOBUF_CHAIN.contains(lane)
                 && workload.equals("text")
                 && PINNED_TEXT_WRITES.contains(operation)) {
-            flags.add("-XX:CompileCommand=inline,java.lang.String::checkIndex");
+            for (String method : PINNED_UTF16_PATH) {
+                flags.add("-XX:CompileCommand=inline," + method);
+            }
         }
         return flags;
     }
