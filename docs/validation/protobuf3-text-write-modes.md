@@ -23,6 +23,7 @@ The measurements below back the rule that [ADR-0004](../adr/0004-serializer-benc
 ## Method
 
 The diagnosis ran on a local workstation rather than on Compute Engine: an AMD Ryzen AI 9 HX 370 under WSL2 (kernel 6.18.54.1), Temurin 17.0.21, Flink 2.3.0, and protobuf-java 3.25.9, with the benchmark tree built by `just benchmark-build 2.3.0 3` from `aa32fb6`, or for the DynamicMessage lanes from `2c4fd58`, whose benchmark code differs only in the flags the suite passes to its forks.
+The JDK 21 forks and the forks with the whole UTF-16 path forced ran on Temurin 21.0.13 and 17.0.21 with the tree built from `d619724`; each fork ran through the JMH command line outside `BenchmarkSuite`, so it received only the `CompileCommand` flags named below and not the suite's own.
 Each JMH fork used the ADR-0004 long-run settings for one cell: five one-second warmups, five one-second measurements, one thread, and `-Xms1g -Xmx1g -XX:+UseG1GC`.
 Forks ran one at a time outside the block order of `just benchmark-run`, so every fork's diagnostic output could be matched to its time.
 HotSpot compilation logs (`-XX:+LogCompilation`), inlining output (`-XX:+PrintInlining`), and JFR recordings stayed outside the repository.
@@ -67,13 +68,70 @@ A `CompileCommand` that fixes the inlining decision confirms the cause.
 | Foreign-descriptor DynamicMessage `buildAndSerialize` | 857 to 914 (4) | 1,809 to 1,810 (2) | 851 to 872 (3) |
 
 Times are ns/op per fork.
-Forbidding the inlining puts every fork in the slow mode, and forcing it puts every fork in the fast mode, in every measured lane and operation; DynamicMessage `serializeSameInstance` was not measured.
+Forbidding the inlining puts every fork in the slow mode in every measured lane and operation; DynamicMessage `serializeSameInstance` was not measured.
+Forcing it removed the slow mode in every lane and operation except Chill `serializeSameInstance`, whose 698 to 751 ns/op is the [second Chill mode](#a-second-mode-in-the-chill-lane) described below, not the fast mode.
 Forcing it also removed the intermediate 361 to 443 ns/op cluster of native `serialize`: all 16 forks took at most 347 ns/op.
+
+## The same race on JDK 21
+
+The first version of the rule forced only `String.checkIndex`, and the modes remained on Temurin 21.0.13.
+There, `String.checkIndex` is a 10-byte method that delegates to the `Preconditions.checkIndex` intrinsic and is inlined without a profile.
+The compilation logs of a slow fork instead leave `StringUTF16.charAt` out of line with `inline_fail reason='low call site frequency'`, its call site having recorded 773 calls when C2 compiled `encodeUtf8`, against 1,546 in a fast fork, where the whole path was inlined as hot; with `charAt` alone forced, `StringUTF16.checkIndex` stays out of line instead.
+The method and the logged reason differ from JDK 17, but the mode again depends on how much of the UTF-16 path's profile exists when C2 compiles `encodeUtf8`.
+Without forced inlining, all 16 native `serialize` forks took 276 to 343 ns/op; forbidding the inlining of `String.checkIndex` put all 3 forks in the slow mode (936 to 957 ns/op).
+
+| JDK 21 Chill `serialize`, forced inlining | Forks | ns/op |
+|---|---|---|
+| None | 8 | 7 forks 887 to 959, 1 fork 472 |
+| `String::checkIndex` | 4 | 3 forks 882 to 914, 1 fork 443 |
+| `StringUTF16::charAt` | 6 | 4 forks 1,062 to 1,121, 2 forks 454 to 490 |
+| `StringUTF16::charAt` and `String::checkIndex` | 6 | 3 forks 1,016 to 1,063, 3 forks 434 to 479 |
+| The whole path (rule below) | 8 | 459 to 563 |
+
+The rule therefore forces the inlining of the four methods that the UTF-16 branch of `String.charAt` calls below `charAt` itself and that are not intrinsics: `StringUTF16.charAt`, `StringUTF16.checkIndex`, `StringUTF16.length`, and `String.checkIndex`.
+`String.charAt` and its `isLatin1` check stay subject to ordinary inlining, and the `getChar` and, on JDK 21, `Preconditions.checkIndex` intrinsics need no flag.
+No logged fork left the 5-byte `StringUTF16.length` out of line; the rule names it so that no method of the path depends on its profile.
+
+## Forcing the whole UTF-16 path
+
+With all four methods forced, three forks per cell took the following times.
+
+| Lane and operation | JDK 17 | JDK 21 |
+|---|---|---|
+| Native `serialize` | 286 to 289 | 302 to 307 |
+| Native `serializeSameInstance` | 250 to 271 | 274 to 276 |
+| Native `buildAndSerialize` | 537 to 541 | 501 to 504 |
+| Chill `serialize` | 409 to 425 | 459 to 563 (8 forks) |
+| Chill `serializeSameInstance` | 691, 696, and 334 | 336 to 338 |
+| Chill `buildAndSerialize` | 649 to 668 | 635 to 638 |
+| Own-descriptor DynamicMessage `serialize` | 330 to 331 | 337 to 365 |
+| Own-descriptor DynamicMessage `serializeSameInstance` | 268 to 290 | 276 to 302 |
+| Own-descriptor DynamicMessage `buildAndSerialize` | 869 to 931 | 708 to 713 |
+
+Times are ns/op per fork; the foreign-descriptor DynamicMessage lane was not measured with the whole path forced.
+Every cell has one mode except JDK 17 Chill `serializeSameInstance`.
+
+## A second mode in the Chill lane
+
+JDK 17 Chill `serializeSameInstance` keeps two modes with the whole path forced.
+A further 8 forks with compilation logs took 684 to 725 ns/op in 7 forks and 354 ns/op in one, so the run above was not an outlier.
+In these forks the UTF-16 path is inlined in the same way, so this mode has a different cause.
+In the logs of a slow fork, C2 compiled `encodeUtf8` with a profile in which a branch leaving its ASCII-prefix loop had never been taken, and replaced it with an uncommon trap; the logged fast fork has no such trap.
+No trap was hit and no method was recompiled afterwards, and whether that branch accounts for the difference was not tested; the cause of this mode is not identified.
+No other lane, no other operation, and no JDK 21 fork showed it, but only 3 forks were measured per JDK 21 cell other than Chill `serialize`, which had 8.
+
+## Modes occur unequally in the two lanes
+
+The lanes of a pair do not draw the slow modes at the same rate.
+Without forced inlining, the Chill lane landed in the slow mode in 11 of 12 JDK 17 forks and in 7 of 8 JDK 21 `serialize` forks, while native `serialize` did so in 9 of 48 JDK 17 forks and in none of 16 JDK 21 forks.
+The second mode above occurs only in the Chill lane.
+
+These rates come from benchmark JVMs that run nothing but one cell.
+Whether a Flink TaskManager, where other code also reads UTF-16 strings and may profile the `charAt` path earlier, reaches the slow modes as often was not measured.
 
 ## Scope of the diagnosis
 
-The diagnosis covers JDK 17 only, the JDK of the long runs.
-On Temurin 21.0.13, `String.checkIndex(int, int)` is a 10-byte method that delegates to `Preconditions.checkIndex`, below the size limit for calls without a profile, so the race described above would not leave it out of line; no JDK 21 fork was measured.
+The diagnosis covers Temurin 17.0.21 and 21.0.13 on one local host and protobuf-java 3.25.9.
 
 ## Why the Protobuf 4 profile does not show the modes
 

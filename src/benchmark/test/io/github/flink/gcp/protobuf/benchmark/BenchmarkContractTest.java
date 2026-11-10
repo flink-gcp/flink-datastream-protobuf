@@ -20,7 +20,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -158,7 +160,16 @@ class BenchmarkContractTest {
                 .isNull();
     }
 
-    private static final String PIN = "-XX:CompileCommand=inline,java.lang.String::checkIndex";
+    private static final List<String> PIN =
+            List.of(
+                    "-XX:CompileCommand=inline,java.lang.StringUTF16::charAt",
+                    "-XX:CompileCommand=inline,java.lang.StringUTF16::checkIndex",
+                    "-XX:CompileCommand=inline,java.lang.StringUTF16::length",
+                    "-XX:CompileCommand=inline,java.lang.String::checkIndex");
+
+    private static List<String> compileCommands(Collection<String> flags) {
+        return flags.stream().filter(flag -> flag.startsWith("-XX:CompileCommand")).toList();
+    }
 
     @Test
     void onlyProtobufLanesOfProtobuf3TextWritesPinTheCompilationMode() {
@@ -171,27 +182,32 @@ class BenchmarkContractTest {
                                     && workload.equals("text")
                                     && pinnedOperations.contains(operation);
                     assertThat(
-                                    BenchmarkSuite.measurementJvm(
-                                                    lane, workload, operation, false, "3.25.9")
-                                            .contains(PIN))
+                                    compileCommands(
+                                            BenchmarkSuite.measurementJvm(
+                                                    lane, workload, operation, false, "3.25.9")))
                             .as("%s %s %s", lane, workload, operation)
-                            .isEqualTo(pinned);
+                            .containsExactlyElementsOf(pinned ? PIN : List.of());
                     assertThat(
-                                    BenchmarkSuite.measurementJvm(
-                                            lane, workload, operation, false, "4.36.2"))
-                            .doesNotContain(PIN);
+                                    compileCommands(
+                                            BenchmarkSuite.measurementJvm(
+                                                    lane, workload, operation, false, "4.36.2")))
+                            .as("%s %s %s on Protobuf 4", lane, workload, operation)
+                            .isEmpty();
                 }
             }
         }
         assertThat(
                         BenchmarkSuite.measurementJvm(
                                 Lane.PROTOBUF_CHILL, "text", "serialize", true, "3.25.9"))
-                .containsExactly(
-                        "-Xms1g",
-                        "-Xmx1g",
-                        "-XX:+UseG1GC",
-                        "--add-opens=java.base/java.util=ALL-UNNAMED",
-                        PIN);
+                .containsExactlyElementsOf(
+                        Stream.concat(
+                                        Stream.of(
+                                                "-Xms1g",
+                                                "-Xmx1g",
+                                                "-XX:+UseG1GC",
+                                                "--add-opens=java.base/java.util=ALL-UNNAMED"),
+                                        PIN.stream())
+                                .toList());
         assertThatThrownBy(
                         () ->
                                 BenchmarkSuite.measurementJvm(
@@ -215,25 +231,26 @@ class BenchmarkContractTest {
                             false,
                             false,
                             false);
-            assertThat(pinned.getJvmArgs().get()).contains(PIN);
+            assertThat(compileCommands(pinned.getJvmArgs().get())).containsExactlyElementsOf(PIN);
             assertThat(pinned.getParameter("workload").get()).containsExactly("text");
             var unpinned =
                     BenchmarkSuite.options(
                             file, Lane.PROTOBUF_CHILL, "text", "deserialize", false, false, false);
-            assertThat(unpinned.getJvmArgs().get()).doesNotContain(PIN);
+            assertThat(compileCommands(unpinned.getJvmArgs().get())).isEmpty();
             System.setProperty("benchmark.protobuf.version", "4.36.2");
             assertThat(
-                            BenchmarkSuite.options(
-                                            file,
-                                            Lane.PROTOBUF_CHILL,
-                                            "text",
-                                            "buildAndSerialize",
-                                            false,
-                                            false,
-                                            false)
-                                    .getJvmArgs()
-                                    .get())
-                    .doesNotContain(PIN);
+                            compileCommands(
+                                    BenchmarkSuite.options(
+                                                    file,
+                                                    Lane.PROTOBUF_CHILL,
+                                                    "text",
+                                                    "buildAndSerialize",
+                                                    false,
+                                                    false,
+                                                    false)
+                                            .getJvmArgs()
+                                            .get()))
+                    .isEmpty();
         } finally {
             if (previous == null) {
                 System.clearProperty("benchmark.protobuf.version");
