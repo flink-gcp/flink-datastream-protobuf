@@ -21,6 +21,7 @@ limitations under the License.
 - Issue: [#13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13)
 - Publication wait and re-runs amended: 2026-11-01, [issue #181](https://github.com/flink-gcp/flink-datastream-protobuf/issues/181)
 - Reproducible main jar added: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
+- Release build moved to Temurin 21: 2026-11-10, [issue #214](https://github.com/flink-gcp/flink-datastream-protobuf/issues/214)
 - Implements: The publication requirements of [ADR-0003](0003-flink-version-compatibility.md#state-and-release-acceptance)
 - Implementation: The release build, bundle inspection, unsigned CI rehearsal, `Release` workflow, and Central Portal helper are implemented; version 1.0.0 is the first publication through them
 - Current instructions: [Release artifacts](../development.md#release-artifacts) and [Publishing a release](../development.md#publishing-a-release)
@@ -58,6 +59,15 @@ The POM also replaces the parent's maven-jar-plugin 2.4, which ignores `project.
 The main jar's entries then carry the inherited fixed timestamp, so building one source tree with one JDK reproduces it byte for byte.
 Compared with the 1.0.0 jar, its manifest no longer carries `Built-By`, which named the build user, `Build-Jdk` with the JDK's patch release, `Archiver-Version`, or `Implementation-Vendor-Id`, and it adds `Build-Jdk-Spec` with the building JDK's feature release and `Java-Version` with the compiler release, 17.
 [ADR-0004](0004-serializer-benchmarks.md) relies on that to show that benchmark runs of both Protobuf profiles measured the same jar.
+
+The release builds both lines on Temurin 21 with Java release 17.
+On 2026-11-10, two unsigned rehearsals of commit `76bf4273960b3e51e619a273ff80353def0fee76` on Temurin 21.0.13 produced byte-identical bundles for both lines, and a rehearsal on Temurin 17.0.21 matched them only in the sources jars and POMs.
+The main jars of the two JDKs both have class-file major 61 and differ in three ways.
+The manifest's `Build-Jdk-Spec` is 21 instead of 17.
+javac 21 orders some constant pools differently and writes `MethodParameters` attributes that mark the parameters of record canonical constructors and the enclosing instance of an anonymous class constructor as mandated ([JDK-8292275](https://bugs.openjdk.org/browse/JDK-8292275)).
+It also compiles `getClass()` on a receiver of interface type `Message` as `invokeinterface Message.getClass` rather than `invokevirtual Object.getClass` ([JDK-8272564](https://bugs.openjdk.org/browse/JDK-8272564)); both resolve to `Object.getClass` on JDK 17.
+The Javadoc jars differ because javadoc 21 writes different pages and resources.
+Reproducing a jar therefore needs the JDK that built it, and benchmark runs compare its hash only between runs on one JDK.
 
 The published POM is the project POM with its release version.
 Its parent declares no dependencies, and the POM declares only `provided` and `test` dependencies, so neither line adds a transitive dependency to an application.

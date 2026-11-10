@@ -45,10 +45,11 @@ Current design lives in `docs/adr/`; measured feasibility lives in `docs/validat
 - `just pin-actions`: pin Actions references when adding or updating workflows.
 
 Use `mise x -- just <recipe>` outside a mise-activated shell.
-See `docs/development.md` for tool installation, JDK 21, and the test boundary.
+See `docs/development.md` for tool installation, the JDK 21 default and JDK 17 lanes, and the test boundary.
 Run targeted tests while iterating and full verification before pushing Java/build changes in this single-module project.
 Verify both Protobuf profiles for compatibility-sensitive changes across the ADR-0003 Flink matrix, including the binary recipe when changing APIs, dependencies, or build configuration.
 CI covers JDK 17/21 on the current and previous Flink 2.x minors and JDK 17 on Flink 1.20 LTS.
+Run Flink 1.20, `binary-compat`, and `baseline-capture` under `mise x java@temurin-17 just -- just <recipe>`; the default JDK is 21.
 
 ## Implementation and documentation
 
