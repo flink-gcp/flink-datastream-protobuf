@@ -39,7 +39,7 @@ from conftest import load_script
 tool = load_script("gce-benchmark.py")
 
 RUNNER = Path(tool.__file__).with_name(tool.VM_SCRIPT)
-TOOLS = {"java": "temurin-17", "just": "1.40.0", "mise": "2025.1.0"}
+TOOLS = {"java": "temurin-21", "just": "1.40.0", "mise": "2025.1.0"}
 PROTOBUF = 4
 EVENT = "TERMINATE_ON_HOST_MAINTENANCE"
 INTERRUPTED = "INTERRUPTED maintenance-event " + EVENT
@@ -393,7 +393,7 @@ def test_successful_run_retains_every_result_file_and_the_manifest(successful_ru
         "gce.instance": "offline-pb4", "gce.machine.type": "c3-standard-8",
         "gce.image": "ubuntu-2404-noble-amd64-v20261001", "gce.scheduling": "TERMINATE",
         "os.release": "Ubuntu 24.04.3 LTS", "cpu.model": "Intel(R) Xeon(R) Platinum 8481C",
-        "memory.kib": "32864356", "java.version": 'openjdk version "17.0.16" 2025-07-15',
+        "memory.kib": "32864356", "java.version": 'openjdk version "21.0.13" 2026-10-20',
         "java.tool": TOOLS["java"], "just.version": "just 1.40.0",
         "thrift.version": "Thrift version 0.25.0", "runner.sha256": runner,
         "variant.patch.sha256": patch_hash, "boot.id": "boot-1",

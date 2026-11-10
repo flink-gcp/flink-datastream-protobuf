@@ -31,6 +31,7 @@ limitations under the License.
 - Release-configuration library measured: 2026-11-08, [issue #177](https://github.com/flink-gcp/flink-datastream-protobuf/issues/177)
 - Protobuf 3 text write compilation pinned: 2026-11-09, [issue #178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)
 - Pinned compilation extended to the UTF-16 path for JDK 21: 2026-11-09, [issue #178](https://github.com/flink-gcp/flink-datastream-protobuf/issues/178)
+- Long runs moved to Temurin 21: 2026-11-10, [issue #214](https://github.com/flink-gcp/flink-datastream-protobuf/issues/214)
 - Issue: [#30](https://github.com/flink-gcp/flink-datastream-protobuf/issues/30)
 
 ## Decision
@@ -91,7 +92,10 @@ Only the write operations take the acceptance path; reading, copying, and stream
 
 Run correctness and short JMH smoke checks over the supported Flink/JDK/Protobuf matrix in CI: on every push to main, the weekly schedule, and manual runs, and on pull requests that change sources, the evidence gate, or build inputs.
 Do not impose timing thresholds on shared runners.
-Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 17, and both supported Protobuf profiles.
+Record the representative long-run baseline on the maintainer's Mac with Flink 2.3.0, Temurin 21, and both supported Protobuf profiles.
+Temporary Compute Engine runs also use Temurin 21 by default, and each run records its JDK in `java.version`.
+The first long run on Temurin 21 states that earlier long runs used Temurin 17.
+A report may place results of the two JDKs side by side, but it does not attribute a difference between them to the library, because the JDK changes the compiled code of every lane.
 A controlled comparison of native serializer changes may use a paired mode that runs only the native and Chill Protobuf lanes.
 It keeps the correctness gates, fork, warmup, measurement, and alternating block order of the long run, so each variant has its own native/Chill intervals.
 The paired mode does not produce cross-format results and does not replace a complete baseline.

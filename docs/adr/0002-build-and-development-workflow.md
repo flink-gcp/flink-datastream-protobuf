@@ -37,6 +37,7 @@ limitations under the License.
 - Retained 0.x checks ended by the 1.0.0 format restart: 2026-10-31, [issue #140](https://github.com/flink-gcp/flink-datastream-protobuf/issues/140)
 - Site theme files reduced to those the site uses: 2026-11-01, [issue #190](https://github.com/flink-gcp/flink-datastream-protobuf/issues/190)
 - Bot dev-tools update review amended: 2026-11-08, [PR #210](https://github.com/flink-gcp/flink-datastream-protobuf/pull/210)
+- Temurin 21 default JDK amended: 2026-11-10, [issue #214](https://github.com/flink-gcp/flink-datastream-protobuf/issues/214)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -48,6 +49,8 @@ The project metadata and packaged notices identify The flink-gcp authors rather 
 Keep third-party attribution on the Apache-derived Checkstyle files.
 
 Compile for Java 17 and verify on JDK 17 and 21 for Flink 2.x, and JDK 17 for Flink 1.20 LTS, as amended by [ADR-0003](0003-flink-version-compatibility.md).
+Use Temurin 21 as the default JDK for local development, the release build, and dependency submission, because Flink 2.x supports it and the release still targets Java 17.
+Keep JDK 17 wherever a supported combination or development bundle capture needs it, so that the Java 17 output stays verified on a JDK 17 runtime.
 Keep the shared implementation in this module, with alternate source roots only where Flink APIs differ.
 Resolve protobuf-java and protoc together from a Maven profile for each tested major.
 Generate test messages under target and keep test instruments out of the jar.
@@ -67,7 +70,7 @@ Repository Python tools and their tests run through one non-packaged uv project 
 mise.toml supplies that Python minor like the other tools, and the project settings stop uv from preferring uv-managed interpreters or downloading one.
 Recipes and workflows call `uv run --locked`, and no step depends on a system Python.
 The tools use only the standard library and run in a temporary environment without the test dependencies, so the evidence gate and baseline retrieval load no third-party code; a test imports every tool without site-packages.
-Recipes take uv from PATH rather than a nested `mise x`, which would replace a JDK selected for the command and move Java subprocesses off a JDK 21 lane.
+Recipes take uv from PATH rather than a nested `mise x`, which would replace a JDK selected for the command with the `mise.toml` default for its Java subprocesses.
 One pytest recipe runs the `scripts/tests` suite in Lint; the documentation tests, some of which need Hugo and Node, run in Docs.
 The documentation-site tool runs in the same project rather than a separate `docs` project or uv workspace member: neither is a package or has runtime dependencies, and one project gives one Python minor, one dependency lock, and one Dependabot entry.
 Add a workspace member when a tool needs its own runtime dependencies, as in flink-connector-gcp.

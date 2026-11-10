@@ -50,7 +50,7 @@ jobs:
       # Only this job saves the shared Maven entry; see "CI Maven resolution" in docs/development.md.
       - uses: ./.github/actions/maven
         with:
-          save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '17' && matrix.protobuf == '4' }}
+          save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '21' && matrix.protobuf == '4' }}
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just
@@ -209,7 +209,7 @@ jobs:
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: ./.github/actions/maven
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
@@ -301,10 +301,11 @@ jobs:
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           install_args: python uv
+      # The release builds on JDK 21, so the compared candidate is built on JDK 21 too.
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: ./.github/actions/maven
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
@@ -318,6 +319,18 @@ jobs:
           tag: v1.0.0
           bundle: ${{ matrix.bundle }}
           output: ${{ runner.temp }}/v1.0.0
+      # See "API compatibility gate" in docs/development.md.
+      - name: Compare the annotated API with the published 1.0.0 library
+        env:
+          BUNDLE: ${{ steps.fetch.outputs.bundle }}
+        run: |
+          just api-compat "$BUNDLE"
+          # The upgrade builds below clean target/; keep the compared candidate for every consumer run.
+          cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
       # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
       - name: Restore the retained state with the current library on JDK 17
         env:
@@ -328,19 +341,13 @@ jobs:
           for version in $FLINK; do
             just baseline-upgrade "$BUNDLE" "$version"
           done
-      # See "API compatibility gate" in docs/development.md.
-      - name: Compare the annotated API with the published 1.0.0 library
-        env:
-          BUNDLE: ${{ steps.fetch.outputs.bundle }}
-        run: |
-          just api-compat "$BUNDLE"
-          # The upgrade builds below clean target/; keep the compared candidate for every consumer run.
-          cp target/flink-datastream-protobuf-*-SNAPSHOT.jar "$RUNNER_TEMP/candidate.jar"
+      # The candidate built on JDK 21 with release 17 must load and run on JDK 17 for both artifact lines.
       - name: Run the retained compiled consumers on the candidate with JDK 17
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
           FLINK: ${{ matrix.flink }}
         run: |
+          [[ "$(java -version 2>&1)" == 'openjdk version "17.'* ]]
           for version in $FLINK; do
             just baseline-consume "$BUNDLE" "$RUNNER_TEMP/candidate.jar" "$version" "$RUNNER_TEMP/consume-17-$version"
           done

@@ -31,10 +31,10 @@ The destination's parent must exist, and the destination must be new and outside
 Each invocation builds one library and its compiled consumers once, then captures state with those bytes on its supported Flink runtimes.
 
 ```sh
-mise x -- just baseline-capture flink2 3 /tmp/baseline-flink2-pb3
-mise x -- just baseline-capture flink2 4 /tmp/baseline-flink2-pb4
-mise x -- just baseline-capture flink1 3 /tmp/baseline-flink1-pb3
-mise x -- just baseline-capture flink1 4 /tmp/baseline-flink1-pb4
+mise x java@temurin-17 just -- just baseline-capture flink2 3 /tmp/baseline-flink2-pb3
+mise x java@temurin-17 just -- just baseline-capture flink2 4 /tmp/baseline-flink2-pb4
+mise x java@temurin-17 just -- just baseline-capture flink1 3 /tmp/baseline-flink1-pb3
+mise x java@temurin-17 just -- just baseline-capture flink1 4 /tmp/baseline-flink1-pb4
 ```
 
 The two artifact lines and two paired Protobuf profiles produce four independent bundles.
@@ -57,9 +57,9 @@ This is a concrete consumer inventory, not an exhaustive public-API compatibilit
 
 ```sh
 mise x -- just baseline-check /tmp/baseline-flink2-pb3
-mise x -- just baseline-read /tmp/baseline-flink2-pb3 2.2.1 /tmp/read-pb3-floor-17
-mise x -- just baseline-read /tmp/baseline-flink2-pb3 2.3.0 /tmp/read-pb3-ceiling-17
-mise x java@temurin-21 just -- just baseline-read /tmp/baseline-flink2-pb3 2.3.0 /tmp/read-pb3-ceiling-21
+mise x java@temurin-17 just -- just baseline-read /tmp/baseline-flink2-pb3 2.2.1 /tmp/read-pb3-floor-17
+mise x java@temurin-17 just -- just baseline-read /tmp/baseline-flink2-pb3 2.3.0 /tmp/read-pb3-ceiling-17
+mise x -- just baseline-read /tmp/baseline-flink2-pb3 2.3.0 /tmp/read-pb3-ceiling-21
 ```
 
 `baseline-check` reads the full file inventory and SHA-256 checksums without Maven, network access, or compilation.
@@ -138,8 +138,8 @@ Follow the [milestone procedure](#publish-a-milestone-baseline) with these diffe
 2. Capture each bundle with the published version of its line as the fourth argument, `X.Y.Z` for `flink2` and `X.Y.Z-1.20` for `flink1`:
 
    ```sh
-   mise x -- just baseline-capture flink2 3 <work>/bundles/flink2-pb3 X.Y.Z
-   mise x -- just baseline-capture flink1 4 <work>/bundles/flink1-pb4 X.Y.Z-1.20
+   mise x java@temurin-17 just -- just baseline-capture flink2 3 <work>/bundles/flink2-pb3 X.Y.Z
+   mise x java@temurin-17 just -- just baseline-capture flink1 4 <work>/bundles/flink1-pb4 X.Y.Z-1.20
    ```
 
    The capture requires the worktree's HEAD to be the commit of the annotated tag `vX.Y.Z`, and rejects a version of the other line.
@@ -276,7 +276,7 @@ A restored archive that is missing or fails verification fails the job without r
 The job does not fall back to a fresh download, so a corrupt or replaced entry stays visible instead of being bypassed.
 The `GITHUB_TOKEN` with `contents: read` is sufficient for the download.
 
-The `Retained v1.0.0` Verify jobs use this action, one job per bundle, to fetch the retained v1.0.0 bundle, run `api-compat` once against the published library of its line on JDK 17, and run `baseline-upgrade` and `baseline-consume` at each Flink version that the bundle was read with, on JDK 17 and, for the 2.x bundles, again on JDK 21.
+The `Retained v1.0.0` Verify jobs use this action, one job per bundle, to fetch the retained v1.0.0 bundle, run `api-compat` once against the published library of its line on JDK 21, which also builds the candidate jar, and run `baseline-upgrade` and `baseline-consume` at each Flink version that the bundle was read with, on JDK 17 and, for the 2.x bundles, again on JDK 21.
 The current library does not read the state of the retained 0.x bundles, so no job fetches them.
 
 ## Restore retained state with the current library

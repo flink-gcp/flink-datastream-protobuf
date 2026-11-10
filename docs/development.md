@@ -19,8 +19,10 @@ limitations under the License.
 ## Toolchain
 
 The Maven Wrapper pins Maven 3.10.0; all Maven recipes in just invoke the wrapper.
-The default local JDK is Temurin 17, and CI runs Temurin 17 and 21.
+The default local JDK is Temurin 21, and CI runs Temurin 17 and 21.
 Java output targets release 17.
+CI verifies Flink 1.20 and runs the binary compatibility recipe only on JDK 17, and `baseline-capture` refuses any other JDK.
+Run those commands, and any other JDK 17 lane, under `mise x java@temurin-17 just -- just <recipe>`; mise may install JDK 17 for that command.
 `mise.toml` supplies just, the workflow and Markdown linters, pinact, Python 3.14, uv, Hugo Extended 0.164.0, and Go 1.26.5.
 Maven supplies Java build plugins and protoc; protoc does not need to be on PATH.
 The repository's Python tools and their tests use the non-packaged uv project at the root.
@@ -85,10 +87,11 @@ mise x -- just --list
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just dev-tools-sync` | Refresh the four shared workflow skills and `scripts/central-portal.py` at the recorded dev-tools commit |
 
+Run the Flink 1.20, `binary-compat`, and `baseline-capture` rows on JDK 17, as the [toolchain](#toolchain) describes.
 Run a targeted class while iterating, for example `./mvnw -ntp -Dtest=UnregisteredTest test`.
 Run the full `just verify` for this single-module library before pushing build or Java changes.
 CI verifies both Protobuf profiles on Flink 2.2.1 and 2.3.0 with JDK 17/21, and Flink 1.20.5 with JDK 17.
-It also runs the binary compatibility recipe for each artifact line on JDK 17.
+It also runs the binary compatibility recipe for each artifact line on JDK 17, and the release rehearsal on JDK 21, as the `Release` workflow builds.
 Lint runs `just test-scripts` with the workflow and Markdown checks.
 These lanes run for each PR, main push, manual verification, and weekly schedule.
 A repository ruleset requires the GitHub Actions `CI passed` check for every update to main, so a PR merges only after that check succeeds for its head commit; the branch need not be up to date with main.
@@ -97,8 +100,6 @@ The ruleset matches the check by the `name` of the `ci_passed` job in `.github/w
 Changing that `name` needs a coordinated ruleset change: the renaming PR cannot merge while the ruleset names the old check, and once it names the new one, PRs that report only the old check cannot merge until a new PR event triggers a run, whose merge with main includes the rename; rerunning an earlier run reuses its old merge commit.
 The required checks above do not include a mutation-testing batch.
 Apply the shared review safeguards to any batch that is performed.
-To reproduce the JDK 21 lane locally, use `mise x java@temurin-21 just -- just verify-protobuf 4`.
-The default tool set includes JDK 17; mise may install JDK 21 for that command.
 
 Tests named `*Test` run in Maven's test phase.
 Tests named `*ITCase` run through the connector parent's Surefire integration-test execution.
@@ -120,7 +121,7 @@ The [compatibility decision](adr/0003-flink-version-compatibility.md) defines th
 The default `flink.version` in `pom.xml` is the 2.x compile floor; `FLINK_CEILING` in `verify.yaml` selects the other supported minor.
 The `flink1` Maven profile activates with `-Dflink.compat=flink1` and supplies the pinned LTS version.
 `just verify-flink` selects the matching adapter and cleans before compilation; use it when changing Flink versions.
-For example, `just verify-protobuf 4 -Dflink.compat=flink1` tests the POM's LTS default with Protobuf 4.
+For example, `mise x java@temurin-17 just -- just verify-protobuf 4 -Dflink.compat=flink1` tests the POM's LTS default with Protobuf 4 on JDK 17.
 Maven rejects mismatched Flink majors and adapter selections during validation.
 The alternate `src/main/java-flink1` and `src/main/java-flink2` roots bridge the production type information's legacy `createSerializer(ExecutionConfig)` method.
 The matching test roots retain separate probe adapters and test the legacy production entry point on 1.20.
@@ -359,6 +360,7 @@ The bundles that the published 1.0.0 artifacts wrote, captured from source revis
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
 The `Retained v1.0.0` Verify jobs run these commands on the retained v1.0.0 bundles.
+They build the compared candidate on JDK 21, as the release does, and run the retained compiled consumers against it on JDK 17; [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline) lists each job's JDKs.
 
 ### API compatibility gate
 
@@ -369,7 +371,7 @@ Both are separate from saved-state restoration and from application gencode/runt
 ```sh
 mise x -- just baseline-fetch <tag> /tmp/baseline-<tag>
 mise x -- just api-compat /tmp/baseline-<tag>/flink2-pb3
-mise x -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.1.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x java@temurin-17 just -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.1.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
@@ -452,12 +454,12 @@ From the repository root, run these checks with the updated pins; substitute the
   for protobuf_major in 3 4; do
     mise x -- just verify-protobuf "$protobuf_major"
     mise x -- just verify-flink 2.3.0 "$protobuf_major"
-    mise x java@temurin-21 just -- just verify-protobuf "$protobuf_major"
-    mise x java@temurin-21 just -- just verify-flink 2.3.0 "$protobuf_major"
-    mise x -- just verify-protobuf "$protobuf_major" -Dflink.compat=flink1
+    mise x java@temurin-17 just -- just verify-protobuf "$protobuf_major"
+    mise x java@temurin-17 just -- just verify-flink 2.3.0 "$protobuf_major"
+    mise x java@temurin-17 just -- just verify-protobuf "$protobuf_major" -Dflink.compat=flink1
   done
-  mise x -- just binary-compat flink2 2.3.0
-  mise x -- just binary-compat flink1
+  mise x java@temurin-17 just -- just binary-compat flink2 2.3.0
+  mise x java@temurin-17 just -- just binary-compat flink1
   mise x -- just lint
 )
 ```
@@ -542,7 +544,7 @@ A profile without `comparisons` keeps the sequential or group placement, in whic
 
 `benchmark-build` compiles and runs the benchmark contract tests, so a patch that reverts production code must also revert tests that depend on it.
 Run `just benchmark-build` locally for every variant and profile before planning; `plan` checks neither patch application nor compilation.
-Optional fields select `project`, `zone`, `machineType` (default `c3-standard-8`), `minCpuPlatform`, `image` family and project (default Ubuntu 24.04 LTS), `bootDiskGb`, `bootDiskType`, `flinkVersion` (default `2.3.0`), the `base` commit for retained source patches (default: merge base with `origin/main`), and `java`, `just`, and `mise` tool versions.
+Optional fields select `project`, `zone`, `machineType` (default `c3-standard-8`), `minCpuPlatform`, `image` family and project (default Ubuntu 24.04 LTS), `bootDiskGb`, `bootDiskType`, `flinkVersion` (default `2.3.0`), the `base` commit for retained source patches (default: merge base with `origin/main`), and `java` (default `temurin-21`), `just`, and `mise` tool versions.
 
 | Command | Effect |
 |---|---|
@@ -621,7 +623,7 @@ The action then restores `~/.m2/repository` and `~/.m2/wrapper`, in place of `se
 Its key hashes every `pom.xml`, the wrapper properties, and the CI settings, and the `maven-repository-` prefix restores the newest entry when the exact key is missing.
 In Docs, whose workspace holds two checkouts, the key never matches exactly, so the prefix always selects the entry.
 A job that restores nothing reports a warning.
-Only `floor / JDK 17 / Protobuf 4` on `main` saves an entry, through the action's `save` input.
+Only `floor / JDK 21 / Protobuf 4` on `main` saves an entry, through the action's `save` input.
 That job restores only the exact key, so a new key starts from an empty repository, and the entry is saved after the job succeeds.
 The entry therefore holds what that job resolved when its key was new, so scripts invoke Maven plugins by prefix, such as `install:install-file` in `scripts/verify-examples.sh`, and take their versions from the POM, whose changes produce a new key.
 Pull requests, Docs, and Dependency submission only restore, so pull requests create no entry that only their own ref can read.

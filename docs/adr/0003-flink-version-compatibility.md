@@ -26,6 +26,7 @@ limitations under the License.
 - Amends: The build matrix in [ADR-0002](0002-build-and-development-workflow.md)
 - Unchanged-jar check amended: 2026-10-30, [issue #141](https://github.com/flink-gcp/flink-datastream-protobuf/issues/141)
 - Release discovery amended: 2026-10-31, [issue #142](https://github.com/flink-gcp/flink-datastream-protobuf/issues/142)
+- Release build on JDK 21 amended: 2026-11-10, [issue #214](https://github.com/flink-gcp/flink-datastream-protobuf/issues/214)
 - Current instructions: [Development](../development.md)
 
 ## Context
@@ -43,6 +44,7 @@ Flink 1.20 also does not infer native list element information from the probe's 
 Support the current and immediately previous Flink 2.x minors with one jar compiled against the older minor, plus Flink 1.20 LTS through a separate build from the same source tree.
 The initial supported 2.x range is 2.2/2.3, pinned to 2.2.1/2.3.0; LTS is pinned to 1.20.4.
 Use JDK 17 and 21 for Flink 2.x, JDK 17 for 1.20, and Java release 17 for all output.
+Build both release lines on JDK 21, and run the retained compiled consumers against a JDK 21 build of each line on JDK 17, so that a jar built on the newer JDK runs on the oldest supported one.
 Java 11 is unsupported.
 
 Use Maven coordinates `io.github.flink-gcp:flink-datastream-protobuf` for both lines.

@@ -26,8 +26,8 @@ Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LT
 ## Build the development artifact
 
 Install [mise](https://mise.jdx.dev/), then clone this repository.
-`mise install` provides Python 3.14 and uv for the recipe's standard-library checks.
-Run these commands from its root with JDK 17:
+`mise install` provides Temurin 21 for the build, and Python 3.14 and uv for the recipe's standard-library checks.
+Run these commands from its root:
 
 ```sh
 mise trust
@@ -151,12 +151,13 @@ The tests launch the packaged entrypoints locally with Flink dependencies; they 
 | 2.2.1 and 2.3.0 | 17, 21 | 4.36.2 or 3.25.9 |
 | 1.20.5 | 17 | 4.36.2 or 3.25.9 |
 
+The library verifies Flink 1.20 on JDK 17 only; `mise x java@temurin-17` selects it in place of the default JDK 21.
 For example, use a new repository to verify Flink 1.20 with Protobuf 3:
 
 ```sh
 lts_repo="$(mktemp -d /tmp/protobuf-example-lts.XXXXXX)"
-mise x -- just examples-verify 1.20.5 3 "$lts_repo"
-mise x -- ./mvnw -ntp -f examples/datastream/pom.xml \
+mise x java@temurin-17 just -- just examples-verify 1.20.5 3 "$lts_repo"
+mise x java@temurin-17 -- ./mvnw -ntp -f examples/datastream/pom.xml \
   "-Dmaven.repo.local=$lts_repo" -Dflink.version=1.20.5 \
   -Dprotobuf.version=3.25.9 exec:exec@explicit
 ```
@@ -174,7 +175,7 @@ Pass the published version of the runtime's artifact line as the recipe's fourth
 
 ```sh
 mise x -- just examples-verify 2.2.1 4 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0
-mise x -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0-1.20
+mise x java@temurin-17 just -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0-1.20
 ```
 
 The recipe then builds and installs no library: the application resolves the published jar from Maven Central, the recipe compares the jar and its POM with Central's checksums, and runs the same tests and launch goals.

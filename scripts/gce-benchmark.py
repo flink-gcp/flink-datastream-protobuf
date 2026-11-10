@@ -54,7 +54,7 @@ DEFAULTS = {
     "bootDiskGb": 50,
     "bootDiskType": "pd-balanced",
     "flinkVersion": "2.3.0",
-    "java": "temurin-17",
+    "java": "temurin-21",
     "just": "1",
     "mise": "2026.9.15",
     "minCpuPlatform": None,

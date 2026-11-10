@@ -148,7 +148,7 @@ stub_mise() {
     esac
 }
 
-stub_java() { printf 'openjdk version "17.0.16" 2025-07-15\nOpenJDK Runtime Environment\n' >&2; }
+stub_java() { printf 'openjdk version "21.0.13" 2026-10-20\nOpenJDK Runtime Environment\n' >&2; }
 
 # Record each recipe with the variant directory and its payload, which a variant patch changes.
 stub_just() {
