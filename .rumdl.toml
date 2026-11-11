@@ -1,0 +1,82 @@
+# Copyright 2026 The flink-gcp authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# rumdl configuration for `just lint`. It keeps the file set and rule behavior of the
+# markdownlint-cli2 0.23.2 configuration it replaced, which ran markdownlint 0.41.1.
+# docs/content/.rumdl.toml extends this file for the site pages.
+
+[global]
+# A leading "/" anchors a pattern to the repository root; "README.md" alone would also
+# match a README.md in any subdirectory.
+include = ["/README.md", "/CONTRIBUTING.md", "docs/**/*.md"]
+exclude = ["docs/public/**", "docs/resources/**", "docs/static/**"]
+# Every markdownlint 0.41.1 rule except MD013 (line length) and MD060 (table column style),
+# which were off. rumdl would otherwise also run its own rules, such as MD057.
+# MD043 and MD044 do nothing without headings or names, as in markdownlint.
+enable = [
+    "MD001", "MD003", "MD004", "MD005", "MD007", "MD009", "MD010", "MD011",
+    "MD012", "MD014", "MD018", "MD019", "MD020", "MD021", "MD022", "MD023",
+    "MD024", "MD025", "MD026", "MD027", "MD028", "MD029", "MD030", "MD031",
+    "MD032", "MD033", "MD034", "MD035", "MD036", "MD037", "MD038", "MD039",
+    "MD040", "MD041", "MD042", "MD043", "MD044", "MD045", "MD046", "MD047",
+    "MD048", "MD049", "MD050", "MD051", "MD052", "MD053", "MD054", "MD055",
+    "MD056", "MD058", "MD059",
+]
+# Lint every file on every run, as CI does, instead of reusing results cached by an
+# earlier run.
+cache = false
+
+# The Hugo pages carry a front matter title and an H1; the front matter title does not
+# count as a second top-level heading.
+[MD025]
+front-matter-title = ""
+
+# The ADRs link issues as shortcut references, `[#N]` with a `[#N]: url` definition.
+# The default checks only full and collapsed references, so a missing definition would
+# render as literal `[#N]`. docs/content/.rumdl.toml turns this off for the site pages.
+[MD052]
+shortcut-syntax = true
+# markdownlint's default; rumdl's is empty.
+ignore = ["x"]
+
+# The remaining options set rumdl's defaults to markdownlint's.
+[MD001]
+front-matter-title-pattern = '(?i)^\s*"?title"?\s*[:=]'
+
+[MD007]
+style = "fixed"
+
+[MD010]
+code-blocks = true
+
+[MD024]
+siblings-only = false
+
+[MD026]
+punctuation = ".,;:!。，；：！"
+
+[MD027]
+list-items = true
+
+[MD036]
+punctuation = ".,;:!?。，；：！？"
+
+[MD041]
+front-matter-title-pattern = '(?i)^\s*"?title"?\s*[:=]'
+
+[MD051]
+ignore-case = false
+
+[MD053]
+ignored-definitions = ["//"]

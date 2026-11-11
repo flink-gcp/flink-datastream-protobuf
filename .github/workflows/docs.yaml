@@ -71,7 +71,7 @@ jobs:
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           working_directory: source
-          install_args: hugo-extended go java python uv node
+          install_args: hugo-extended go java python uv
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just

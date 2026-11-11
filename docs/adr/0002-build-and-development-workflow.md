@@ -38,6 +38,7 @@ limitations under the License.
 - Site theme files reduced to those the site uses: 2026-11-01, [issue #190](https://github.com/flink-gcp/flink-datastream-protobuf/issues/190)
 - Bot dev-tools update review amended: 2026-11-08, [PR #210](https://github.com/flink-gcp/flink-datastream-protobuf/pull/210)
 - Temurin 21 default JDK amended: 2026-11-10, [issue #214](https://github.com/flink-gcp/flink-datastream-protobuf/issues/214)
+- Node.js removed from the tooling: 2026-11-11, [PR #219](https://github.com/flink-gcp/flink-datastream-protobuf/pull/219)
 - Current instructions: [Development](../development.md) and [Contributing](../../CONTRIBUTING.md)
 
 ## Decision
@@ -65,13 +66,14 @@ Required-check policy can name this aggregate check without depending on individ
 A repository ruleset requires it on main without requiring an up-to-date branch, because requiring one would make each PR update and rerun the full matrix whenever main moves before it merges.
 CI on main then verifies the merged result; a newer main run replaces a pending one but not a running one, so a burst of merges can leave intermediate commits unverified.
 Actions are pinned to commit SHAs; linter versions live in mise.toml, while Java build-tool versions live in Maven, except the dependency-graph plugin that the submission action pins.
+Markdown is linted by rumdl, a single binary, and the repository tooling does not require Node.js.
 
 Repository Python tools and their tests run through one non-packaged uv project at the root, which limits uv to Python 3.14 and locks the test dependencies.
 mise.toml supplies that Python minor like the other tools, and the project settings stop uv from preferring uv-managed interpreters or downloading one.
 Recipes and workflows call `uv run --locked`, and no step depends on a system Python.
 The tools use only the standard library and run in a temporary environment without the test dependencies, so the evidence gate and baseline retrieval load no third-party code; a test imports every tool without site-packages.
 Recipes take uv from PATH rather than a nested `mise x`, which would replace a JDK selected for the command with the `mise.toml` default for its Java subprocesses.
-One pytest recipe runs the `scripts/tests` suite in Lint; the documentation tests, some of which need Hugo and Node, run in Docs.
+One pytest recipe runs the `scripts/tests` suite in Lint; the documentation tests, some of which need Hugo, run in Docs.
 The documentation-site tool runs in the same project rather than a separate `docs` project or uv workspace member: neither is a package or has runtime dependencies, and one project gives one Python minor, one dependency lock, and one Dependabot entry.
 Add a workspace member when a tool needs its own runtime dependencies, as in flink-connector-gcp.
 

@@ -83,7 +83,7 @@ mise x -- just --list
 | `just upstream-versions` | Compare the Flink and Protobuf pins with Maven Central and name each pin that a newer release overtakes; see [Upstream release check](#upstream-release-check) |
 | `just upstream-versions-test` | Run the upstream version check against synthetic pins and metadata without network access |
 | `just test-scripts [test-file...]` | Run the `scripts/tests` suite through the locked pytest, or only the given files; the per-tool test recipes delegate to it |
-| `just lint` | actionlint, shellcheck for project scripts, and markdownlint-cli2 |
+| `just lint` | actionlint, shellcheck for project scripts, and rumdl for Markdown |
 | `just pin-actions` | Pin GitHub Actions references to commit SHAs |
 | `just dev-tools-sync` | Refresh the four shared workflow skills and `scripts/central-portal.py` at the recorded dev-tools commit |
 
@@ -199,7 +199,7 @@ Real Hugo fixtures verify that source changes appear without editing Markdown, m
 | `just docs` | Render prose with warnings fatal and check repository source links; include any existing `docs/static/api/java` |
 | `just docs-serve` | Preview at localhost:1313; run `docs-validate` first for the API reference |
 | `just docs-validate` | Check launch versions, build and run the standalone default-profile examples, generate strict Javadoc, and render the site |
-| `just test-doc-versions` | Run the locked Python tests plus real Hugo and Node navigation fixtures |
+| `just test-doc-versions` | Run the locked Python tests plus real Hugo navigation fixtures |
 | `just docs-site plan <manifest>` | Read all published GitHub Releases and resolve retained tags and checkout HEAD to immutable SHAs |
 | `just docs-site build <manifest> <id> <source> <output>` | Validate and build one version from a separate clean checkout at its planned SHA |
 | `just docs-site assemble <manifest> <inputs> <output>` | Combine every planned version into a fresh output directory |

@@ -30,6 +30,6 @@ python-downloads = "never"
 [dependency-groups]
 dev = ["pytest==9.2.0", "pyyaml==6.0.3"]
 
-# Some documentation tests need Hugo and Node; `just test-doc-versions` runs them all.
+# Some documentation tests need Hugo; `just test-doc-versions` runs them all.
 [tool.pytest.ini_options]
 testpaths = ["scripts/tests"]
