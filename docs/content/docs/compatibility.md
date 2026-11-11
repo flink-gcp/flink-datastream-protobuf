@@ -57,13 +57,13 @@ Each release publishes two versions of `io.github.flink-gcp:flink-datastream-pro
 | `X.Y.Z-1.20` | Flink 1.20 LTS |
 
 Choose the line that matches the application's Flink runtime and stay on it; each line's jar is compiled for its own runtime.
-Both lines share one artifactId, and Maven orders their versions alternately, `1.0.0 < 1.0.0-1.20 < 1.0.1 < 1.0.1-1.20`, so Maven Central and update tools report each release's `-1.20` build as the latest version.
+Both lines share one artifactId, and Maven orders their versions alternately, `1.0.0 < 1.0.0-1.20 < 1.1.0 < 1.1.0-1.20`, so Maven Central and update tools report each release's `-1.20` build as the latest version.
 
 Dependabot treats `-1.20` as an ordinary release version and does not keep either line.
 Its version updates move to the highest version, which is each release's `-1.20` build: correct on the LTS line, wrong on the 2.x line.
 Its security updates move to the lowest version that fixes the advisory, which can be the release's `X.Y.Z` on the LTS line.
 Check that every proposal keeps the line, and list the other line's versions in an ignore condition, which accepts exact versions and Maven ranges but no pattern and also applies to security updates.
-On the 2.x line, list each `-1.20` version, and Dependabot then proposes the same release's `X.Y.Z`; on the LTS line, list the bare versions, such as `[1.0.1]`:
+On the 2.x line, list each `-1.20` version, and Dependabot then proposes the same release's `X.Y.Z`; on the LTS line, list the bare versions, such as `[1.0.0]` and `[1.1.0]`:
 
 ```yaml
 version: 2
@@ -75,7 +75,7 @@ updates:
     ignore:
       - dependency-name: io.github.flink-gcp:flink-datastream-protobuf
         # Stay on the Flink 2.x line: skip each release's Flink 1.20 LTS build.
-        versions: ["[1.0.0-1.20]", "[1.0.1-1.20]"]
+        versions: ["[1.0.0-1.20]", "[1.1.0-1.20]"]
 ```
 
 Renovate's [`allowedVersions`](https://docs.renovatebot.com/configuration-options/#packagerulesallowedversions) accepts a regular expression, which keeps either line without an entry per release:

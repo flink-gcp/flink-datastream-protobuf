@@ -21,7 +21,7 @@ limitations under the License.
 # Run a native Protobuf DataStream job
 
 Run the standalone [application example]({{< param BookRepo >}}/blob/main/examples/datastream/pom.xml) against a local build of the library, installed into an isolated Maven repository, or against the [published library](#run-against-the-published-library).
-Maven Central publishes `1.0.0` for Flink 2.x and `1.0.0-1.20` for Flink 1.20 LTS.
+Maven Central publishes `1.1.0` for Flink 2.x and `1.1.0-1.20` for Flink 1.20 LTS.
 
 ## Build the development artifact
 
@@ -174,10 +174,10 @@ The application resolves the library by its Maven coordinates, so it runs agains
 Pass the published version of the runtime's artifact line as the recipe's fourth argument, with a new Maven repository:
 
 ```sh
-mise x -- just examples-verify 2.2.1 4 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0
-mise x java@temurin-17 just -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.0.0-1.20
+mise x -- just examples-verify 2.2.1 4 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.1.0
+mise x java@temurin-17 just -- just examples-verify 1.20.5 3 "$(mktemp -d /tmp/protobuf-example-maven.XXXXXX)" 1.1.0-1.20
 ```
 
 The recipe then builds and installs no library: the application resolves the published jar from Maven Central, the recipe compares the jar and its POM with Central's checksums, and runs the same tests and launch goals.
-In your own application, depend on `1.0.0` for Flink 2.x or `1.0.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line]({{< relref "docs/compatibility#artifact-lines-and-version-order" >}}).
+In your own application, depend on `1.1.0` for Flink 2.x or `1.1.0-1.20` for Flink 1.20 LTS, and stay on that [artifact line]({{< relref "docs/compatibility#artifact-lines-and-version-order" >}}).
 State from a development build carries no guarantee; consult the [compatibility guidance]({{< relref "docs/compatibility" >}}) first.
