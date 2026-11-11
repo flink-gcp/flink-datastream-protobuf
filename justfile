@@ -155,7 +155,7 @@ format:
 lint:
     mise x actionlint shellcheck -- actionlint
     mise x shellcheck -- shellcheck scripts/*.sh scripts/tests/*.sh
-    mise x npm:markdownlint-cli2 -- markdownlint-cli2
+    mise x rumdl -- rumdl check .
     @# The development bundle archives every tracked file; pull requests can skip that capture.
     git ls-files -z | {{ python }} -c 'import sys, unicodedata; names = [(n, n.decode("utf-8", "replace")) for n in sys.stdin.buffer.read().split(b"\0") if n]; bad = [t for n, t in names if t.encode() != n or ":" in t or "\\" in t or any(unicodedata.category(c) == "Cc" for c in t)]; bad and print(*bad, sep="\n"); sys.exit("Rename tracked files that are not UTF-8 or contain a colon, backslash, or control character" if bad else 0)'
 
@@ -202,7 +202,7 @@ docs-validate:
 
 # Check release selection, provenance, rendering and navigation.
 test-doc-versions:
-    mise x hugo-extended go node python uv -- uv run --locked pytest docs/tests
+    mise x hugo-extended go python uv -- uv run --locked pytest docs/tests
 
 # Plan, build and assemble independently built documentation versions.
 [positional-arguments]

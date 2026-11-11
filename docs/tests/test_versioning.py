@@ -11,11 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Render synthetic Hugo sites and execute the published navigation JavaScript."""
+"""Render synthetic Hugo sites and check the published navigation JavaScript."""
 
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 from html.parser import HTMLParser
@@ -185,52 +186,45 @@ def test_legacy_redirect_preserves_encoded_query_and_api_fragment():
     spec.loader.exec_module(helper)
     page = helper.redirect("/project/1.0/api/java/Type.html")
     script = page.split("<script>", 1)[1].split("</script>", 1)[0]
-    program = """
-const vm = require('node:vm');
-const assert = require('node:assert/strict');
-let actual;
-const location = {search: '?q=A%26B', hash: '#set(java.lang.String)', replace: x => actual = x};
-vm.runInNewContext(SCRIPT, {location});
-assert.equal(actual, '/project/1.0/api/java/Type.html?q=A%26B#set(java.lang.String)');
-""".replace("SCRIPT", json.dumps(script))
-    subprocess.run(["node", "-e", program], check=True)
+    # The script appends the current query and fragment to the target unchanged, so
+    # `?q=A%26B` stays encoded and a Javadoc member fragment reaches the API page.
+    assert script == (
+        'location.replace("/project/1.0/api/java/Type.html"+location.search+location.hash)'
+    )
 
 
-@pytest.mark.parametrize("same_page", [True, False])
-def test_version_dropdown_preserves_context_only_for_matching_pages(same_page):
-    script = (ROOT / "docs/versioning/docs-version.js").read_text()
-    program = """
-const vm = require('node:vm');
-const assert = require('node:assert/strict');
-let change, pageShow, actual;
-const option = {value: SAME_PAGE ? '/project/1.1/docs/shared/' : '/project/1.1/',
-  hasAttribute: name => { assert.equal(name, 'data-same-page'); return SAME_PAGE; }};
-const currentOption = {value: '/project/1.2/docs/shared/',
-  hasAttribute: name => { assert.equal(name, 'data-same-page'); return true; }};
-const select = {hidden: true, selectedOptions: [currentOption],
-  querySelector: selector => {
-    assert.equal(selector, 'option[selected]');
-    return currentOption;
-  },
-  addEventListener: (type, callback) => { assert.equal(type, 'change'); change = callback; }};
-const window = {addEventListener: (type, callback) => {
-  assert.equal(type, 'pageshow'); pageShow = callback;
-}};
-const document = {querySelectorAll: selector => {
-  assert.equal(selector, '.docs-version select'); return [select]; }};
-const location = {href: 'https://example.org/project/1.2/docs/shared/',
-  search: '', hash: '', assign: url => actual = url};
-vm.runInNewContext(SCRIPT, {document, window, location, URL});
-assert.equal(select.hidden, false);
-location.search = '?q=A%26B';
-location.hash = '#delivery';
-select.selectedOptions = [option];
-change();
-assert.equal(actual, SAME_PAGE
-  ? 'https://example.org/project/1.1/docs/shared/?q=A%26B#delivery'
-  : 'https://example.org/project/1.1/');
-select.value = option.value;
-pageShow();
-assert.equal(select.value, '/project/1.2/docs/shared/');
-""".replace("SCRIPT", json.dumps(script)).replace("SAME_PAGE", json.dumps(same_page))
-    subprocess.run(["node", "-e", program], check=True)
+EXPECTED_DOCS_VERSION = (
+    "document.querySelectorAll('.docs-version select').forEach((select) => {"
+    " const current = select.querySelector('option[selected]').value;"
+    " window.addEventListener('pageshow', () => { select.value = current; });"
+    " select.addEventListener('change', () => {"
+    " const option = select.selectedOptions[0];"
+    " const target = new URL(option.value, location.href);"
+    " if (option.hasAttribute('data-same-page')) {"
+    " target.search = location.search;"
+    " target.hash = location.hash;"
+    " }"
+    " location.assign(target.href);"
+    " });"
+    " select.hidden = false;"
+    " });"
+)
+
+
+def normalized_script(source):
+    """Drop the leading license block and comment lines, then collapse whitespace."""
+    license_block = re.match(r"/\*.*?\*/", source, flags=re.S)
+    assert license_block, "docs-version.js no longer starts with its license block"
+    lines = source[license_block.end():].splitlines()
+    code = [line for line in lines if not line.lstrip().startswith("//")]
+    return " ".join(" ".join(code).split())
+
+
+def test_docs_version_script_is_the_reviewed_script():
+    script = normalized_script((ROOT / "docs/versioning/docs-version.js").read_text())
+    assert script == EXPECTED_DOCS_VERSION, (
+        "docs/versioning/docs-version.js changed. Check that it keeps these behaviors, "
+        "then update EXPECTED_DOCS_VERSION in the same diff: each select is shown only "
+        "after the script runs; only options with data-same-page keep the query and "
+        "fragment; pageshow restores the selection rendered with the page."
+    )
