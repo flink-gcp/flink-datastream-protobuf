@@ -5,13 +5,13 @@ Native Protocol Buffers type integration for the Apache Flink DataStream API.
 The repository implements native serialization, explicit TypeInformation, and superclass factory registration for generated messages, and descriptor-bound TypeInformation for DynamicMessage values.
 Versioned descriptor snapshots support serializer restoration for unchanged schemas and supported schema changes.
 MiniCluster tests verify checkpoint recovery and savepoint restoration with HashMap and RocksDB state backends, including restoration across supported schema changes.
-Maven Central publishes each release in two versions of `io.github.flink-gcp:flink-datastream-protobuf`: `1.0.0` for the current and previous Flink 2.x minors, and `1.0.0-1.20` for Flink 1.20 LTS.
+Maven Central publishes each release in two versions of `io.github.flink-gcp:flink-datastream-protobuf`: `1.1.0` for the current and previous Flink 2.x minors, and `1.1.0-1.20` for Flink 1.20 LTS.
 
 ```xml
 <dependency>
     <groupId>io.github.flink-gcp</groupId>
     <artifactId>flink-datastream-protobuf</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
