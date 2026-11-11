@@ -88,7 +88,7 @@ The rule in the [development guide](../development.md#ci-compiler-reuse-and-job-
 | Matrix job | 501 s | 20 min | 20 min |
 | Binary compatibility job | 365 s | 15 min | 15 min |
 | Development bundle job | 330 s | 20 min | 15 min |
-| Retained v1.0.0 job | 310 s | none | 15 min |
+| Retained release job | 310 s | none | 15 min |
 | Benchmark smoke command | 89 s | none | 5 min |
 | Release rehearsal job | 106 s | none | 5 min |
 
@@ -101,6 +101,8 @@ In pull-request run [41195401814](https://github.com/flink-gcp/flink-datastream-
 
 [Issue #183](https://github.com/flink-gcp/flink-datastream-protobuf/issues/183) moved those three checks to a `Retained v1.0.0` job per bundle, which fetches the bundle that the published 1.0.0 artifacts wrote, and left the development bundle job to capture and read its own bundle.
 In pull-request run [41293345595](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41293345595), whose retained jobs downloaded every archive because no cache entry existed yet, the development bundle jobs took 191 and 197 seconds for LTS and 305 and 330 seconds for 2.x, and the retained jobs 102 and 95 seconds for LTS and 230 and 310 seconds for 2.x, so twice each maximum rounds up to a 15-minute limit.
+The retained v1.1.0 bundles add four jobs of the same shape, named `Retained v1.1.0` beside `Retained v1.0.0`; Verify then starts 25 jobs, so five wait for runners under the plan's 20 concurrent jobs.
+In pull-request run [43055922876](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/43055922876), whose v1.1.0 jobs downloaded every archive because no cache entry existed yet, they took 116 and 139 seconds for LTS and 272 and 299 seconds for 2.x, within the 310 seconds that set the 15-minute limit.
 
 The release rehearsal job from [issue #13](https://github.com/flink-gcp/flink-datastream-protobuf/issues/13) builds both artifact lines without tests, plus a third build that the release-line guard stops at `validate`; it resolves the release plugins, which the shared Maven entry does not hold, on every run.
 In pull-request runs [41192241047](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41192241047), [41194651888](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41194651888), and [41195572314](https://github.com/flink-gcp/flink-datastream-protobuf/actions/runs/41195572314), it took 93, 106, and 87 seconds, so twice that maximum rounds up to a 5-minute limit.

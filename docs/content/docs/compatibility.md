@@ -26,7 +26,7 @@ Version 1.0.0 is the first release published to Maven Central and starts the [st
 
 ## Development builds
 
-A build of this source is the development version `1.1.0-SNAPSHOT`, which restores supported schema changes.
+A build of this source is the development version `1.2.0-SNAPSHOT`, which restores supported schema changes.
 Development builds, including the `v0.x` GitHub pre-releases, are not releases, and their APIs, defaults, runtime requirements, and state formats are not compatibility contracts.
 Retain the exact source revision and artifact checksums alongside schemas and state; a SNAPSHOT version alone does not identify their writer.
 

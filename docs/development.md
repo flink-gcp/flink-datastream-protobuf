@@ -358,9 +358,10 @@ The [development bundle procedure](validation/development-baselines.md) provides
 It retains packaged library jars, compiled consumers, resolved runtime dependencies, snapshots, and checkpoint/savepoint archives outside the repository.
 The reader uses retained bytes without rebuilding them; CI verifies the same jars on the applicable JDK/Flink combinations.
 The bundles that the published 1.0.0 artifacts wrote, captured from source revision `0cbc2e7fe405eb12814b0aeddf7bcb636b77d1df`, are assets of the `v1.0.0` release; see the [retained v1.0.0 baseline](validation/development-baselines.md#retained-v100-baseline).
+Those of the published 1.1.0 artifacts, captured from source revision `296a2e7eaf7ac253cb583f9e43dfe00c9738b02f`, are assets of the `v1.1.0` release; see the [retained v1.1.0 baseline](validation/development-baselines.md#retained-v110-baseline).
 Retrieve them with `baseline-fetch` locally or the `.github/actions/baseline-fetch` action in CI, as described in [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline).
 `baseline-upgrade` restores a bundle's state with the current library and applications, resolving this build's dependencies instead of the retained ones.
-The `Retained v1.0.0` Verify jobs run these commands on the retained v1.0.0 bundles.
+The `Retained` Verify jobs run these commands on the retained v1.0.0 and v1.1.0 bundles, one job per release and bundle.
 They build the compared candidate on JDK 21, as the release does, and run the retained compiled consumers against it on JDK 17; [retrieving the retained baseline](validation/development-baselines.md#retrieve-the-retained-baseline) lists each job's JDKs.
 
 ### API compatibility gate
@@ -372,7 +373,7 @@ Both are separate from saved-state restoration and from application gencode/runt
 ```sh
 mise x -- just baseline-fetch <tag> /tmp/baseline-<tag>
 mise x -- just api-compat /tmp/baseline-<tag>/flink2-pb3
-mise x java@temurin-17 just -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.1.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
+mise x java@temurin-17 just -- just baseline-consume /tmp/baseline-<tag>/flink2-pb3 target/flink-datastream-protobuf-1.2.0-SNAPSHOT.jar 2.3.0 /tmp/consume-flink2-pb3-2.3.0
 ```
 
 `api-compat` first checks the bundle with the current tree's `BaselineTool`, so it does not execute code from the bundle.
@@ -412,7 +413,7 @@ The results record the candidate and baseline hashes, the baseline source revisi
 Build the candidate with the bundle's line and Protobuf 4, as `api-compat` does, so that the consumers of a Protobuf 3 bundle run a release-shaped jar on their Protobuf 3 runtime; the command cannot tell which adapter a jar was compiled for.
 The bundle is checked again afterwards, as for `baseline-read`.
 
-The `Retained v1.0.0` Verify jobs run both checks against each retained v1.0.0 bundle: `api-compat` compares the candidate with the published 1.0.0 library of that line, and `baseline-consume` runs the bundle's compiled consumers on the candidate at each Flink version and JDK that the bundle was read with.
+The `Retained` Verify jobs run both checks against each retained v1.0.0 and v1.1.0 bundle: `api-compat` compares the candidate with that release's published library of the bundle's line, and `baseline-consume` runs the bundle's compiled consumers on the candidate at each Flink version and JDK that the bundle was read with.
 Neither check publishes or uploads artifacts.
 When `flink-connector-parent` changes the japicmp version, confirm that a deliberate break still fails the baseline comparison and that the XML report attributes the gate reads are unchanged.
 
@@ -654,8 +655,8 @@ A job time limit cancels the job instead, and the gate does not run after cancel
 The organization's GitHub Free plan runs at most 20 jobs at a time, and a pull-request run of Verify, Lint, and Docs starts more, so the longest matrix jobs can wait for a runner.
 To shorten pull-request runs, CI's first job, `Freeze source revision`, uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to compare a pull request with its base branch and passes the result to Verify as the `benchmarks` and `baseline` inputs.
 An empty token makes the filter use git, so the job needs no `pull-requests` permission, and the selection adds no job that the matrix jobs would wait for.
-The development bundle and `Retained v1.0.0` jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, `scripts/api-compat.sh`, or the retained-bundle retrieval in `scripts/baseline-fetch.py`, `scripts/lib/`, `.github/actions/baseline-fetch/`, and the uv project's `pyproject.toml` and `uv.lock`.
-Capture builds and runs the current library and test sources from a clean tree, so the source and build paths are its inputs; the `Retained v1.0.0` jobs also use the API gate script and the retrieval code.
+The development bundle and `Retained` jobs run only when the pull request changes `src/`, `.gitignore`, or a build input: `pom.xml`, `justfile`, `benchmarks.just`, `mise.toml`, the Maven wrapper, `tools/maven/`, the CI Maven settings and action, the CI and Verify workflows, `scripts/api-compat.sh`, or the retained-bundle retrieval in `scripts/baseline-fetch.py`, `scripts/lib/`, `.github/actions/baseline-fetch/`, and the uv project's `pyproject.toml` and `uv.lock`.
+Capture builds and runs the current library and test sources from a clean tree, so the source and build paths are its inputs; the `Retained` jobs also use the API gate script and the retrieval code.
 Capture also archives every tracked file and rejects names that are not valid UTF-8 or that contain a colon, a backslash, or a control character; `just lint`, which Lint runs on every pull request, checks those names so that a skipped capture cannot hide one.
 Matrix jobs run the benchmark compiler and smoke steps for the same paths and for the evidence gate, `scripts/benchmark-evidence.py` and its `scripts/lib/credential_rules.py`; the benchmark build compiles the test sources as well.
 Pushes to main, the weekly schedule, and manual `workflow_dispatch` runs always run both, so a change that a pull request skipped is still checked after it merges; start Verify manually on the branch to run them before merging.
@@ -825,7 +826,7 @@ The `github-release` job holds `contents: write` and no release secret.
 
 After the workflow succeeds:
 
-1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` serves.
+1. Check both published versions under `https://repo1.maven.org/maven2/io/github/flink-gcp/flink-datastream-protobuf/<version>/`: each holds the POM, the jar, the sources jar, and the Javadoc jar, each with an `.asc` signature that `gpg --verify` accepts with the release key `679AB13942F51CAF09F06E73608AC6CD5F89628E`, which `keyserver.ubuntu.com` and `keys.openpgp.org` serve.
 2. Verify consumers and capture fixtures from both published versions.
    Run `just examples-verify <flink-version> <protobuf-major> <new-repository> <published-version>` with `X.Y.Z` at the 2.x floor and ceiling and with `X.Y.Z-1.20` at the LTS version, each with Protobuf 3 and 4, and a new repository for every run.
    Capture and retain the four bundles that the published versions write as the [development baselines guide](validation/development-baselines.md#retain-a-published-release) describes, and attach them to the release.
@@ -840,6 +841,7 @@ The publication wait allows three hours, which covers v1.0.0: its deployments we
 
 A failure in `stage` publishes neither line.
 Before re-running it, drop leftover `VALIDATED` or `FAILED` deployments with `just central-portal drop <id>...`, which needs the Central token pair locally as described below; leave a deployment that is still validating until its state can be checked again.
+Central rejects every signature when none of its supported keyservers serves the release key: the first `v1.1.0` attempt failed this way while `keyserver.ubuntu.com` was unreachable, and the re-run succeeded after the key was also published on `keys.openpgp.org`.
 
 After `stage` succeeded, recover with "Re-run failed jobs" on the failed run, never "Re-run all jobs".
 The re-run repeats `publish-central`, `github-release`, or both with the deployment IDs of the original `stage` attempt.
