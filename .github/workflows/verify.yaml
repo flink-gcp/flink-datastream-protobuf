@@ -278,15 +278,18 @@ jobs:
             fi
           done
   retained-baseline:
-    # One job per bundle; with them Verify starts 21 jobs, above the plan's 20 concurrent jobs, so the last
-    # one waits for a runner. See docs/validation/ci-budget.md.
-    name: Retained v1.0.0 / ${{ matrix.bundle }}
+    # One job per retained release and bundle; with them Verify starts 25 jobs, above the plan's 20 concurrent
+    # jobs, so the last five wait for runners. See docs/validation/ci-budget.md.
+    name: Retained ${{ matrix.tag }} / ${{ matrix.bundle }}
     if: github.event_name != 'pull_request' || inputs.baseline
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
+        # Every published 1.x release whose state later releases must restore.
+        tag: [v1.0.0, v1.1.0]
+        bundle: [flink2-pb3, flink2-pb4, flink1-pb3, flink1-pb4]
         # The Flink versions and JDKs that each retained bundle was read with.
         include:
           - {bundle: flink2-pb3, flink: '2.2.1 2.3.0', jdk21: true}
@@ -310,17 +313,17 @@ jobs:
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just
-      # The bundles that the published 1.0.0 artifacts wrote; later releases must restore their state.
+      # The bundles that a published release's artifacts wrote; later releases must restore their state.
       # See "Retrieve the retained baseline" in docs/validation/development-baselines.md.
-      - name: Fetch and check the retained v1.0.0 bundle
+      - name: Fetch and check the retained ${{ matrix.tag }} bundle
         id: fetch
         uses: ./.github/actions/baseline-fetch
         with:
-          tag: v1.0.0
+          tag: ${{ matrix.tag }}
           bundle: ${{ matrix.bundle }}
-          output: ${{ runner.temp }}/v1.0.0
+          output: ${{ runner.temp }}/${{ matrix.tag }}
       # See "API compatibility gate" in docs/development.md.
-      - name: Compare the annotated API with the published 1.0.0 library
+      - name: Compare the annotated API with the published ${{ matrix.tag }} library
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
         run: |
@@ -331,7 +334,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      # Maven resolves this build's dependencies; the bundle's macOS dependency tree stays unused.
+      # Maven resolves this build's dependencies; the bundle's own dependency tree stays unused.
       - name: Restore the retained state with the current library on JDK 17
         env:
           BUNDLE: ${{ steps.fetch.outputs.bundle }}
