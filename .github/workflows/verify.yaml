@@ -40,7 +40,7 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       # Install Python and uv for the Python tools before setup-java selects the matrix JDK.
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: python uv
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -51,7 +51,7 @@ jobs:
       - uses: ./.github/actions/maven
         with:
           save: ${{ github.ref == 'refs/heads/main' && matrix.runtime == 'floor' && matrix.java == '21' && matrix.protobuf == '4' }}
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       - name: Verify the library and native probes
@@ -174,7 +174,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: python uv
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -182,7 +182,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       - name: Run the Protobuf 4 jar on the 2.x ceiling and Protobuf 3 without recompiling it
@@ -203,7 +203,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: python uv
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -211,7 +211,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       # Pull requests have no signing key, so this rehearsal skips signing (ADR-0006).
@@ -239,7 +239,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       - name: Capture the development bundle once
@@ -301,7 +301,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           install_args: python uv
       # The release builds on JDK 21, so the compared candidate is built on JDK 21 too.
@@ -310,7 +310,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: ./.github/actions/maven
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       # The bundles that a published release's artifacts wrote; later releases must restore their state.
