@@ -360,7 +360,7 @@ limitations under the License.
                         <stringType>String</stringType>
                     </configuration></execution>
                 </executions></plugin>
-                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.6.4</version><executions>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.7.0</version><executions>
                     <execution><id>run-benchmarks</id><goals><goal>exec</goal></goals><configuration>
                         <executable>${java.home}/bin/java</executable><classpathScope>test</classpathScope><arguments>
                             <argument>-Dbenchmark.library.jar=${project.build.directory}/benchmark-library/${project.build.finalName}.jar</argument>
@@ -443,7 +443,7 @@ limitations under the License.
                         </configuration></execution>
                     </executions>
                 </plugin>
-                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.6.4</version><executions>
+                <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.7.0</version><executions>
                     <execution><id>check-api-negative-control</id><phase>verify</phase><goals><goal>exec</goal></goals><configuration>
                         <executable>${java.home}/bin/java</executable><arguments>
                             <argument>${project.basedir}/src/test/java/io/github/flink/gcp/protobuf/ApiNegativeControl.java</argument>
