@@ -77,7 +77,7 @@ limitations under the License.
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
         <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
-        <versions-maven-plugin.version>2.23.0</versions-maven-plugin.version>
+        <versions-maven-plugin.version>2.25.1</versions-maven-plugin.version>
         <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
         <!-- The parent pins maven-jar-plugin 2.4, which ignores project.build.outputTimestamp; 3.x makes the library jar reproducible. -->
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
