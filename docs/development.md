@@ -18,7 +18,7 @@ limitations under the License.
 
 ## Toolchain
 
-The Maven Wrapper pins Maven 3.10.1; all Maven recipes in just invoke the wrapper.
+The Maven Wrapper pins Maven 3.10.2; all Maven recipes in just invoke the wrapper.
 The default local JDK is Temurin 21, and CI runs Temurin 17 and 21.
 Java output targets release 17.
 CI verifies Flink 1.20 and runs the binary compatibility recipe only on JDK 17, and `baseline-capture` refuses any other JDK.
